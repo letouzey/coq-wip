@@ -799,23 +799,21 @@ end = struct
      the opaque term [t] to [on_opaque_const_body t]. *)
   let traverse_library on_opaque_const_body =
     let rec traverse_module mb =
-      match mb.mod_expr with 
-	  None -> 
-	    { mb with
-		mod_expr = None;
-		mod_type = traverse_modexpr mb.mod_type;
-	    }
+      match mb.mod_expr with
+	| Some (SEBident mp as expr) when mb.mod_type_alg = None ->
+	    (* This is a module alias. We compact its type ... *)
+	    { mb with mod_type = expr }
 	| Some impl when impl == mb.mod_type-> 
-	    let mtb =  traverse_modexpr mb.mod_type in 
+	    let mtb = traverse_modexpr mb.mod_type in
 	      { mb with
 		  mod_expr = Some mtb;
 		  mod_type = mtb;
-	      }    
-	| Some impl -> 
+	      }
+	| _ ->
 	    { mb with
 		mod_expr = Option.map traverse_modexpr mb.mod_expr;
 		mod_type = traverse_modexpr mb.mod_type;
-	    }    
+	    }
     and traverse_struct struc =
       let traverse_body (l,body) = (l,match body with
 	| SFBconst cb when is_opaque cb ->
@@ -837,7 +835,7 @@ end = struct
 		    traverse_modexpr mexpr)
       | SEBident mp as x -> x
       | SEBstruct (struc) ->
-	SEBstruct  (traverse_struct struc)
+	SEBstruct (traverse_struct struc)
       | SEBapply (mexpr,marg,u) ->
 	SEBapply (traverse_modexpr mexpr,traverse_modexpr marg,u)
       | SEBwith (seb,wdcl) ->

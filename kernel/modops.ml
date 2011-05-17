@@ -261,34 +261,6 @@ let add_retroknowledge mp =
      imports 10 000 retroknowledge registration.*)
   List.fold_right perform lclrk env
 
-let rec add_signature mp sign resolver env = 
-  let add_one env (l,elem) =
-    let kn = make_kn mp empty_dirpath l in
-    let con = constant_of_kn kn in
-    let mind = mind_of_kn kn in
-      match elem with
-	| SFBconst cb -> 
-	    let con =  constant_of_delta resolver con in
-	      Environ.add_constant con cb env
-	| SFBmind mib -> 
-	    let mind =  mind_of_delta resolver mind in
-	    Environ.add_mind mind mib env
-	| SFBmodule mb -> add_module mb env
-	      (* adds components as well *)
-	| SFBmodtype mtb -> Environ.add_modtype mtb.typ_mp mtb env
-  in
-    List.fold_left add_one env sign
-
-and add_module mb env = 
-  let mp = mb.mod_mp in
-  let env = Environ.shallow_add_module mp mb env in
-    match mb.mod_type with
-      | SEBstruct (sign) -> 
-	  add_retroknowledge mp mb.mod_retroknowledge 
-	    (add_signature mp sign mb.mod_delta env)
-      | SEBfunctor _ -> env
-      | _ -> anomaly "Modops:the evaluation of the structure failed "
-
 let strengthen_const mp_from l cb resolver =
   match cb.const_body with
     | Def _ -> cb
@@ -591,3 +563,38 @@ let clean_bounded_mod_expr = function
       let str_clean = collect_mbid [] str in 
 	if  str_clean == str then str else str_clean
   | str -> str
+
+let rec add_signature mp sign resolver env =
+  let add_one env (l,elem) =
+    let kn = make_kn mp empty_dirpath l in
+    let con = constant_of_kn kn in
+    let mind = mind_of_kn kn in
+      match elem with
+	| SFBconst cb ->
+	    let con =  constant_of_delta resolver con in
+	      Environ.add_constant con cb env
+	| SFBmind mib ->
+	    let mind =  mind_of_delta resolver mind in
+	    Environ.add_mind mind mib env
+	| SFBmodule mb -> add_module mb env
+	      (* adds components as well *)
+	| SFBmodtype mtb -> Environ.add_modtype mtb.typ_mp mtb env
+  in
+    List.fold_left add_one env sign
+
+and add_module mb env =
+  let mp = mb.mod_mp in
+  let env' = Environ.shallow_add_module mp mb env in
+    match mb.mod_type with
+      | SEBident mp0 ->
+	  (* This module is an alias, its type has been compressed *)
+	  let mb0 = Environ.lookup_module mp0 env in
+	  let mb' =
+	    {mb with mod_type = (strengthen_and_subst_mb mb0 mp false).mod_type}
+	  in
+	  add_module mb' env
+      | SEBstruct (sign) ->
+	  add_retroknowledge mp mb.mod_retroknowledge
+	    (add_signature mp sign mb.mod_delta env')
+      | SEBfunctor _ -> env'
+      | _ -> anomaly "Modops:the evaluation of the structure failed "
