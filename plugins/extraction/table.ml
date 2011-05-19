@@ -137,18 +137,18 @@ let init_recursors () = recursors := Cset.empty
 
 let add_recursors env kn =
   let mk_con id =
-    make_con_equiv
-      (modpath (user_mind kn))
-      (modpath (canonical_mind kn))
-      empty_dirpath (label_of_id id)
+    Environ.make_con_from_user env (modpath (user_mind kn)) (label_of_id id)
+  in
+  let add_rec id suff =
+    try recursors := Cset.add (mk_con (Nameops.add_suffix id suff)) !recursors
+    with _ -> ()
   in
   let mib = Environ.lookup_mind kn env in
   Array.iter
     (fun mip ->
        let id = mip.mind_typename in
-       let c_rec = mk_con (Nameops.add_suffix id "_rec")
-       and c_rect = mk_con (Nameops.add_suffix id "_rect") in
-       recursors := Cset.add c_rec (Cset.add c_rect !recursors))
+       add_rec id "_rec";
+       add_rec id "_rect")
     mib.mind_packets
 
 let is_recursor = function

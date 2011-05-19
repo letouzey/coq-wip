@@ -411,12 +411,13 @@ and extract_ind env kn = (* kn is supposed to be in long form *)
 	assert (List.length field_names = List.length typ);
 	let projs = ref Cset.empty in
 	let mp,d,_ = repr_mind kn in
+	assert (d = empty_dirpath);
 	let rec select_fields l typs = match l,typs with
 	  | [],[] -> []
 	  | (Name id)::l, typ::typs ->
 	      if isDummy (expand env typ) then select_fields l typs
 	      else
-		let knp = make_con mp d (label_of_id id) in
+		let knp = Environ.make_con_from_user env mp (label_of_id id) in
 		if List.for_all ((=) Keep) (type2signature env typ)
 		then
 		  projs := Cset.add knp !projs;

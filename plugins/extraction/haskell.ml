@@ -291,8 +291,8 @@ let rec pp_ind first kn i ind =
 
 let pp_decl = function
   | Dind (kn,i) when i.ind_kind = Singleton ->
-      pp_singleton (mind_of_kn kn) i.ind_packets.(0) ++ fnl ()
-  | Dind (kn,i) -> hov 0 (pp_ind true (mind_of_kn kn) 0 i)
+      pp_singleton kn i.ind_packets.(0) ++ fnl ()
+  | Dind (kn,i) -> hov 0 (pp_ind true kn 0 i)
   | Dtype (r, l, t) ->
       if is_inline_custom r then mt ()
       else
