@@ -120,7 +120,7 @@ let slot_for_annot key =
     n
 
 let rec slot_for_getglobal env kn =
-  let (cb,rk) = lookup_constant_key kn env in
+  let (_,cb,rk) = lookup_constant_data kn env in
   try key rk
   with NotEvaluated ->
     let pos =

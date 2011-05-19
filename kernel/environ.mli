@@ -120,6 +120,12 @@ val add_constant : constant -> constant_body -> env -> env
 val lookup_constant    : constant -> env -> constant_body
 val evaluable_constant : constant -> env -> bool
 
+(** By looking in the context of global constant names,
+    we can determine the complete [constant] name out of only
+    the user components of the name *)
+val make_con_from_user :
+  env -> module_path -> ?dir:dir_path -> label -> constant
+
 (** {6 ... } *)
 (** [constant_value env c] raises [NotEvaluableConst Opaque] if
    [c] is opaque and [NotEvaluableConst NoBody] if it has no
@@ -139,6 +145,12 @@ val add_mind : mutual_inductive -> mutual_inductive_body -> env -> env
 (** Looks up in the context of global inductive names 
    raises [Not_found] if the required path is not found *)
 val lookup_mind : mutual_inductive -> env -> mutual_inductive_body
+
+(** By looking in the context of global inductive names,
+    we can determine the complete [mutual_inductive] name out of only
+    the user components of the name *)
+val make_mind_from_user :
+  env -> module_path -> ?dir:dir_path -> label -> mutual_inductive
 
 (** {5 Modules } *)
 

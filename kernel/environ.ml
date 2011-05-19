@@ -153,11 +153,14 @@ let lookup_constant = lookup_constant
 
 let add_constant kn cs env =
   let new_constants =
-    Cmap_env.add kn (cs,ref None) env.env_globals.env_constants in
+    Cmap_env.add kn (kn,cs,ref None) env.env_globals.env_constants in
   let new_globals =
     { env.env_globals with
 	env_constants = new_constants } in
   { env with env_globals = new_globals }
+
+let make_con_from_user env mp ?(dir = empty_dirpath) lab =
+  let (con,_,_) = Pre_env.lookup_constant_data (make_con mp dir lab) env in con
 
 (* constant_type gives the type of a constant *)
 let constant_type env kn =
@@ -188,11 +191,14 @@ let evaluable_constant cst env =
 let lookup_mind = lookup_mind
   
 let add_mind kn mib env =
-  let new_inds = Mindmap_env.add kn mib env.env_globals.env_inductives in
+  let new_inds = Mindmap_env.add kn (kn,mib) env.env_globals.env_inductives in
   let new_globals =
     { env.env_globals with
 	env_inductives = new_inds } in
   { env with env_globals = new_globals }
+
+let make_mind_from_user env mp ?(dir = empty_dirpath) lab =
+  let (mind,_) = Pre_env.lookup_mind_data (make_mind mp dir lab) env in mind
 
 (* Universe constraints *)
 let set_universes g env =

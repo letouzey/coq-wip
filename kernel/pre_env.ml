@@ -22,14 +22,20 @@ open Declarations
 
 (* The type of environments. *)
 
+(** For constants, the [key] part is used by the bytecode compiler.
+    We also store there the [constant] itself in addition to the [constant_body].
+    This allows to retrieve the canonical [kernel_name] of a constant when
+    only the user [kernel_name] is known. Same for [mutual_inductive] copied
+    as data in the [env_inductives] map *)
 
 type key = int option ref
 
-type constant_key = constant_body * key
+type constant_data = constant * constant_body * key
+type mutual_inductive_data = mutual_inductive * mutual_inductive_body
 
 type globals = {
-  env_constants : constant_key Cmap_env.t;
-  env_inductives : mutual_inductive_body Mindmap_env.t;
+  env_constants : constant_data Cmap_env.t;
+  env_inductives : mutual_inductive_data Mindmap_env.t;
   env_modules : module_body MPmap.t;
   env_modtypes : module_type_body MPmap.t}
 
@@ -125,13 +131,17 @@ let env_of_named id env = env
 
 (* Global constants *)
 
-let lookup_constant_key kn env =
-  Cmap_env.find kn env.env_globals.env_constants
+let lookup_constant_data con env =
+  Cmap_env.find con env.env_globals.env_constants
 
-let lookup_constant kn env =
-  fst (Cmap_env.find kn env.env_globals.env_constants)
+let lookup_constant con env =
+  let (_,cb,_) = Cmap_env.find con env.env_globals.env_constants in cb
 
 (* Mutual Inductives *)
-let lookup_mind kn env =
-  Mindmap_env.find kn env.env_globals.env_inductives
+
+let lookup_mind_data mind env =
+  Mindmap_env.find mind env.env_globals.env_inductives
+
+let lookup_mind mind env =
+  let (_,mib) = Mindmap_env.find mind env.env_globals.env_inductives in mib
 

@@ -15,14 +15,20 @@ open Declarations
 
 (** The type of environments. *)
 
+(** For constants, the [key] part is used by the bytecode compiler.
+    We also store there the [constant] itself in addition to the [constant_body].
+    This allows to retrieve the canonical [kernel_name] of a constant when
+    only the user [kernel_name] is known. Same for [mutual_inductive] copied
+    as data in the [env_inductives] map *)
 
 type key = int option ref
 
-type constant_key = constant_body * key
+type constant_data = constant * constant_body * key
+type mutual_inductive_data = mutual_inductive * mutual_inductive_body
 
 type globals = {
-  env_constants : constant_key Cmap_env.t;
-  env_inductives : mutual_inductive_body Mindmap_env.t;
+  env_constants : constant_data Cmap_env.t;
+  env_inductives : mutual_inductive_data Mindmap_env.t;
   env_modules : module_body MPmap.t;
   env_modtypes : module_type_body MPmap.t}
 
@@ -72,10 +78,11 @@ val env_of_named     : identifier -> env -> env
 
 (** Global constants *)
 
-
-val lookup_constant_key : constant -> env -> constant_key
+val lookup_constant_data : constant -> env -> constant_data
 val lookup_constant : constant -> env -> constant_body
 
 (** Mutual Inductives *)
+
+val lookup_mind_data : mutual_inductive -> env -> mutual_inductive_data
 val lookup_mind : mutual_inductive -> env -> mutual_inductive_body
 
