@@ -230,4 +230,36 @@ val eq_id_key : id_key -> id_key -> bool
 
 val eq_con_chk : constant -> constant -> bool
 val eq_ind_chk : inductive -> inductive -> bool
+(** Unique symbols with fast comparison *)
 
+(** Ideally, this would be just integers, with creation done by a
+    gensym. But the same integer could then appear in two distinct
+    libraries, we need to incorporate the library name in the symbol.
+    This makes the comparison of symbols quite costly.
+    To mitigate this, we add a session-specific unique number in
+    the symbol. These session-specific datas should be erased before
+    any marshalling, and will be reconstructing lazily after the load.
+
+    Nota: the comparison of two symbols may differ from a session
+    to another. Sets or Maps of symbols should hence not be marshalled.
+*)
+
+module UniqSymb : sig
+
+  type t
+
+  val hcons : t -> t
+
+  val create : dir_path -> t
+
+  val cheat : dir_path -> int -> t
+
+  val compare : t -> t -> int
+
+  val to_string : t -> string
+
+  type saved_indexes
+  val save_and_clear_indexes : unit -> saved_indexes
+  val restore_indexes : saved_indexes -> unit
+
+end

@@ -431,3 +431,87 @@ let eq_id_key ik1 ik2 =
 let eq_con_chk (kn1,_) (kn2,_) = kn1=kn2
 let eq_mind_chk (kn1,_) (kn2,_) = kn1=kn2
 let eq_ind_chk (kn1,i1) (kn2,i2) = i1=i2&&eq_mind_chk kn1 kn2
+
+
+(** Unique symbols with fast comparison *)
+
+(** Ideally, this would be just integers, with creation done by a
+    gensym. But the same integer could then appear in two distinct
+    libraries, we need to incorporate the library name in the symbol.
+    This makes the comparison of symbols quite costly.
+    To mitigate this, we add a session-specific unique number in
+    the symbol. These session-specific datas should be erased before
+    any marshalling, and will be reconstructing lazily after the load.
+
+    Nota: the comparison of two symbols may differ from a session
+    to another. Sets or Maps of symbols should hence not be marshalled.
+*)
+
+module UniqSymb = struct
+
+  type t = { dir : dir_path;
+	     id : int; (* dir + id is the session-independent part *)
+	     mutable idx : int; (* local index, session-specific *) }
+
+  module H =
+    Hashcons.Make(
+    struct
+      type t' = t
+      type t = t'
+      type u = dir_path -> dir_path
+      let hash_sub hdir a = { a with dir = hdir a.dir }
+      let equal a1 a2 = (a1.id == a2.id) && (a1.dir == a2.dir)
+      let hash a = Hashtbl.hash (a.dir, a.id)
+    end)
+
+  let hcons =
+    let _,_,hdir,_,_ = hcons_names in
+    Hashcons.simple_hcons H.f hdir
+
+  let new_idx =
+    let gen_idx = ref 0 in
+    (fun () -> incr gen_idx; !gen_idx)
+
+  let indexes = ref []
+
+  type saved_indexes = (t * int) list
+
+  let save_and_clear_indexes () =
+    let s = List.map (fun t -> (t,t.idx)) !indexes in
+    List.iter (fun t -> t.idx <- 0) !indexes;
+    s
+
+  let restore_indexes sav =
+    List.iter (fun (t,i) -> t.idx <- i) sav
+
+  let update_idx a =
+    assert (a.idx = 0);
+    indexes := a :: !indexes;
+    let can = hcons a in
+    if can.idx = 0 then begin
+      if not (can==a) then indexes := can :: !indexes;
+      can.idx <- new_idx ()
+    end;
+    a.idx <- can.idx
+
+  let create =
+    let gen_id = ref 0 in
+    fun cur_dir ->
+      incr gen_id;
+      (* cur_dir should be different from any other library we might load.
+	 Hence no need to hash-cons this new symbol. *)
+      let a = { dir = cur_dir; id = !gen_id; idx = new_idx () } in
+      indexes := a :: !indexes;
+      a
+
+  (* For now ... *)
+  let cheat cur_dir n = { dir = cur_dir; id = n; idx = new_idx () }
+
+  let compare a1 a2 =
+    if a1.idx = 0 then update_idx a1;
+    if a2.idx = 0 then update_idx a2;
+    Pervasives.compare a1.idx a2.idx
+
+  let to_string a = string_of_dirpath a.dir ^"."^ string_of_int a.id
+
+end

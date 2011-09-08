@@ -20,7 +20,7 @@ val type0m_univ : universe  (** image of Prop in the universes hierarchy *)
 val type0_univ : universe  (** image of Set in the universes hierarchy *)
 val type1_univ : universe  (** the universe of the type of Prop/Set *)
 
-val make_universe_level : Names.dir_path * int -> universe_level
+val make_universe_level : Names.dir_path -> universe_level
 val make_universe : universe_level -> universe
 val make_univ : Names.dir_path * int -> universe
 
@@ -105,8 +105,3 @@ val dump_universes :
 
 val hcons1_univlevel : universe_level -> universe_level
 val hcons1_univ : universe -> universe
-
-
-type saved_tags
-val save_and_clear_atom_tags : unit -> saved_tags
-val restore_atom_tags : saved_tags -> unit

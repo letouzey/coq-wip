@@ -28,84 +28,22 @@ open Util
    union-find algorithm. The assertions $<$ and $\le$ are represented by
    adjacency lists *)
 
-module Atom = struct
-
-  type t = { dir : Names.dir_path;
-	     id : int;
-	     mutable tag : int; (* session-specific *) }
-
-  module H =
-    Hashcons.Make(
-    struct
-      type t' = t
-      type t = t'
-      type u = Names.dir_path -> Names.dir_path
-      let hash_sub hdir a = { a with dir = hdir a.dir }
-      let equal a1 a2 = (a1.id == a2.id) && (a1.dir == a2.dir)
-      let hash a = Hashtbl.hash (a.dir, a.id)
-    end)
-
-  let hcons =
-    let _,_,hdir,_,_ = Names.hcons_names in
-    Hashcons.simple_hcons H.f hdir
-
-  let new_tag =
-    let gensym = ref 0 in
-    (fun () -> incr gensym; !gensym)
-
-  let refs = ref []
-
-  type saved = (t * int) list
-
-  let save_and_clear () =
-    let s = List.map (fun t -> (t,t.tag)) !refs in
-    List.iter (fun t -> t.tag <- 0) !refs;
-    s
-
-  let restore sav =
-    List.iter (fun (t,i) -> t.tag <- i) sav
-
-  let retag a =
-    assert (a.tag = 0);
-    refs := a :: !refs;
-    let can = hcons a in
-    if can.tag = 0 then begin
-      refs := can :: !refs;
-      can.tag <- new_tag ()
-    end;
-    a.tag <- can.tag
-
-  let create dir id =
-    let a = { dir = dir; id = id; tag = 0 } in
-    retag a;
-    a
-
-  let compare a1 a2 =
-    if a1.tag = 0 then retag a1;
-    if a2.tag = 0 then retag a2;
-    Pervasives.compare a1.tag a2.tag
-
-end
-
-type saved_tags = Atom.saved
-let save_and_clear_atom_tags = Atom.save_and_clear
-let restore_atom_tags = Atom.restore
-
 module UniverseLevel = struct
 
   type t =
     | Set
-    | Level of Atom.t
+    | Level of Names.UniqSymb.t
 
   let compare u v = match u,v with
     | Set, Set -> 0
     | Set, _ -> -1
     | _, Set -> 1
-    | Level a1, Level a2 -> Atom.compare a1 a2
+    | Level a1, Level a2 -> Names.UniqSymb.compare a1 a2
 
   let to_string = function
     | Set -> "Set"
-    | Level a -> Names.string_of_dirpath a.Atom.dir^"."^string_of_int a.Atom.id
+    | Level a -> Names.UniqSymb.to_string a
+
 end
 
 module UniverseLMap = Map.Make (UniverseLevel)
@@ -131,9 +69,10 @@ type universe =
   | Atom of UniverseLevel.t
   | Max of UniverseLevel.t list * UniverseLevel.t list
 
-let make_universe_level (m,n) = UniverseLevel.Level (Atom.create m n)
+let make_universe_level m = UniverseLevel.Level (Names.UniqSymb.create m)
 let make_universe l = Atom l
-let make_univ c = Atom (make_universe_level c)
+let make_univ (m,n) = Atom (UniverseLevel.Level (Names.UniqSymb.cheat m n))
+
 
 let universe_level = function
   | Atom l -> Some l
@@ -703,10 +642,11 @@ let bellman_ford bottom g =
     necessarily minimal. Note: the result is unspecified if the input
     graph already contains [Type.n] nodes (calling a module Type is
     probably a bad idea anyway). *)
-let sort_universes orig =
+let sort_universes =
   let mp = Names.make_dirpath [Names.id_of_string "Type"] in
+  fun orig ->
   let rec make_level accu g i =
-    let type0 = UniverseLevel.Level (Atom.create mp i) in
+    let type0 = UniverseLevel.Level (Names.UniqSymb.cheat mp i) in
     let distances = bellman_ford type0 g in
     let accu, continue = UniverseLMap.fold (fun u x (accu, continue) ->
       let continue = continue || x < 0 in
@@ -743,7 +683,8 @@ let sort_universes orig =
   let max, levels = make_level UniverseLMap.empty orig 0 in
   (* defensively check that the result makes sense *)
   check_sorted orig levels;
-  let types = Array.init (max+1) (fun x -> UniverseLevel.Level (Atom.create mp x)) in
+  let types = Array.init (max+1)
+    (fun x -> UniverseLevel.Level (Names.UniqSymb.cheat mp x)) in
   let g = UniverseLMap.map (fun x -> Equiv types.(x)) levels in
   let g =
     let rec aux i g =
@@ -763,9 +704,8 @@ let sort_universes orig =
 
 (* Temporary inductive type levels *)
 
-let fresh_level =
-  let n = ref 0 in
-  fun () -> incr n; UniverseLevel.Level (Atom.create Names.empty_dirpath !n)
+let fresh_level () =
+  UniverseLevel.Level (Names.UniqSymb.create Names.empty_dirpath)
 
 let fresh_local_univ () = Atom (fresh_level ())
 
@@ -884,10 +824,10 @@ module Hunivlevel =
   Hashcons.Make(
     struct
       type t = universe_level
-      type u = Atom.t -> Atom.t
-      let hash_sub hatom = function
+      type u = Names.UniqSymb.t -> Names.UniqSymb.t
+      let hash_sub hus = function
 	| UniverseLevel.Set -> UniverseLevel.Set
-	| UniverseLevel.Level a -> UniverseLevel.Level (hatom a)
+	| UniverseLevel.Level a -> UniverseLevel.Level (hus a)
       let equal l1 l2 = match l1,l2 with
 	| UniverseLevel.Set, UniverseLevel.Set -> true
 	| UniverseLevel.Level a1, UniverseLevel.Level a2 -> a1 == a2
@@ -913,7 +853,7 @@ module Huniv =
       let hash = Hashtbl.hash
     end)
 
-let hcons1_univlevel = Hashcons.simple_hcons Hunivlevel.f Atom.hcons
+let hcons1_univlevel = Hashcons.simple_hcons Hunivlevel.f Names.UniqSymb.hcons
 
 let hcons1_univ = Hashcons.simple_hcons Huniv.f hcons1_univlevel
 
