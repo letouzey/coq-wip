@@ -48,3 +48,4 @@ val obj : Obj.t -> Obj.t
 
 val magic_hash : 'a -> 'a
 
+val hcons_string : string -> string

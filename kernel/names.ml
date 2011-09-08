@@ -389,8 +389,8 @@ module Hcn = Hashcons.Make(
     let hash x = Hashtbl.hash (fst x)
   end)
 
-let hcons_names () =
-  let hstring = Hashcons.simple_hcons Hashcons.Hstring.f () in
+let hcons_names =
+  let hstring = Hashcons.hcons_string in
   let hident = hstring in
   let hname = Hashcons.simple_hcons Hname.f hident in
   let hdir = Hashcons.simple_hcons Hdir.f hident in

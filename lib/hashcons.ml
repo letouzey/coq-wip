@@ -195,3 +195,5 @@ let magic_hash (c : 'a) =
   let r = obj (Obj.repr c) in
   init();
   (Obj.magic r : 'a)
+
+let hcons_string = simple_hcons Hstring.f ()
