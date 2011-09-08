@@ -105,3 +105,8 @@ val dump_universes :
 
 val hcons1_univlevel : universe_level -> universe_level
 val hcons1_univ : universe -> universe
+
+
+type saved_tags
+val save_and_clear_atom_tags : unit -> saved_tags
+val restore_atom_tags : saved_tags -> unit

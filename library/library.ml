@@ -630,6 +630,7 @@ let error_recursively_dependent_library dir =
    writing the content and computing the checksum... *)
 let save_library_to dir f =
   let cenv, seg = Declaremods.end_library dir in
+  let sav = Univ.save_and_clear_atom_tags () in
   let cenv, table = LightenLibrary.save cenv in
   let md = {
     md_name = dir;
@@ -651,8 +652,12 @@ let save_library_to dir f =
     let di = Digest.file f' in
     System.marshal_out ch di;
     System.marshal_out ch table;
-    close_out ch
-  with e -> warning ("Removed file "^f'); close_out ch; Sys.remove f'; raise e
+    close_out ch;
+    Univ.restore_atom_tags sav
+  with e ->
+    warning ("Removed file "^f'); close_out ch; Sys.remove f';
+    Univ.restore_atom_tags sav;
+    raise e
 
 (************************************************************************)
 (*s Display the memory use of a library. *)
