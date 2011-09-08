@@ -127,7 +127,10 @@ let hcons_inner_strings x =
 	if Obj.is_block o' && Obj.tag o' = Obj.string_tag then
 	  let s = (Obj.obj o' : string) in
 	  let s' = hcons_string s in
-	  if not (s == s') then Obj.set_field o i (Obj.repr s');
+	  if not (s == s') then begin
+	    Printf.printf "Canonizing : %s\n%!" s;
+	    Obj.set_field o i (Obj.repr s');
+	  end
 	else do_iter o'
       done
   in

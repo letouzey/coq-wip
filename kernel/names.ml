@@ -393,13 +393,20 @@ module Hcn = Hashcons.Make(
 
 let hcons_names () =
   let hstring = Hashcons.hcons_string in
-  let hident x =
+  let hident = hstring in
+  let hident' x =
     let y = hstring x in
     if not (x == y) then Printf.printf "Oups: %s\n%!" x;
     y
   in
-  let hname = Hashcons.simple_hcons Hname.f hident in
+  let hname = Hashcons.simple_hcons Hname.f hident' in
   let hdir = Hashcons.simple_hcons Hdir.f hident in
+(*  let hdir' dp =
+    let dp' = hdir dp in
+    if not (List.for_all2 (==) dp dp') then
+      Printf.printf "Oups: %s\n%!" (string_of_dirpath dp);
+    dp'
+  in*)
   let huniqid = Hashcons.simple_hcons Huniqid.f (hident,hdir) in
   let hmod = Hashcons.simple_hcons Hmod.f (hdir,huniqid,hstring) in
   let hmind = Hashcons.simple_hcons Hcn.f (hmod,hdir,hstring) in
