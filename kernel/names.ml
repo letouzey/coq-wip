@@ -27,7 +27,9 @@ type identifier = string
 
 let id_ord = Pervasives.compare
 
-let id_of_string s = check_ident_soft s; String.copy s
+let id_of_string s =
+  check_ident_soft s;
+  Hashcons.hcons_string (String.copy s)
 
 let string_of_id id = String.copy id
 
@@ -390,8 +392,12 @@ module Hcn = Hashcons.Make(
   end)
 
 let hcons_names () =
-  let hstring = Hashcons.simple_hcons Hashcons.Hstring.f () in
-  let hident = hstring in
+  let hstring = Hashcons.hcons_string in
+  let hident x =
+    let y = hstring x in
+    if not (x == y) then Printf.printf "Oups: %s\n%!" x;
+    y
+  in
   let hname = Hashcons.simple_hcons Hname.f hident in
   let hdir = Hashcons.simple_hcons Hdir.f hident in
   let huniqid = Hashcons.simple_hcons Huniqid.f (hident,hdir) in

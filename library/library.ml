@@ -401,6 +401,7 @@ let fetch_opaque_table (f,pos,digest) =
     if System.marshal_in ch <> digest then failwith "File changed!";
     let table = (System.marshal_in ch : LightenLibrary.table) in
     close_in ch;
+    Hashcons.hcons_inner_strings table;
     table
   with _ ->
     error
@@ -410,6 +411,7 @@ let fetch_opaque_table (f,pos,digest) =
 let intern_from_file f =
   let ch = System.with_magic_number_check raw_intern_library f in
   let lmd = System.marshal_in ch in
+  Hashcons.hcons_inner_strings lmd;
   let pos = pos_in ch in
   let digest = System.marshal_in ch in
   let table = lazy (fetch_opaque_table (f,pos,digest)) in
