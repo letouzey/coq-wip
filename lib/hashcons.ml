@@ -99,3 +99,5 @@ module Hstring = Make(
       if*) s1=s2(* then (incr successtr; true) else false*)
     let hash = Hashtbl.hash
   end)
+
+let hcons_string = simple_hcons Hstring.f ()

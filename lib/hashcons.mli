@@ -28,5 +28,4 @@ module Make(X:Comp) : (S with type t = X.t and type u = X.u)
 
 val simple_hcons : (unit -> 'u -> 't -> 't) -> ('u -> 't -> 't)
 
-module Hstring : (S with type t = string and type u = unit)
-
+val hcons_string : string -> string

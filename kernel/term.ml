@@ -1388,7 +1388,7 @@ let hcons_constr (hcon,hkn,hdir,hname,hident) =
   let hcci = hcons_term (hsortscci,hcon,hkn,hname,hident) in
   (hcci,hcci)
 
-let (hcons1_constr, hcons1_types) = hcons_constr (hcons_names())
+let (hcons1_constr, hcons1_types) = hcons_constr hcons_names
 
 
 (*******)
