@@ -32,25 +32,13 @@ module UniverseLevel = struct
 
   type t =
     | Set
-    | Level of Names.dir_path * int
+    | Level of int * int
 
-  (* A specialized comparison function: we compare the [int] part
-     first (this property is used by the [check_sorted] function
-     below). This way, most of the time, the [dir_path] part is not
-     considered. *)
-
-  let compare u v = match u,v with
-    | Set, Set -> 0
-    | Set, _ -> -1
-    | _, Set -> 1
-    | Level (dp1, i1), Level (dp2, i2) ->
-      if i1 < i2 then -1
-      else if i1 > i2 then 1
-      else compare dp1 dp2
+  let compare = Pervasives.compare
 
   let to_string = function
     | Set -> "Set"
-    | Level (d,n) -> Names.string_of_dirpath d^"."^string_of_int n
+    | Level (d,n) -> string_of_int d^"."^string_of_int n
 end
 
 module UniverseLMap = Map.Make (UniverseLevel)
@@ -76,7 +64,7 @@ type universe =
   | Atom of UniverseLevel.t
   | Max of UniverseLevel.t list * UniverseLevel.t list
 
-let make_universe_level (m,n) = UniverseLevel.Level (m,n)
+let make_universe_level (m,n) = UniverseLevel.Level (Hashtbl.hash m,n)
 let make_universe l = Atom l
 let make_univ c = Atom (make_universe_level c)
 
@@ -649,7 +637,7 @@ let bellman_ford bottom g =
     graph already contains [Type.n] nodes (calling a module Type is
     probably a bad idea anyway). *)
 let sort_universes orig =
-  let mp = Names.make_dirpath [Names.id_of_string "Type"] in
+  let mp = Hashtbl.hash (Names.make_dirpath [Names.id_of_string "Type"]) in
   let rec make_level accu g i =
     let type0 = UniverseLevel.Level (mp, i) in
     let distances = bellman_ford type0 g in
@@ -709,7 +697,7 @@ let sort_universes orig =
 (* Temporary inductive type levels *)
 
 let fresh_level =
-  let n = ref 0 in fun () -> incr n; UniverseLevel.Level (Names.make_dirpath [],!n)
+  let n = ref 0 in fun () -> incr n; UniverseLevel.Level (0,!n)
 
 let fresh_local_univ () = Atom (fresh_level ())
 
@@ -828,15 +816,9 @@ module Hunivlevel =
   Hashcons.Make(
     struct
       type t = universe_level
-      type u = Names.dir_path -> Names.dir_path
-      let hash_sub hdir = function
-	| UniverseLevel.Set -> UniverseLevel.Set
-	| UniverseLevel.Level (d,n) -> UniverseLevel.Level (hdir d,n)
-      let equal l1 l2 = match l1,l2 with
-	| UniverseLevel.Set, UniverseLevel.Set -> true
-	| UniverseLevel.Level (d,n), UniverseLevel.Level (d',n') ->
-	  n == n' && d == d'
-	| _ -> false
+      type u = unit
+      let hash_sub _ p = p
+      let equal = (=)
       let hash = Hashtbl.hash
     end)
 
@@ -859,8 +841,7 @@ module Huniv =
     end)
 
 let hcons1_univlevel =
-  let _,_,hdir,_,_ = Names.hcons_names in
-  Hashcons.simple_hcons Hunivlevel.f hdir
+  Hashcons.simple_hcons Hunivlevel.f ()
 
 let hcons1_univ = Hashcons.simple_hcons Huniv.f hcons1_univlevel
 
