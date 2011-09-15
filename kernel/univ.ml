@@ -30,15 +30,17 @@ open Util
 
 module UniverseLevel = struct
 
+  type mod_hash = int
+
   type t =
     | Set
-    | Level of int * int
+    | Level of int * mod_hash
 
   let compare = Pervasives.compare
 
   let to_string = function
     | Set -> "Set"
-    | Level (d,n) -> string_of_int d^"."^string_of_int n
+    | Level (n,d) -> string_of_int d^"."^string_of_int n
 end
 
 module UniverseLMap = Map.Make (UniverseLevel)
@@ -64,7 +66,18 @@ type universe =
   | Atom of UniverseLevel.t
   | Max of UniverseLevel.t list * UniverseLevel.t list
 
-let make_universe_level (m,n) = UniverseLevel.Level (Hashtbl.hash m,n)
+let make_universe_level =
+  let last = ref Names.empty_dirpath
+  and lasthash = ref 0 in
+  fun (m,n) ->
+    if m == !last then UniverseLevel.Level (n,!lasthash)
+    else
+      let h = Hashtbl.hash m in
+      last := m;
+      lasthash := h;
+(*      Printf.printf "Hash %s %d\n%!" (Names.string_of_dirpath m) h;*)
+      UniverseLevel.Level (n,h)
+
 let make_universe l = Atom l
 let make_univ c = Atom (make_universe_level c)
 
@@ -639,7 +652,7 @@ let bellman_ford bottom g =
 let sort_universes orig =
   let mp = Hashtbl.hash (Names.make_dirpath [Names.id_of_string "Type"]) in
   let rec make_level accu g i =
-    let type0 = UniverseLevel.Level (mp, i) in
+    let type0 = UniverseLevel.Level (i, mp) in
     let distances = bellman_ford type0 g in
     let accu, continue = UniverseLMap.fold (fun u x (accu, continue) ->
       let continue = continue || x < 0 in
@@ -676,7 +689,7 @@ let sort_universes orig =
   let max, levels = make_level UniverseLMap.empty orig 0 in
   (* defensively check that the result makes sense *)
   check_sorted orig levels;
-  let types = Array.init (max+1) (fun x -> UniverseLevel.Level (mp, x)) in
+  let types = Array.init (max+1) (fun x -> UniverseLevel.Level (x, mp)) in
   let g = UniverseLMap.map (fun x -> Equiv types.(x)) levels in
   let g =
     let rec aux i g =
@@ -697,7 +710,7 @@ let sort_universes orig =
 (* Temporary inductive type levels *)
 
 let fresh_level =
-  let n = ref 0 in fun () -> incr n; UniverseLevel.Level (0,!n)
+  let n = ref 0 in fun () -> incr n; UniverseLevel.Level (!n, 0)
 
 let fresh_local_univ () = Atom (fresh_level ())
 
