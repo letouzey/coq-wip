@@ -25,9 +25,11 @@ let (extern_state,intern_state) =
       Util.error "Write State only works with option -force-load-proofs";
     raw_extern s (freeze())),
   (fun s ->
-    Hashcons.hcons_inner_strings s;
-    unfreeze
-      (with_magic_number_check (raw_intern (Library.get_load_paths ())) s);
+    let state =
+      with_magic_number_check (raw_intern (Library.get_load_paths ())) s
+    in
+    Hashcons.hcons_inner_strings state;
+    unfreeze state;
     Library.overwrite_library_filenames s)
 
 (* Rollback. *)

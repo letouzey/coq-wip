@@ -118,19 +118,29 @@ let hcons_string = Hstring.f () ()
 let no_scan_tag = 251
 let tuple_p obj = Obj.is_block obj & (Obj.tag obj < no_scan_tag)
 
+(** !! Attention incomplet : manque le traitement des unicodes *)
+
+let is_ident_start c =
+  ('a' <= c && c <= 'z') ||
+  ('A' <= c && c <= 'Z') || c = '_'
+
 let hcons_inner_strings x =
   let rec do_iter o =
     if tuple_p o then
       let n = Obj.size o in
       for i = 0 to pred n do
 	let o' = Obj.field o i in
-	if Obj.is_block o' && Obj.tag o' = Obj.string_tag then
+	if Obj.is_block o' && Obj.tag o' = Obj.string_tag then begin
 	  let s = (Obj.obj o' : string) in
-	  let s' = hcons_string s in
-	  if not (s == s') then begin
-	    Printf.printf "Canonizing : %s\n%!" s;
-	    Obj.set_field o i (Obj.repr s');
+	  Printf.printf "Visiting : %s\n%!" s;
+	  if s <> "" && is_ident_start s.[0] then begin
+	    let s' = hcons_string s in
+	    if not (s == s') then begin
+	      Printf.printf "Canonizing : %s\n%!" s;
+	      Obj.set_field o i (Obj.repr s');
+	    end
 	  end
+	end
 	else do_iter o'
       done
   in
