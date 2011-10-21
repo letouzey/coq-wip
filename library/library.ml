@@ -637,6 +637,19 @@ let save_library_to dir f =
     md_objects = seg;
     md_deps = current_deps ();
     md_imports = current_reexports () } in
+
+(* DEBUG: pour savoir l'object contenant tel ou tel type fonctionnel :
+  let test l =
+    List.iter
+      (fun (n,o) ->
+	Printf.printf "Marshalling (%s,%s) ... %!" (string_of_id n) (Dyn.tag o);
+	let _ = Marshal.to_string o [] in
+	Printf.printf "OK\n%!")
+      l
+  in
+  let (_,o1,o2) = Obj.magic seg in test o1; test o2;
+*)
+
   if List.mem_assoc dir md.md_deps then
     error_recursively_dependent_library dir;
   let (f',ch) = raw_extern_library f in
