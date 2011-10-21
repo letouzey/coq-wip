@@ -257,18 +257,26 @@ type univ_entry =
 (** The graph of universes is then a kind of union-find structure.
     Invariant : these [universes] should never end in vo's. *)
 
-type universes = univ_entry InternLMap.t
+type universes =
+    { antimarshal : unit -> unit;
+      this : univ_entry InternLMap.t }
+
+let mk_universes m =
+  { antimarshal = (fun () -> ());
+    this = m }
 
 (** A graph either empty or obtained by adding arcs *)
 
-let initial_universes = InternLMap.empty
-let is_initial_universes = InternLMap.is_empty
+let initial_universes = mk_universes (InternLMap.empty)
+let is_initial_universes g = InternLMap.is_empty g.this
 
 let enter_equiv_arc u v g =
-  InternLMap.add u (Equiv v) g
+  mk_universes (InternLMap.add u (Equiv v) g.this)
 
 let enter_arc ca g =
-  InternLMap.add ca.univ (Canonical ca) g
+  mk_universes (InternLMap.add ca.univ (Canonical ca) g.this)
+
+let lookup_univ u g = InternLMap.find u g.this
 
 (* Every universe level has a unique canonical arc representative,
    We obtain it by following the Equiv links *)
@@ -278,7 +286,7 @@ let enter_arc ca g =
 let repr g u =
   let rec repr_rec u =
     let a =
-      try InternLMap.find u g
+      try lookup_univ u g
       with Not_found -> anomalylabstrm "Univ.repr"
 	  (str ("Universe "^InternLevel.to_string u^" undefined"))
     in
@@ -297,7 +305,7 @@ let terminal_arc u = {univ=u; lt=[]; le=[]}
 
 let safe_repr g u =
   let rec safe_repr_rec u =
-    match InternLMap.find u g with
+    match lookup_univ u g with
       | Equiv v -> safe_repr_rec v
       | Canonical arc -> arc
   in
@@ -580,6 +588,7 @@ let merge_constraints c g =
 let lookup_level u g =
   try Some (InternLMap.find u g) with Not_found -> None
 
+(*TODO
 (** [normalize_universes g] returns a graph where all edges point
     directly to the canonical representent of their target. The output
     graph should be equivalent to the input graph from a logical point
@@ -603,7 +612,7 @@ let normalize_universes g =
     (fun u arc cache -> snd (visit u (Lazy.lazy_from_val (Some arc)) cache))
     g InternLMap.empty
   in
-  let repr x = InternLMap.find x cache in
+  let repr x = lookup_univ x cache in
   let lrepr us = List.fold_left
     (fun e x -> InternLSet.add (repr x) e) InternLSet.empty us
   in
@@ -624,6 +633,7 @@ let normalize_universes g =
       }
   in
   InternLMap.mapi canonicalize g
+*)
 
 (** [check_sorted g sorted]: [g] being a universe graph, [sorted]
     being a map to levels, checks that all constraints in [g] are
@@ -636,7 +646,7 @@ let check_sorted g sorted =
     | Canonical {univ=u'; lt=lt; le=le} ->
       assert (u == u');
       List.iter (fun v -> assert (lu <= get v)) le;
-      List.iter (fun v -> assert (lu < get v)) lt) g
+      List.iter (fun v -> assert (lu < get v)) lt) g.this
 
 (**
   Bellman-Ford algorithm with a few customizations:
@@ -752,7 +762,7 @@ let sort_universes orig =
     in
     if continue then make_level accu g (i+1) else i, accu
   in
-  let max, levels = make_level InternLMap.empty orig 0 in
+  let max, levels = make_level InternLMap.empty orig.this 0 in
   (* defensively check that the result makes sense *)
   check_sorted orig levels;
   let types = Array.init (max+1) mk_univlevel in
@@ -768,7 +778,7 @@ let sort_universes orig =
         }) g in aux (i+1) g
       else g
     in aux 0 g
-  in g
+  in mk_universes g
 
 (**********************************************************************)
 (* Tools for sort-polymorphic inductive types                         *)
@@ -881,7 +891,7 @@ let pr_arc = function
       pr_intern_level u  ++ str " = " ++ pr_intern_level v ++ fnl ()
 
 let pr_universes g =
-  let graph = InternLMap.fold (fun u a l -> (u,a)::l) g [] in
+  let graph = InternLMap.fold (fun u a l -> (u,a)::l) g.this [] in
   prlist pr_arc graph
 
 let pr_constraints c =
@@ -904,7 +914,7 @@ let dump_universes output g =
     | Equiv v ->
       output Eq (InternLevel.to_string u) (InternLevel.to_string v)
   in
-    InternLMap.iter dump_arc g
+    InternLMap.iter dump_arc g.this
 
 (* Hash-consing *)
 

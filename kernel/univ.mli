@@ -103,7 +103,7 @@ val merge_constraints : constraints -> universes -> universes
 
 (** Cf. the "Print Universes" command *)
 
-val normalize_universes : universes -> universes
+(*val normalize_universes : universes -> universes*)
 val sort_universes : universes -> universes
 
 
