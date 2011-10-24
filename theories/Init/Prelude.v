@@ -13,6 +13,7 @@ Require Export Specif.
 Require Export Peano.
 Require Export Coq.Init.Wf.
 Require Export Coq.Init.Tactics.
+Require Export Logic_Type.
 (* Initially available plugins
    (+ nat_syntax_plugin loaded in Datatypes) *)
 Declare ML Module "extraction_plugin".

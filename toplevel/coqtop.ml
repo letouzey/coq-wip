@@ -63,7 +63,10 @@ let inputstate () =
   match !inputstate with
     | Some "" -> ()
     | Some s -> intern_state s
-    | None -> intern_state "initial.coq"
+    | None -> (*intern_state "initial.coq"*)
+      Library.require_library
+	[dummy_loc,Libnames.qualid_of_string "Coq.Init.Prelude"]
+	(Some true)
 
 let outputstate = ref ""
 let set_outputstate s = outputstate:=s
