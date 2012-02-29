@@ -73,6 +73,8 @@ type constraint_type = Lt | Le | Eq
 
 exception UniverseInconsistency of constraint_type * universe * universe
 
+val unsafe_disable_univ_checks : bool ref
+
 val merge_constraints : constraints -> universes -> universes
 val normalize_universes : universes -> universes
 val sort_universes : universes -> universes

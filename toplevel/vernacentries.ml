@@ -879,6 +879,15 @@ let make_silent_if_not_pcoq b =
 
 let _ =
   declare_bool_option
+    { optsync  = true;
+      optdepr  = false;
+      optname  = "unsafe universes";
+      optkey   = ["Unsafe";"Universes"];
+      optread  = (fun _ -> !Univ.unsafe_disable_univ_checks);
+      optwrite = (:=) Univ.unsafe_disable_univ_checks }
+
+let _ =
+  declare_bool_option
     { optsync  = false;
       optdepr  = false;
       optname  = "silent";

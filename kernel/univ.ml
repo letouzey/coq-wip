@@ -520,8 +520,11 @@ let enforce_eq u v c =
     | Atom u, Atom v -> Constraint.add (u,Eq,v) c
     | _ -> anomaly "A universe comparison can only happen between variables"
 
+let unsafe_disable_univ_checks = ref false
+
 let merge_constraints c g =
-  Constraint.fold enforce_constraint c g
+  if !unsafe_disable_univ_checks then g
+  else Constraint.fold enforce_constraint c g
 
 (* Normalization *)
 
