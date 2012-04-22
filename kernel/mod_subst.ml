@@ -174,7 +174,7 @@ let solve_delta_kn resolve kn =
 
 let kn_of_delta resolve kn =
   try solve_delta_kn resolve kn
-  with _ -> kn
+  with Change_equiv_to_inline _ -> kn
 
 let constant_of_delta_kn resolve kn =
   constant_of_kn_equiv kn (kn_of_delta resolve kn)
@@ -183,7 +183,7 @@ let gen_of_delta resolve x kn fix_can =
   try
     let new_kn = solve_delta_kn resolve kn in
     if kn == new_kn then x else fix_can new_kn
-  with _ -> x
+  with Change_equiv_to_inline _ -> x
 
 let constant_of_delta resolve con =
   let kn = user_con con in
