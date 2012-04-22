@@ -247,7 +247,7 @@ and check_same_fix_binder bl1 bl2 =
           check_same_binder ([na1],default_binder_kind,def1) ([na2],default_binder_kind,def2)
       | _ -> failwith "not same binder") bl1 bl2
 
-let same c d = try check_same_type c d; true with _ -> false
+let same_type c d = try check_same_type c d; true with Failure _ -> false
 
 (**********************************************************************)
 (* mapping patterns to cases_pattern_expr                                *)
@@ -799,7 +799,7 @@ and factorize_prod scopes vars aty c =
     ([],extern_symbol (Some Notation.type_scope,snd scopes) vars c (uninterp_notations c))
   with No_match -> match c with
   | GProd (loc,(Name id as na),bk,ty,c)
-      when same aty (extern_typ scopes vars (anonymize_if_reserved na ty))
+      when same_type aty (extern_typ scopes vars (anonymize_if_reserved na ty))
 	& not (occur_var_constr_expr id aty) (* avoid na in ty escapes scope *)
 	-> let (nal,c) = factorize_prod scopes (Idset.add id vars) aty c in
            ((loc,Name id)::nal,c)
@@ -811,7 +811,7 @@ and factorize_lambda inctx scopes vars aty c =
     ([],extern_symbol (None,snd scopes) vars c (uninterp_notations c))
   with No_match -> match c with
   | GLambda (loc,na,bk,ty,c)
-      when same aty (extern_typ scopes vars (anonymize_if_reserved na ty))
+      when same_type aty (extern_typ scopes vars (anonymize_if_reserved na ty))
 	& not (occur_name na aty) (* To avoid na in ty' escapes scope *)
 	-> let (nal,c) =
 	     factorize_lambda inctx scopes (add_vname vars na) aty c in
@@ -830,7 +830,7 @@ and extern_local_binder scopes vars = function
       let ty = extern_typ scopes vars (anonymize_if_reserved na ty) in
       (match extern_local_binder scopes (name_fold Idset.add na vars) l with
           (assums,ids,LocalRawAssum(nal,k,ty')::l)
-            when same ty ty' &
+            when same_type ty ty' &
               match na with Name id -> not (occur_var_constr_expr id ty')
                 | _ -> true ->
               (na::assums,na::ids,

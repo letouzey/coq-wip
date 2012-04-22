@@ -317,8 +317,7 @@ let interp_mutual_inductive (paramsl,indl) notations finite =
     mind_entry_inds = entries },
     impls
 
-let eq_constr_expr c1 c2 =
-  try let _ = Constrextern.check_same_type c1 c2 in true with _ -> false
+let eq_constr_expr = Constrextern.same_type
 
 (* Very syntactical equality *)
 let eq_local_binder d1 d2 = match d1,d2 with
