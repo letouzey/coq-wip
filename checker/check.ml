@@ -238,18 +238,18 @@ let explain_locate_library_error qid = function
   | LibNotFound ->
       errorlabstrm "load_absolute_library_from"
       (str"Cannot find library " ++ pr_path qid ++ str" in loadpath")
-  | e -> raise e
+  | e -> assert false
 
 let try_locate_absolute_library dir =
   try
     locate_absolute_library dir
-  with e ->
+  with (LibUnmappedDir | LibNotFound) as e ->
     explain_locate_library_error (path_of_dirpath dir) e
 
 let try_locate_qualified_library qid =
   try
     locate_qualified_library qid
-  with e ->
+  with (LibUnmappedDir | LibNotFound) as e ->
     explain_locate_library_error qid e
 
 (************************************************************************)

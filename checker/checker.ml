@@ -67,7 +67,7 @@ let add_path ~unix_path:dir ~coq_root:coq_dirpath =
 
 let convert_string d =
   try id_of_string d
-  with _ ->
+  with Errors.UserError _ ->
     if_verbose warning
       ("Directory "^d^" cannot be used as a Coq identifier (skipped)");
     flush_all ();
@@ -280,9 +280,9 @@ let rec explain_exn = function
 		   str ", characters " ++ int e ++ str "-" ++
 		   int (e+6) ++ str ")")) ++
 	       report ())
-  | reraise ->
+  | e ->
       hov 0 (anomaly_string () ++ str "Uncaught exception " ++
-	       str (Printexc.to_string reraise)++report())
+	       str (Printexc.to_string e)++report())
 
 let parse_args argv =
   let rec parse = function
@@ -335,16 +335,7 @@ let parse_args argv =
         msgnl (str "Unknown option " ++ str s); exit 1
     | s :: rem ->  add_compile s; parse rem
   in
-  try
-    parse (List.tl (Array.to_list argv))
-  with
-    | UserError(_,s) as e -> begin
-	try
-	  Stream.empty s; exit 1
-	with Stream.Failure ->
-	  msgnl (explain_exn e); exit 1
-      end
-    | e -> begin msgnl (explain_exn e); exit 1 end
+  parse (List.tl (Array.to_list argv))
 
 
 (* To prevent from doing the initialization twice *)
@@ -373,8 +364,8 @@ let run () =
     compile_files ();
     flush_all()
   with e ->
-    (Pp.ppnl(explain_exn e);
-    flush_all();
-    exit 1)
+    Pp.ppnl (explain_exn e);
+    flush_all ();
+    exit 1
 
 let start () = init(); run(); Check_stat.stats(); exit 0
