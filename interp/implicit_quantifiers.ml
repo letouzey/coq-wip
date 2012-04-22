@@ -73,24 +73,16 @@ let find_generalizable_ident id = Idpred.mem (root_of_id id) !generalizable_tabl
 let ids_of_list l =
   List.fold_right Idset.add l Idset.empty
 
-let locate_reference qid =
-  match Nametab.locate_extended qid with
-    | TrueGlobal ref -> true
-    | SynDef kn -> true
-
 let is_global id =
-  try
-    locate_reference (qualid_of_ident id)
-  with Not_found ->
-    false
+  try ignore (Nametab.locate_extended (qualid_of_ident id)); true
+  with Not_found -> false
+
+let is_named id env =
+  try ignore (Environ.lookup_named id env); true
+  with Not_found -> false
 
 let is_freevar ids env x =
-  try
-    if Idset.mem x ids then false
-    else
-      try ignore(Environ.lookup_named x env) ; false
-      with _ -> not (is_global x)
-  with _ -> true
+  not (Idset.mem x ids || is_named x env || is_global x)
 
 (* Auxiliary functions for the inference of implicitly quantified variables. *)
 
