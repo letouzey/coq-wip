@@ -44,6 +44,7 @@ val discard_all : unit -> unit
 val set_proof_mode : string -> unit
 
 exception NoCurrentProof
+(** This function may raise [NoCurrentProof] *)
 val give_me_the_proof : unit -> Proof.proof
 
 

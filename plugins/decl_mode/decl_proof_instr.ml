@@ -850,7 +850,7 @@ let build_per_info etype casee gls =
   let ind =
     try
       destInd hd
-    with _ ->
+    with Invalid_argument _ ->
       error "Case analysis must be done on an inductive object." in
   let mind,oind = Global.lookup_inductive ind in
   let nparams,index =

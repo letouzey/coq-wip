@@ -44,8 +44,12 @@ type coe_index
 type inheritance_path = coe_index list
 
 (** {6 Access to classes infos } *)
-val class_info : cl_typ -> (cl_index * cl_info_typ)
+
 val class_exists : cl_typ -> bool
+
+(** raises [Not_found] if this type isn't a class *)
+val class_info : cl_typ -> (cl_index * cl_info_typ)
+
 val class_info_from_index : cl_index -> cl_typ * cl_info_typ
 
 (** [find_class_type env sigma c] returns the head reference of [c] and its
@@ -71,6 +75,8 @@ val coercion_exists : coe_typ -> bool
 val coercion_value : coe_index -> (unsafe_judgment * bool)
 
 (** {6 Lookup functions for coercion paths } *)
+
+(** may raise [Not_found] if no such path *)
 val lookup_path_between_class : cl_index * cl_index -> inheritance_path
 
 val lookup_path_between : env -> evar_map -> types * types ->

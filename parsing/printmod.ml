@@ -135,7 +135,7 @@ let print_struct is_impl env mp struc =
   begin
     (* If [mp] is a globally visible module, we simply import it *)
     try Declaremods.really_import_module mp
-    with _ ->
+    with Not_found ->
     (* Otherwise we try to emulate an import by playing with nametab *)
       let fp = nametab_register_dir mp in
       List.iter (nametab_register_body mp fp) struc
