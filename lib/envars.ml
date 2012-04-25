@@ -143,7 +143,7 @@ let guess_camlp4bin () =
 let camlbin () =
   if !Flags.camlbin_spec then !Flags.camlbin else
     if !Flags.boot then Coq_config.camlbin else
-      try guess_camlbin () with _ -> Coq_config.camlbin
+      try guess_camlbin () with Not_found -> Coq_config.camlbin
 
 let camllib () =
   if !Flags.boot
@@ -157,9 +157,11 @@ let camllib () =
 let camlp4bin () =
   if !Flags.camlp4bin_spec then !Flags.camlp4bin else
     if !Flags.boot then Coq_config.camlp4bin else
-      try guess_camlp4bin () with _ -> let cb = camlbin () in
-				       if Sys.file_exists (Filename.concat cb Coq_config.camlp4) then cb
-				       else Coq_config.camlp4bin
+      try guess_camlp4bin ()
+      with Not_found ->
+	let cb = camlbin () in
+	if Sys.file_exists (Filename.concat cb Coq_config.camlp4) then cb
+	else Coq_config.camlp4bin
 
 let camlp4lib () =
   if !Flags.boot

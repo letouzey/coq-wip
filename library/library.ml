@@ -369,14 +369,14 @@ let explain_locate_library_error qid = function
 let try_locate_absolute_library dir =
   try
     locate_absolute_library dir
-  with e ->
+  with (LibUnmappedDir|LibNotFound) as e ->
     explain_locate_library_error (qualid_of_dirpath dir) e
 
 let try_locate_qualified_library (loc,qid) =
   try
     let (_,dir,f) = locate_qualified_library (Flags.is_verbose()) qid in
     dir,f
-  with e ->
+  with (LibUnmappedDir|LibNotFound) as e ->
     explain_locate_library_error qid e
 
 
