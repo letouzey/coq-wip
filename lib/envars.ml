@@ -130,20 +130,14 @@ let rec which l f =
 	then p
 	else which tl f
 
-let guess_camlbin () =
-  let path = try Sys.getenv "PATH" with _ -> raise Not_found in
-  let lpath = path_to_list path in
-    which lpath "ocamlc"
+(** Full name of program [f] in [$PATH], otherwise [Not_found] *)
 
-let guess_camlp4bin () =
-  let path = try Sys.getenv "PATH" with _ -> raise Not_found in
-  let lpath = path_to_list path in
-    which lpath Coq_config.camlp4
+let search_in_path f = which (path_to_list (Sys.getenv "PATH")) f
 
 let camlbin () =
   if !Flags.camlbin_spec then !Flags.camlbin else
     if !Flags.boot then Coq_config.camlbin else
-      try guess_camlbin () with Not_found -> Coq_config.camlbin
+      try search_in_path "ocamlc" with Not_found -> Coq_config.camlbin
 
 let camllib () =
   if !Flags.boot
@@ -157,7 +151,7 @@ let camllib () =
 let camlp4bin () =
   if !Flags.camlp4bin_spec then !Flags.camlp4bin else
     if !Flags.boot then Coq_config.camlp4bin else
-      try guess_camlp4bin ()
+      try search_in_path Coq_config.camlp4
       with Not_found ->
 	let cb = camlbin () in
 	if Sys.file_exists (Filename.concat cb Coq_config.camlp4) then cb
