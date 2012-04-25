@@ -385,10 +385,8 @@ let rec detype (isgoal:bool) avoid env t =
 	(* Meta in constr are not user-parsable and are mapped to Evar *)
 	GEvar (dl, n, None)
     | Var id ->
-	(try
-	  let _ = Global.lookup_named id in GRef (dl, VarRef id)
-	 with _ ->
-	  GVar (dl, id))
+	(try let _ = Global.lookup_named id in GRef (dl, VarRef id)
+	 with Not_found -> GVar (dl, id))
     | Sort s -> GSort (dl,detype_sort s)
     | Cast (c1,k,c2) ->
 	GCast(dl,detype isgoal avoid env c1, CastConv (k, detype isgoal avoid env c2))

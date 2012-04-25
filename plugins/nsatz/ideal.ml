@@ -589,8 +589,8 @@ let coefpoldep = Hashtbl.create 51
 
 (* coef of q in p = sum_i c_i*q_i *)
 let coefpoldep_find p q =
-  try (Hashtbl.find coefpoldep (p.num,q.num))
-  with _ -> []
+  try Hashtbl.find coefpoldep (p.num,q.num)
+  with Not_found -> []
 
 let coefpoldep_remove p q =
   Hashtbl.remove coefpoldep (p.num,q.num)

@@ -311,8 +311,6 @@ let defined () =
 	      str "On goal : " ++ fnl () ++  pr_open_subgoals () ++ fnl ()
 	    with _ -> mt ()
 	   ) ++msg)
-    | e -> raise e
-
 
 
 let build_functional_principle interactive_proof old_princ_type sorts funs i proof_tac hook =

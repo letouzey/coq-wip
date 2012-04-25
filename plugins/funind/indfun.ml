@@ -83,7 +83,7 @@ let functional_induction with_clean c princl pat =
       List.fold_right
 	(fun a acc ->
 	  try Idset.add (destVar a) acc
-	  with _ -> acc
+	  with Invalid_argument _ -> acc
 	)
 	args
 	Idset.empty

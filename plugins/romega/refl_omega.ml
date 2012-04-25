@@ -248,7 +248,8 @@ let add_equation env e =
 (* accès a une equation *)
 let get_equation env id =
   try Hashtbl.find env.equations id
-  with e -> Printf.printf "Omega Equation %d non trouvée\n" id; raise e
+  with Not_found as e ->
+    Printf.printf "Omega Equation %d non trouvée\n" id; raise e
 
 (* Affichage des termes réifiés *)
 let rec oprint ch = function
@@ -381,8 +382,8 @@ let rec reified_of_proposition env = function
   | Pprop t -> app coq_p_prop [| mk_nat (add_prop env t) |]
 
 let reified_of_proposition env f =
-  begin try reified_of_proposition env f
-  with e -> pprint stderr f; raise e end
+  try reified_of_proposition env f
+  with e -> pprint stderr f; raise e
 
 (* \subsection{Omega vers COQ réifié} *)
 
@@ -398,11 +399,8 @@ let reified_of_omega env body constant =
   List.fold_right mk_coeff body coeff_constant
 
 let reified_of_omega env body c  =
-  begin try
-    reified_of_omega env body c
-  with e ->
-    display_eq display_omega_var (body,c); raise e
-  end
+  try reified_of_omega env body c
+  with e -> display_eq display_omega_var (body,c); raise e
 
 (* \section{Opérations sur les équations}
 Ces fonctions préparent les traces utilisées par la tactique réfléchie

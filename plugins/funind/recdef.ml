@@ -1552,9 +1552,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
       (List.length res_vars)
       hook 
   with e ->
-    begin
-      (try ignore (Backtrack.backto previous_label) with _ -> ());
-      (*       anomaly "Cannot create termination Lemma" *)
-      raise e
-    end
+    ignore (Backtrack.backto previous_label);
+    (*       anomaly "Cannot create termination Lemma" *)
+    raise e
 

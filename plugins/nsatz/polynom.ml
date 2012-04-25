@@ -174,7 +174,7 @@ let rec equal p q =
 			       then failwith "raté")
 		    p1;
 		  true)
-	     with _ -> false)
+	     with Failure _ -> false)
     | (_,_) -> false
 
 (* normalize polynomial: remove head zeros, coefficients are normalized
@@ -520,12 +520,12 @@ let divP p q=
 
 let div_pol_rat p q=
   let x = max (max_var_pol p) (max_var_pol q) in
-    try (let s = div_pol (multP p (puisP (Pint(coef_int_tete q))
-				     (1+(deg x p) - (deg x q))))
-		   q x in
-         (* degueulasse, mais c 'est pour enlever un warning *)
-         if s==s then true else true)
-    with _ -> false
+  try
+    let _ = div_pol (multP p (puisP (Pint(coef_int_tete q))
+				(1+(deg x p) - (deg x q))))
+             q x
+    in true
+  with Failure _ -> false
 
 (***********************************************************************
   5. Pseudo-division and gcd with subresultants.

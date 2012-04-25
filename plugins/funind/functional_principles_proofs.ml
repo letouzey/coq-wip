@@ -1258,7 +1258,10 @@ let prove_princ_for_struct interactive_proof fun_num fnames all_funs _nparams : 
 	let ctxt,pte_app =  (decompose_prod_assum (pf_concl gl)) in
 	let pte,pte_args = (decompose_app pte_app) in
 	try
-	  let pte = try destVar pte with _ -> anomaly "Property is not a variable"  in
+	  let pte =
+	    try destVar pte
+	    with Invalid_argument _ -> anomaly "Property is not a variable"
+	  in
 	  let fix_info = Idmap.find  pte ptes_to_fix in
 	  let nb_args = fix_info.nb_realargs in
 	  tclTHENSEQ

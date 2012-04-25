@@ -55,7 +55,6 @@ let locate_with_msg msg f x =
     f x
   with
     | Not_found -> raise (Errors.UserError("", msg))
-    | e -> raise e
 
 
 let filter_map filter f =

@@ -175,7 +175,7 @@ let unsolvable lie =
 			raise (Failure "contradiction found"))
           |_->assert false)
 			     lr)
-   with _ -> ());
+   with Failure _ -> ());
    !res
 ;;
 
