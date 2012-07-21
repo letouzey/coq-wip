@@ -54,8 +54,8 @@ Proof. solve_proper. Qed.
 Lemma exists_div2 a : exists a' (b:bool), a == 2*a' + b.
 Proof.
  elim (Even_or_Odd a); [intros (a',H)| intros (a',H)].
- exists a'. exists false. now nzsimpl.
- exists a'. exists true. now simpl.
+ exists a'. exists false. simpl. now nzsimpl.
+ exists a'. exists true. simpl. now simpl.
 Qed.
 
 (** We can compact [testbit_odd_0] [testbit_even_0]

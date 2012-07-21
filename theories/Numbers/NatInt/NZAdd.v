@@ -15,7 +15,8 @@ Module Type NZAddProp (Import NZ : NZAxiomsSig')(Import NZBase : NZBaseProp NZ).
 Hint Rewrite
  pred_succ add_0_l add_succ_l mul_0_l mul_succ_l sub_0_r sub_succ_r : nz.
 Hint Rewrite one_succ two_succ : nz'.
-Ltac nzsimpl := autorewrite with nz.
+(*Ltac nzsimpl := autorewrite with nz.*)
+Ltac nzsimpl := try rewrite_db nz.
 Ltac nzsimpl' := autorewrite with nz nz'.
 
 Theorem add_0_r : forall n, n + 0 == n.
