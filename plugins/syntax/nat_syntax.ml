@@ -43,10 +43,10 @@ let nat_of_int dloc n =
       let ref_O = GRef (dloc, glob_O) in
       let ref_S = GRef (dloc, glob_S) in
       let rec mk_nat acc n =
-	if n <> zero then
-	  mk_nat (GApp (dloc,ref_S, [acc])) (sub_1 n)
-	else
+	if equal n zero then
 	  acc
+	else
+	  mk_nat (GApp (dloc,ref_S, [acc])) (sub_1 n)
       in
       mk_nat ref_O n
     end

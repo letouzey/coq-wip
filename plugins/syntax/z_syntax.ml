@@ -50,9 +50,9 @@ let pos_of_bignat dloc x =
   let ref_xO = GRef (dloc, glob_xO) in
   let rec pos_of x =
     match div2_with_rest x with
+      | (q,true) when equal q zero -> ref_xH
+      | (q,true) -> GApp (dloc,ref_xI,[pos_of q])
       | (q,false) -> GApp (dloc, ref_xO,[pos_of q])
-      | (q,true) when q <> zero -> GApp (dloc,ref_xI,[pos_of q])
-      | (q,true) -> ref_xH
   in
   pos_of x
 
@@ -107,10 +107,10 @@ let glob_Npos = ConstructRef path_of_Npos
 let n_path = make_path binnums "N"
 
 let n_of_binnat dloc pos_or_neg n =
-  if n <> zero then
-    GApp(dloc, GRef (dloc,glob_Npos), [pos_of_bignat dloc n])
-  else
+  if equal n zero then
     GRef (dloc, glob_N0)
+  else
+    GApp(dloc, GRef (dloc,glob_Npos), [pos_of_bignat dloc n])
 
 let error_negative dloc =
   user_err_loc (dloc, "interp_N", str "No negative numbers in type \"N\".")
@@ -158,12 +158,12 @@ let glob_POS = ConstructRef path_of_POS
 let glob_NEG = ConstructRef path_of_NEG
 
 let z_of_int dloc n =
-  if n <> zero then
+  if equal n zero then
+    GRef (dloc, glob_ZERO)
+  else
     let sgn, n =
       if is_pos_or_zero n then glob_POS, n else glob_NEG, Bigint.neg n in
     GApp(dloc, GRef (dloc,sgn), [pos_of_bignat dloc n])
-  else
-    GRef (dloc, glob_ZERO)
 
 (**********************************************************************)
 (* Printing Z via scopes                                              *)

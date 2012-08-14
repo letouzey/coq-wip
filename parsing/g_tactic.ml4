@@ -138,8 +138,9 @@ let mkTacCase with_evar = function
       TacCase (with_evar,cl)
   (* Reinterpret numbers as a notation for terms *)
   | [ElimOnAnonHyp n,(None,None)],None,None ->
+      assert (n >= 0);
       TacCase (with_evar,
-        (CPrim (Loc.ghost, Numeral (Bigint.of_int n)),
+        (CPrim (Loc.ghost, Numeral (Pos, string_of_int n)),
 	 NoBindings))
   (* Reinterpret ident as notations for variables in the context *)
   (* because we don't know if they are quantified or not *)

@@ -16,7 +16,6 @@ open Topconstr
 open Libnames
 open Globnames
 open Coqlib
-open Bigint
 
 exception Non_closed_ascii
 

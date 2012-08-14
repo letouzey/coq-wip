@@ -486,7 +486,7 @@ let rec shuffle_path k1 e1 k2 e2 =
       (({c=c1;v=v1}::l1) as l1'),
       (({c=c2;v=v2}::l2) as l2') ->
 	if v1 = v2 then
-          if k1*c1 + k2 * c2 = zero then (
+          if k1*c1 + k2 * c2 =? zero then (
             Lazy.force coq_f_cancel :: loop (l1,l2))
           else (
             Lazy.force coq_f_equal :: loop (l1,l2) )
@@ -596,7 +596,7 @@ let rec condense env = function
 (* \subsection{Elimination des zéros} *)
 
 let rec clear_zero = function
-   Oplus(Omult(Oatom v,Oint n),r) when n=zero ->
+   Oplus(Omult(Oatom v,Oint n),r) when n =? zero ->
      let tac',t = clear_zero r in
      Lazy.force coq_c_red5 :: tac',t
   | Oplus(f,r) ->

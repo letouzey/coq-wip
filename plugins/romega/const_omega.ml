@@ -298,8 +298,8 @@ let recognize t =
   let rec loop t =
     let f,l = dest_const_apply t in
     match Names.string_of_id f,l with
-       "xI",[t] -> Bigint.add Bigint.one (Bigint.mult Bigint.two (loop t))
-     | "xO",[t] -> Bigint.mult Bigint.two (loop t)
+       "xI",[t] -> Bigint.add_1 (Bigint.mult_2 (loop t))
+     | "xO",[t] -> Bigint.mult_2 (loop t)
      | "xH",[] -> Bigint.one
      | _ -> failwith "not a number" in
   let f,l = dest_const_apply t in
@@ -310,15 +310,15 @@ let recognize t =
       | _ -> failwith "not a number";;
 
 let rec mk_positive n =
-  if n=Bigint.one then Lazy.force coq_xH
+  if Bigint.equal n Bigint.one then Lazy.force coq_xH
   else
-    let (q,r) = Bigint.euclid n Bigint.two in
+    let (q,r) = Bigint.div2_with_rest n in
     Term.mkApp
-      ((if r = Bigint.zero then Lazy.force coq_xO else Lazy.force coq_xI),
+      ((if r then Lazy.force coq_xI else Lazy.force coq_xO),
        [| mk_positive q |])
 
 let mk_Z n =
-  if n = Bigint.zero then Lazy.force coq_Z0
+  if Bigint.equal n Bigint.zero then Lazy.force coq_Z0
   else if Bigint.is_strictly_pos n then
     Term.mkApp (Lazy.force coq_Zpos, [| mk_positive n |])
   else

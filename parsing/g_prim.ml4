@@ -113,6 +113,6 @@ GEXTEND Gram
     [ [ i = INT -> my_int_of_string loc i ] ]
   ;
   bigint: (* Negative numbers are dealt with specially *)
-    [ [ i = INT -> (Bigint.of_string i) ] ]
+    [ [ i = INT -> i ] ]
   ;
 END

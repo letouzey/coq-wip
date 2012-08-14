@@ -201,7 +201,7 @@ GEXTEND Gram
       | c=match_constr -> c
       | "("; c = operconstr LEVEL "200"; ")" ->
           (match c with
-              CPrim (_,Numeral z) when Bigint.is_pos_or_zero z ->
+	    | CPrim (_,Numeral (Pos, _)) ->
                 CNotation(loc,"( _ )",([c],[],[]))
             | _ -> c)
       | "{|"; c = record_declaration; "|}" -> c
@@ -274,7 +274,7 @@ GEXTEND Gram
   atomic_constr:
     [ [ g=global -> CRef g
       | s=sort -> CSort (loc,s)
-      | n=INT -> CPrim (loc, Numeral (Bigint.of_string n))
+      | n=INT -> CPrim (loc, Numeral (Pos, n))
       | s=string -> CPrim (loc, String s)
       | "_" -> CHole (loc, None)
       | id=pattern_ident -> CPatVar(loc,(false,id)) ] ]
@@ -360,10 +360,10 @@ GEXTEND Gram
       | "_" -> CPatAtom (loc,None)
       | "("; p = pattern LEVEL "200"; ")" ->
           (match p with
-              CPatPrim (_,Numeral z) when Bigint.is_pos_or_zero z ->
+              CPatPrim (_,Numeral (Pos,_)) ->
                 CPatNotation(loc,"( _ )",([p],[]),[])
             | _ -> p)
-      | n = INT -> CPatPrim (loc, Numeral (Bigint.of_string n))
+      | n = INT -> CPatPrim (loc, Numeral (Pos, n))
       | s = string -> CPatPrim (loc, String s) ] ]
   ;
   impl_ident_tail:

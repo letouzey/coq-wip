@@ -85,8 +85,8 @@ let make_constr_action
         Gram.action (fun (na:Loc.t * name) ->
 	  make (constr_expr_of_name na :: constrs, constrlists, binders) tl)
     | ETBigint ->
-        Gram.action (fun (v:Bigint.bigint) ->
-	  make (CPrim(Loc.ghost,Numeral v) :: constrs, constrlists, binders) tl)
+        Gram.action (fun (v:string) ->
+	  make (CPrim(Loc.ghost,Numeral (Pos,v)) :: constrs, constrlists, binders) tl)
     | ETConstrList (_,n) ->
 	Gram.action (fun (v:constr_expr list) ->
 	  make (constrs, v::constrlists, binders) tl)
@@ -133,8 +133,8 @@ let make_cases_pattern_action
         Gram.action (fun (na:Loc.t * name) ->
 	  make (cases_pattern_expr_of_name na :: env, envlist, hasbinders) tl)
     | ETBigint ->
-        Gram.action (fun (v:Bigint.bigint) ->
-	  make (CPatPrim (Loc.ghost,Numeral v) :: env, envlist, hasbinders) tl)
+        Gram.action (fun (v:string) ->
+	  make (CPatPrim (Loc.ghost,Numeral (Pos,v)) :: env, envlist, hasbinders) tl)
     | ETConstrList (_,_) ->
         Gram.action  (fun (vl:cases_pattern_expr list) ->
 	  make (env, vl :: envlist, hasbinders) tl)

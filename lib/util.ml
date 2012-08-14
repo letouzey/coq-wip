@@ -77,6 +77,16 @@ let drop_simple_quotes s =
   let n = String.length s in
   if n > 2 & s.[0] = '\'' & s.[n-1] = '\'' then String.sub s 1 (n-2) else s
 
+exception Nop
+
+let string_forall f s =
+  try
+    for i = 0 to String.length s - 1 do
+      if not (f s.[i]) then raise Nop;
+    done;
+    true
+  with Nop -> false
+
 (* substring searching... *)
 
 (* gdzie = where, co = what *)

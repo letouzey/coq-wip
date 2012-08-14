@@ -6,7 +6,9 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(** Arbitrary large integer numbers *)
+(** Arbitrary large integer numbers. *)
+
+(** NB : This is now a wrapper around OCaml's [Big_int] *)
 
 type bigint
 
@@ -20,14 +22,17 @@ val zero : bigint
 val one : bigint
 val two : bigint
 
-val div2_with_rest : bigint -> bigint * bool (** true=odd; false=even *)
 val add_1 : bigint -> bigint
 val sub_1 : bigint -> bigint
 val mult_2 : bigint -> bigint
 
+val neg : bigint -> bigint
 val add : bigint -> bigint -> bigint
 val sub : bigint -> bigint -> bigint
 val mult : bigint -> bigint -> bigint
+val pow : bigint -> int -> bigint
+
+val div2_with_rest : bigint -> bigint * bool (** true=odd; false=even *)
 val euclid : bigint -> bigint -> bigint * bigint
 
 val less_than : bigint -> bigint -> bool
@@ -37,6 +42,3 @@ val is_strictly_pos : bigint -> bool
 val is_strictly_neg : bigint -> bool
 val is_pos_or_zero : bigint -> bool
 val is_neg_or_zero : bigint -> bool
-val neg : bigint -> bigint
-
-val pow : bigint -> int -> bigint

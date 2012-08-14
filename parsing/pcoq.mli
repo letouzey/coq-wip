@@ -166,7 +166,7 @@ module Prim :
     val pattern_identref : identifier located Gram.entry
     val base_ident : identifier Gram.entry
     val natural : int Gram.entry
-    val bigint : Bigint.bigint Gram.entry
+    val bigint : string Gram.entry
     val integer : int Gram.entry
     val string : string Gram.entry
     val qualid : qualid located Gram.entry

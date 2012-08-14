@@ -318,20 +318,27 @@ let expand_curly_brackets loc mknot ntn l =
 let destPrim = function CPrim(_,t) -> Some t | _ -> None
 let destPatPrim = function CPatPrim(_,t) -> Some t | _ -> None
 
+let mkNumeral inv s =
+  let x = Bigint.of_string s in
+  let neg = Bigint.less_than x Bigint.zero in
+  Numeral ((if neg<>inv then Neg else Pos), Bigint.to_string x)
+
+let iszeros s = string_forall ((=) '0') s
+
 let make_notation_gen loc ntn mknot mkprim destprim l =
   if has_curly_brackets ntn
   then expand_curly_brackets loc mknot ntn l
   else match ntn,List.map destprim l with
     (* Special case to avoid writing "- 3" for e.g. (Z.opp 3) *)
-    | "- _", [Some (Numeral p)] when Bigint.is_strictly_pos p ->
+    | "- _", [Some (Numeral (Pos,s))] when not (iszeros s) ->
         mknot (loc,ntn,([mknot (loc,"( _ )",l)]))
     | _ ->
 	match decompose_notation_key ntn, l with
 	| [Terminal "-"; Terminal x], [] ->
-	    (try mkprim (loc, Numeral (Bigint.neg (Bigint.of_string x)))
+	    (try mkprim (loc, mkNumeral true x)
 	     with _ -> mknot (loc,ntn,[]))
 	| [Terminal x], [] ->
-	    (try mkprim (loc, Numeral (Bigint.of_string x))
+	    (try mkprim (loc, mkNumeral false x)
 	     with _ -> mknot (loc,ntn,[]))
 	| _ ->
 	    mknot (loc,ntn,l)

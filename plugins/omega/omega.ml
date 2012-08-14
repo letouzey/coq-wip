@@ -21,6 +21,7 @@ open Names
 
 module type INT = sig
   type bigint
+  val equal : bigint -> bigint -> bool
   val less_than : bigint -> bigint -> bool
   val add : bigint -> bigint -> bigint
   val sub : bigint -> bigint -> bigint
@@ -37,11 +38,11 @@ let debug = ref false
 module MakeOmegaSolver (Int:INT) = struct
 
 type bigint = Int.bigint
+let (=?) = Int.equal
 let (<?) = Int.less_than
-let (<=?) x y = Int.less_than x y or x = y
-let (>?) x y = Int.less_than y x
-let (>=?) x y = Int.less_than y x or x = y
-let (=?) = (=)
+let (<=?) x y = x <? y or x =? y
+let (>?) x y = y <? x
+let (>=?) x y = y <? x or x =? y
 let (+) = Int.add
 let (-) = Int.sub
 let ( * ) = Int.mult
@@ -51,12 +52,14 @@ let zero = Int.zero
 let one = Int.one
 let two = one + one
 let negone = Int.neg one
-let abs x = if Int.less_than x zero then Int.neg x else x
+let abs x = if x <? zero then Int.neg x else x
+let max x y = if x <? y then y else x
 let string_of_bigint = Int.to_string
 let neg = Int.neg
 
-(* To ensure that polymorphic (<) is not used mistakenly on big integers *)
-(* Warning: do not use (=) either on big int *)
+
+(* To ensure that polymorphic (<) and (=) aren't used mistakenly on big integers *)
+
 let (<) = ((<) : int -> int -> bool)
 let (>) = ((>) : int -> int -> bool)
 let (<=) = ((<=) : int -> int -> bool)
@@ -294,7 +297,7 @@ let normalize ({id=id; kind=eq_flag; body=e; constant =x} as eq) =
             add_event (CONSTANT_NOT_NUL(id,x)); raise UNSOLVABLE
          end
       | DISE ->
-          if x <> zero then [] else begin
+          if not (x =? zero) then [] else begin
             add_event (CONSTANT_NUL id); raise UNSOLVABLE
           end
       | INEQ ->
@@ -303,11 +306,11 @@ let normalize ({id=id; kind=eq_flag; body=e; constant =x} as eq) =
           end
   end else
     let gcd = pgcd_l (List.map (fun f -> abs f.c) e) in
-    if eq_flag=EQUA & x mod gcd <> zero then begin
+    if eq_flag=EQUA & not (x mod gcd =? zero) then begin
       add_event (NOT_EXACT_DIVIDE (eq,gcd)); raise UNSOLVABLE
-    end else if eq_flag=DISE & x mod gcd <> zero then begin
+    end else if eq_flag=DISE & not (x mod gcd =? zero) then begin
       add_event (FORGET_C eq.id); []
-    end else if gcd <> one then begin
+    end else if not (gcd =? one) then begin
       let c = floor_div x gcd in
       let d = x - c * gcd in
       let new_eq = {id=id; kind=eq_flag; constant=c;
@@ -397,11 +400,30 @@ let rec banerjee ((_,_,print_var) as new_ids) (sys_eq,sys_ineq) =
 
 type kind = INVERTED | NORMAL
 
+module Coeffs = struct
+  type t = coeff list
+  let hash = Hashtbl.hash
+  let rec equal l l' = match l, l' with
+    | [], [] -> true
+    | x::xs, y::ys -> x.v = y.v && Int.equal x.c y.c && equal xs ys
+    | _ -> false
+end
+
+module HC = Hashtbl.Make(Coeffs)
+
+module CoeffsCst = struct
+  type t = coeff list * bigint
+  let hash = Hashtbl.hash
+  let equal (l,c) (l',c') = Coeffs.equal l l' && Int.equal c c'
+end
+
+module HCC = Hashtbl.Make(CoeffsCst)
+
 let redundancy_elimination new_eq_id system =
   let normal = function
      ({body=f::_} as e) when f.c <? zero ->  negate_eq e, INVERTED
    | e -> e,NORMAL in
-  let table = Hashtbl.create 7 in
+  let table = HC.create 7 in
   List.iter
     (fun e ->
        let ({body=ne} as nx) ,kind = normal e in
@@ -411,7 +433,7 @@ let redundancy_elimination new_eq_id system =
          end else add_event (FORGET_C nx.id)
        else
        try
-         let (optnormal,optinvert) = Hashtbl.find table ne in
+         let (optnormal,optinvert) = HC.find table ne in
          let final =
            if kind = NORMAL then begin
              match optnormal with
@@ -439,15 +461,14 @@ let redundancy_elimination new_eq_id system =
                 raise UNSOLVABLE
               end
           | _ -> () end;
-         Hashtbl.remove table ne;
-         Hashtbl.add table ne final
+         HC.replace table ne final;
        with Not_found ->
-         Hashtbl.add table ne
+         HC.add table ne
            (if kind = NORMAL then (Some nx,None) else (None,Some nx)))
     system;
   let accu_eq = ref [] in
   let accu_ineq = ref [] in
-  Hashtbl.iter
+  HC.iter
     (fun p0 p1 -> match (p0,p1) with
        | (e, (Some x, Some y)) when x.constant =? y.constant ->
            let id=new_eq_id () in
@@ -604,15 +625,15 @@ let negation (eqs,ineqs) =
   let normal = function
     | ({body=f::_} as e) when f.c <? zero ->  negate_eq e, INVERTED
     | e -> e,NORMAL in
-  let table = Hashtbl.create 7 in
+  let table = HCC.create 7 in
   List.iter (fun e ->
                let {body=ne;constant=c} ,kind = normal e in
-               Hashtbl.add table (ne,c) (kind,e)) diseq;
+               HCC.add table (ne,c) (kind,e)) diseq;
   List.iter (fun e ->
                assert (e.kind = EQUA);
                let {body=ne;constant=c},kind = normal e in
                try
-		 let (kind',e') = Hashtbl.find table (ne,c) in
+		 let (kind',e') = HCC.find table (ne,c) in
 		 add_event (NEGATE_CONTRADICT (e,e',kind=kind'));
 		 raise UNSOLVABLE
                with Not_found -> ()) eqs

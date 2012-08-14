@@ -1003,6 +1003,8 @@ let message_redundant_alias (id1,id2) =
 
 *)
 
+let iszeros s = string_forall ((=) '0') s
+
 let rec subst_pat_iterator y t p = match p with
   | RCPatAtom (_,id) ->
     begin match id with Some x when x = y -> t |_ -> p end
@@ -1071,9 +1073,9 @@ let drop_notations_pattern looked_for =
  	      raise (InternalizationError (loc,NotAConstructor r)) in
       let (argscs1,argscs2) = find_remaining_scopes expl_pl pl g in
       RCPatCstr (loc, g, List.map2 (in_pat_sc env) argscs1 expl_pl, List.map2 (in_pat_sc env) argscs2 pl)
-    | CPatNotation (loc,"- _",([CPatPrim(_,Numeral p)],[]),[])
-	when Bigint.is_strictly_pos p ->
-      fst (Notation.interp_prim_token_cases_pattern_expr loc looked_for (Numeral (Bigint.neg p))
+    | CPatNotation (loc,"- _",([CPatPrim(_,Numeral (Pos,p))],[]),[])
+	when not (iszeros p) ->
+      fst (Notation.interp_prim_token_cases_pattern_expr loc looked_for (Numeral (Neg,p))
 	     (env.tmp_scope,env.scopes))
     | CPatNotation (_,"( _ )",([a],[]),[]) ->
       in_pat env a
@@ -1359,9 +1361,9 @@ let internalize sigma globalenv env allow_patvar lvar c =
 	let inc1 = intern (reset_tmp_scope env) c1 in
 	GLetIn (loc, snd na, inc1,
           intern (push_name_env lvar (impls_term_list inc1) env na) c2)
-    | CNotation (loc,"- _",([CPrim (_,Numeral p)],[],[]))
-	when Bigint.is_strictly_pos p ->
-	intern env (CPrim (loc,Numeral (Bigint.neg p)))
+    | CNotation (loc,"- _",([CPrim (_,Numeral (Pos,p))],[],[]))
+	when not (iszeros p) ->
+	intern env (CPrim (loc,Numeral (Neg,p)))
     | CNotation (_,"( _ )",([a],[],[])) -> intern env a
     | CNotation (loc,ntn,args) ->
         intern_notation intern env lvar loc ntn args

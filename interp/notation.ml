@@ -265,14 +265,22 @@ let declare_prim_token_interpreter sc interp (patl,uninterp,b) =
         (glob_prim_constr_key pat) (sc,uninterp,b))
     patl
 
-let mkNumeral n = Numeral n
+let mkNumeral n =
+  if less_than n zero then Numeral (Neg, to_string (neg n))
+  else Numeral (Pos, to_string n)
 let mkString s = String s
+
+let ofNumeral s n = match s with
+  | Pos -> of_string n
+  | Neg -> neg (of_string n)
 
 let delay dir int loc x = (dir, (fun () -> int loc x))
 
 let declare_numeral_interpreter sc dir interp (patl,uninterp,inpat) =
   declare_prim_token_interpreter sc
-    (fun cont loc -> function Numeral n-> delay dir interp loc n | p -> cont loc p)
+    (fun cont loc -> function
+      | Numeral (s,n) -> delay dir interp loc (ofNumeral s n)
+      | p -> cont loc p)
     (patl, (fun r -> Option.map mkNumeral (uninterp r)), inpat)
 
 let declare_string_interpreter sc dir interp (patl,uninterp,inpat) =
@@ -361,8 +369,8 @@ let find_notation ntn sc =
   Gmap.find ntn (find_scope sc).notations
 
 let notation_of_prim_token = function
-  | Numeral n when is_pos_or_zero n -> to_string n
-  | Numeral n -> "- "^(to_string (neg n))
+  | Numeral (Pos,n) -> n
+  | Numeral (Neg,n) -> "- "^n
   | String _ -> raise Not_found
 
 let find_prim_token g loc p sc =
@@ -383,7 +391,9 @@ let interp_prim_token_gen g loc p local_scopes =
   with Not_found ->
     user_err_loc (loc,"interp_prim_token",
     (match p with
-      | Numeral n -> str "No interpretation for numeral " ++ str (to_string n)
+      | Numeral (s,n) ->
+	  let sgn = if s = Neg then "-" else "" in
+	  str "No interpretation for numeral " ++ str (sgn^n)
       | String s -> str "No interpretation for string " ++ qs s) ++ str ".")
 
 let interp_prim_token =

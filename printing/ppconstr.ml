@@ -14,7 +14,6 @@ open Names
 open Nameops
 open Libnames
 open Ppextend
-open Constrexpr
 open Constrexpr_ops
 open Topconstr
 open Term
@@ -22,6 +21,7 @@ open Decl_kinds
 open Misctypes
 open Locus
 open Genredexpr
+open Constrexpr
 (*i*)
 
 let sep_v = fun _ -> str"," ++ spc()
@@ -57,7 +57,8 @@ let prec_less child (parent,assoc) =
       | Any -> true
 
 let prec_of_prim_token = function
-  | Numeral p -> if Bigint.is_pos_or_zero p then lposint else lnegint
+  | Numeral (Pos,_) -> lposint
+  | Numeral (Neg,_) -> lnegint
   | String _ -> latom
 
 open Notation
@@ -151,7 +152,8 @@ let pr_or_var pr = function
   | ArgVar (loc,s) -> pr_lident (loc,s)
 
 let pr_prim_token = function
-  | Numeral n -> str (Bigint.to_string n)
+  | Numeral (Pos,n) -> str n
+  | Numeral (Neg,n) -> str ("-"^n)
   | String s -> qs s
 
 let pr_evar pr n l =
