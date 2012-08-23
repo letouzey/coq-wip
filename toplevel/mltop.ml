@@ -63,7 +63,7 @@ type kind_load =
 let load = ref WithoutTop
 
 (* Are we in a native version of Coq? *)
-let is_native = IFDEF Byte THEN false ELSE true END
+let is_native = Dynlink.is_native
 
 (* Sets and initializes a toplevel (if any) *)
 let set_top toplevel = load := WithTop toplevel
@@ -78,7 +78,7 @@ let is_ocaml_top () =
     |_ -> false
 
 (* Tests if we can load ML files *)
-let has_dynlink = IFDEF HasDynlink THEN true ELSE false END
+let has_dynlink = not Dynlink.is_native || Coq_config.has_natdynlink
 
 (* Runs the toplevel loop of Ocaml *)
 let ocaml_toploop () =
@@ -95,23 +95,12 @@ let dir_ml_load s =
        | (UserError _ | Failure _ | Anomaly _ | Not_found as u) -> raise u
        | _ -> errorlabstrm "Mltop.load_object" (str"Cannot link ml-object " ++
                 str s ++ str" to Coq code."))
-(* TO DO: .cma loading without toplevel *)
     | WithoutTop ->
-      IFDEF HasDynlink THEN
-	(* WARNING
-	 * if this code section starts to use a module not used elsewhere
-	 * in this file, the Makefile dependency logic needs to be updated.
-	 *)
-        let warn = Flags.is_verbose() in
-        let _,gname = find_file_in_path ~warn !coq_mlpath_copy s in
-        try
-          Dynlink.loadfile gname;
-	with | Dynlink.Error a ->
-          errorlabstrm "Mltop.load_object" (str (Dynlink.error_message a))
-      ELSE
-        errorlabstrm "Mltop.no_load_object"
-            (str"Loading of ML object file forbidden in a native Coq.")
-      END
+      let warn = Flags.is_verbose() in
+      let _,gname = find_file_in_path ~warn !coq_mlpath_copy s in
+      try Dynlink.loadfile gname;
+      with Dynlink.Error a ->
+        errorlabstrm "Mltop.load_object" (str (Dynlink.error_message a))
 
 (* Dynamic interpretation of .ml *)
 let dir_ml_use s =
@@ -189,7 +178,7 @@ let file_of_name name =
   let fail s =
     errorlabstrm "Mltop.load_object"
       (str"File not found on loadpath : " ++ str s) in
-  if is_native then
+  if Dynlink.is_native then
     let name = match suffix with
       | Some ((".cmo"|".cma") as suffix) ->
           (Filename.chop_suffix name suffix) ^ ".cmxs"

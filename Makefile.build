@@ -733,25 +733,6 @@ grammar/grammar.cma: | grammar/grammar.mllib.d
 	$(SHOW)'OCAMLC -a $@'   
 	$(HIDE)$(OCAMLC) $(BYTEFLAGS) $^ -linkall -a -o $@
 
-# toplevel/mltop.ml4 (ifdef Byte)
-
-## NB: mltop.ml correspond to the byte version (and hence need no special rules)
-## while the opt version is in mltop.optml. Since mltop.optml uses mltop.ml.d
-## as dependency file, be sure to import the same modules in the different sections
-## of the ml4
-
-toplevel/mltop.cmx: toplevel/mltop.optml | toplevel/mltop.ml.d toplevel/mltop.ml4.d
-	$(SHOW)'OCAMLOPT  $<'
-	$(HIDE)$(OCAMLOPT) $(OPTFLAGS) -c -impl $< -o $@
-
-toplevel/mltop.ml: toplevel/mltop.ml4 config/Makefile # no camlp4deps here
-	$(SHOW)'CAMLP4O   $<'
-	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) -DByte -DHasDynlink -impl $< -o $@
-
-toplevel/mltop.optml: toplevel/mltop.ml4 config/Makefile # no camlp4deps here
-	$(SHOW)'CAMLP4O   $<'
-	$(HIDE)$(CAMLP4O) $(PR_O) $(CAMLP4USE) $(NATDYNLINKDEF) -impl $< -o $@
-
 ide/coqide_main.ml: ide/coqide_main.ml4
 	$(SHOW)'CAMLP4O   $<'
 	$(HIDE)$(CAMLP4O) $(CAMLP4USE) -impl $< -o $@
@@ -760,6 +741,13 @@ ide/coqide_main_opt.ml: ide/coqide_main.ml4 config/Makefile # no camlp4deps here
 	$(SHOW)'CAMLP4O   $<'
 	$(HIDE)$(CAMLP4O) $(CAMLP4USE) -D$(IDEOPTINT) -impl $< -o $@
 
+ifeq ($(HASNATDYNLINK)-$(BEST),false-opt)
+lib/dynlink.cmxa: lib/dynlink.optml
+	ln -s $(CAMLLIB)/dynlink.cmi lib/ && \
+	$(OCAMLOPT) $(USERFLAGS) -a -o $@ -intf-suffix .cmi -impl $<
+toplevel/mltop.cmo: lib/dynlink.cmxa
+toplevel/mltop.cmx: lib/dynlink.cmxa
+endif
 
 # pretty printing of the revision number when compiling a checked out
 # source tree

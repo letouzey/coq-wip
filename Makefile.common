@@ -30,14 +30,10 @@ else
 CAMLP4MOD:=gramlib
 endif
 
-ifeq ($(HASNATDYNLINK)-$(BEST),true-opt)
-  DYNLINKCMXA:=dynlink.cmxa
-  NATDYNLINKDEF:=-DHasDynlink
-  DEPNATDYN:=
+ifeq ($(HASNATDYNLINK)-$(BEST),false-opt)
+DEPNATDYN:=-natdynlink no
 else
-  DYNLINKCMXA:=
-  NATDYNLINKDEF:=
-  DEPNATDYN:=-natdynlink no
+DEPNATDYN:=
 endif
 
 INSTALLBIN:=install

@@ -95,14 +95,12 @@ let module_of_file name =
 
 (* Build the list of files to link and the list of modules names *)
 let files_to_link userfiles =
-  let dyn_objs =
-    if not !opt || Coq_config.has_natdynlink then dynobjs else [] in
   let toplevel_objs =
     if !top then topobjs else if !opt then notopobjs else [] in
-  let objs = dyn_objs @ libobjs @ core_objs @ toplevel_objs in
+  let objs = dynobjs @ libobjs @ core_objs @ toplevel_objs in
   let modules = List.map module_of_file (objs @ userfiles)
   in
-  let libs = dyn_objs @ libobjs @ core_libs @ toplevel_objs in
+  let libs = dynobjs @ libobjs @ core_libs @ toplevel_objs in
   let libstolink =
     (if !opt then List.map native_suffix libs else libs) @ userfiles
   in
@@ -210,12 +208,6 @@ let clean file =
     rm (basename ^ ".cmx")
   end
 
-(* Creates another temporary file for Dynlink if needed *)
-let tmp_dynlink()=
-  let tmp = Filename.temp_file "coqdynlink" ".ml" in
-  let _ = Sys.command ("echo \"Dynlink.init();;\" > "^tmp) in
-  tmp
-
 (* Initializes the kind of loading in the main program *)
 let declare_loading_string () =
   if not !top then
@@ -282,18 +274,11 @@ let main () =
   in
   (* files to link *)
   let (modules, tolink) = files_to_link userfiles in
-  (*file for dynlink *)
-  let dynlink=
-    if not (!opt || !top) then
-      [tmp_dynlink()]
-    else
-      []
-  in
   (* the list of the loaded modules *)
   let main_file = Filename.quote (create_tmp_main_file modules) in
   try
     let args =
-      options @ (includes ()) @ copts @ tolink @ dynlink @ [ main_file ] in
+      options @ (includes ()) @ copts @ tolink @ [ main_file ] in
       (* add topstart.cmo explicitly because we shunted ocamlmktop wrapper *)
     let args = if !top then args @ [ "topstart.cmo" ] else args in
       (* Now, with the .cma, we MUST use the -linkall option *)

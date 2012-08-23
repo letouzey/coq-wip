@@ -48,6 +48,13 @@ let read_file f =
 
 module Coq_config = struct include Myocamlbuild_config end
 
+let _ =
+  if not Coq_config.has_natdynlink then begin
+    print_string
+      "Error: myocamlbuild only supports natdynlink for the moment\n";
+    exit 1
+  end
+
 let _ = begin
   Options.ocamlc := A Coq_config.ocamlc;
   Options.ocamlopt := A Coq_config.ocamlopt;
@@ -86,10 +93,8 @@ let camlp4incl = S[A"-I"; A Coq_config.camlp4lib]
 let camlp4compat = Sh Coq_config.camlp4compat
 let opt = (Coq_config.best = "opt")
 let ide = Coq_config.has_coqide
-let hasdynlink = Coq_config.has_natdynlink
 let os5fix = (Coq_config.natdynlinkflag = "os5fixme")
-let flag_dynlink = if hasdynlink then A"-DHasDynlink" else N
-let dep_dynlink = if hasdynlink then N else Sh"-natdynlink no"
+let dep_dynlink = Sh"-natdynlink no"
 let lablgtkincl = Sh Coq_config.coqideincl
 let local = Coq_config.local
 let cflags = S[A"-ccopt";A Coq_config.cflags]
@@ -301,26 +306,6 @@ let extra_rules () = begin
 
   ocaml_lib ~extern:true ~dir:Coq_config.camlp4lib ~tag_name:"use_camlpX"
     ~byte:true ~native:true (if use_camlp5 then "gramlib" else "camlp4lib");
-
-(** Special case of toplevel/mltop.ml4:
-    - mltop.ml will be the old mltop.optml and be used to obtain mltop.cmx
-    - we add a special mltop.ml4 --> mltop.cmo rule, before all the others
-*)
-  flag ["is_mltop"; "p4option"] flag_dynlink;
-
-(*TODO: this is rather ugly for a simple file, we should try to
-        benefit more from predefined rules *)
-  let mltop = "toplevel/mltop" in
-  let ml4 = mltop^".ml4" and mlo = mltop^".cmo" and
-      ml = mltop^".ml" and mld = mltop^".ml.depends"
-  in
-  rule "mltop_byte" ~deps:[ml4;mld]  ~prod:mlo ~insert:`top
-    (fun env build ->
-       Ocaml_compiler.prepare_compile build ml;
-       Cmd (S [!Options.ocamlc; A"-c"; A"-pp";
-	       Quote (S [camlp4o; T(tags_of_pathname ml4 ++ "p4mod");
-			 A"-DByte";A"-DHasDynlink";camlp4compat;A"-impl"]);
-	       A"-rectypes"; camlp4incl; incl ml4; A"-impl"; P ml4]));
 
 (** All caml files are compiled with -rectypes and +camlp4/5
     and ide files need +lablgtk2 *)
