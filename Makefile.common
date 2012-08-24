@@ -212,18 +212,12 @@ IDECMA:=ide/ide.cma
 LINKIDE:=$(IDEDEPS) $(IDECMA) ide/coqide_main.ml
 LINKIDEOPT:=$(IDEOPTDEPS) $(patsubst %.cma,%.cmxa,$(IDEDEPS:.cmo=.cmx)) $(IDECMA:.cma=.cmxa) ide/coqide_main_opt.ml
 
-# modules known by the toplevel of Coq
-
-OBJSMOD:=$(shell cat $(CORECMA:.cma=.mllib))
-
-IDEMOD:=$(shell cat ide/ide.mllib)
-
 # coqmktop, coqc
 
 COQENVCMO:=lib/clib.cma\
   lib/pp_control.cmo lib/compat.cmo lib/pp.cmo lib/loc.cmo lib/errors.cmo
 
-COQMKTOPCMO:=$(COQENVCMO) scripts/tolink.cmo scripts/coqmktop.cmo
+COQMKTOPCMO:=$(COQENVCMO) scripts/coqmktop.cmo
 
 COQCCMO:=$(COQENVCMO) toplevel/usage.cmo scripts/coqc.cmo
 

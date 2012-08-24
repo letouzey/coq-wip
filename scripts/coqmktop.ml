@@ -33,9 +33,9 @@ let libobjs = ocamlobjs @ camlp4objs
 let spaces = Str.regexp "[ \t\n]+"
 let split_list l = Str.split spaces l
 
-let copts     = split_list Tolink.copts
-let core_objs = split_list Tolink.core_objs
-let core_libs = split_list Tolink.core_libs
+let copts     = ["-cclib";"-lcoqrun"]
+let core_libs = ["CoqCore.cmo"]
+let core_objs = ["CoqCore"]
 
 (* 3. Toplevel objects *)
 let camlp4topobjs =

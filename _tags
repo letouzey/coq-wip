@@ -1,4 +1,8 @@
 
+<*/*.cmx>: for-pack(CoqCore)
+
+<main.{native,byte}> : use_str, use_unix, use_dynlink, use_gramlib, use_libcoqrun
+
 ## tags for binaries
 
 <scripts/coqmktop.{native,byte}> : use_str, use_unix, use_dynlink, use_camlpX
@@ -80,5 +84,6 @@
 "tools": include
 "tools/coqdoc": include
 "toplevel": include
+"config": include
 
 <plugins/**>: include

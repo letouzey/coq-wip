@@ -1,0 +1,1 @@
+CCore.Coqtop.start ()

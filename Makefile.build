@@ -47,7 +47,7 @@ doc-no:
 MLFILES:=$(MLSTATICFILES) $(MLEXTRAFILES)
 
 ALLDEPS:=$(addsuffix .d, \
-  $(ML4FILES) $(MLFILES) $(MLIFILES) $(CFILES) $(MLLIBFILES) $(VFILES))
+  $(ML4FILES) $(MLFILES) $(MLIFILES) $(CFILES) $(MLLIBFILES) $(MLPACKFILES) $(VFILES))
 
 .SECONDARY: $(ALLDEPS) $(GENFILES) $(ML4FILES:.ml4=.ml)
 
@@ -252,18 +252,23 @@ $(COQMKTOP): $(patsubst %.cma,%$(BESTLIB),$(COQMKTOPCMO:.cmo=$(BESTOBJ)))
 	$(SHOW)'OCAMLBEST -o $@'
 	$(HIDE)$(call bestocaml, $(OSDEPLIBS), $(SYSMOD))
 
-scripts/tolink.ml: Makefile.build Makefile.common
-	$(SHOW)"ECHO... >" $@
-	$(HIDE)echo "let copts = \"-cclib -lcoqrun\"" > $@
-	$(HIDE)echo "let core_libs = \""$(LINKCMO)"\"" >> $@
-	$(HIDE)echo "let core_objs = \""$(OBJSMOD)"\"" >> $@
-
 # coqc
 $(COQC):  $(patsubst %.cma,%$(BESTLIB),$(COQCCMO:.cmo=$(BESTOBJ)))
 	$(SHOW)'OCAMLBEST -o $@'
 	$(HIDE)$(call bestocaml, $(OSDEPLIBS), $(SYSMOD))
 
 # target for libraries
+
+CCore.cmo: | CCore.mlpack.d
+	$(SHOW)'OCAMLC -pack -o $@'
+	$(HIDE)$(OCAMLC) $(BYTEFLAGS) -pack -o $@ $^
+
+CCore.cmx: | CCore.mlpack.d
+	$(SHOW)'OCAMLOPT -pack -o $@'
+	$(HIDE)$(OCAMLOPT) $(OPTFLAGS) -pack -o $@ $^
+
+bin/coqtopbis: CCore.cmx main.ml $(LIBCOQRUN) # attention au double cmxa sous camlp4 officiel
+	$(OCAMLOPT) $(OPTFLAGS) $(SYSCMXA) dynlink.cmxa -cclib -lcoqrun -o $@ $^
 
 %.cma: | %.mllib.d
 	$(SHOW)'OCAMLC -a -o $@'
@@ -845,7 +850,7 @@ $(MLWITHOUTMLI:.ml=.cmi): %.cmi: %.cmo
 
 %.cmx: %.ml | %.ml.d
 	$(SHOW)'OCAMLOPT  $<'
-	$(HIDE)$(OCAMLOPT) $(COND_OPTFLAGS) $(HACKMLI) -c $<
+	$(HIDE)$(OCAMLOPT) $(COND_OPTFLAGS) $(HACKMLI) -for-pack CCore -c $<
 
 %.cmxs: %.cmxa
 	$(SHOW)'OCAMLOPT -shared -o $@'
@@ -932,6 +937,10 @@ checker/%.mllib.d: $(D_DEPEND_BEFORE_SRC) checker/%.mllib $(D_DEPEND_AFTER_SRC) 
 	$(HIDE)$(COQDEPBOOT) -slash -I checker -c "$<" $(TOTARGET)
 
 %.mllib.d: $(D_DEPEND_BEFORE_SRC) %.mllib $(D_DEPEND_AFTER_SRC) $(COQDEPBOOT) $(GENFILES)
+	$(SHOW)'COQDEP  $<'
+	$(HIDE)$(COQDEPBOOT) -slash -I kernel -I tools/coqdoc -c "$<" $(TOTARGET)
+
+%.mlpack.d: $(D_DEPEND_BEFORE_SRC) %.mlpack $(D_DEPEND_AFTER_SRC) $(COQDEPBOOT) $(GENFILES)
 	$(SHOW)'COQDEP  $<'
 	$(HIDE)$(COQDEPBOOT) -slash -I kernel -I tools/coqdoc -c "$<" $(TOTARGET)
 

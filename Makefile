@@ -65,6 +65,7 @@ endef
 YACCFILES:=$(call find, '*.mly')
 LEXFILES := $(call find, '*.mll')
 export MLLIBFILES := $(call find, '*.mllib')
+export MLPACKFILES := $(call find, '*.mlpack')
 export ML4FILES := $(call find, '*.ml4')
 export CFILES := $(call find, '*.c')
 
@@ -78,8 +79,7 @@ EXISTINGMLI := $(call find, '*.mli')
 ## Files that will be generated
 
 GENML4FILES:= $(ML4FILES:.ml4=.ml)
-GENMLFILES:=$(LEXFILES:.mll=.ml) $(YACCFILES:.mly=.ml) \
-  scripts/tolink.ml kernel/copcodes.ml
+GENMLFILES:=$(LEXFILES:.mll=.ml) $(YACCFILES:.mly=.ml) kernel/copcodes.ml
 GENMLIFILES:=$(YACCFILES:.mly=.mli)
 GENPLUGINSMOD:=$(filter plugins/%,$(MLLIBFILES:%.mllib=%_mod.ml))
 export GENHFILES:=kernel/byterun/coq_jumptbl.h
