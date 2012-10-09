@@ -1794,7 +1794,7 @@ and interp_atomic ist gl tac =
 	end l (project gl,[])
       in
       tac args
-  | TacAlias (loc,s,l,(_,body)) -> fun gl ->
+  | TacAlias (loc,s,l,u) -> fun gl ->
     let evdref = ref gl.sigma in
     let f x = match genarg_tag x with
     | IntArgType ->
@@ -1901,6 +1901,7 @@ and interp_atomic ist gl tac =
     let lfun = (List.map (fun (x,c) -> (x,f c)) l)@ist.lfun in
     let trace = push_trace (loc,LtacNotationCall s) ist.trace in
     let gl = { gl with sigma = !evdref } in
+    let body = Tacintern.lookup_tactic_notation u in
     interp_tactic { ist with lfun=lfun; trace=trace } body gl
 
 (* Initial call for interpretation *)
@@ -1934,7 +1935,6 @@ let hide_interp t ot gl =
   match ot with
   | None -> t gl
   | Some t' -> (tclTHEN t t') gl
-
 
 (***************************************************************************)
 (* Other entry points *)

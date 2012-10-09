@@ -153,18 +153,22 @@ let lookup_tactic s =
     errorlabstrm "Refiner.lookup_tactic"
       (str"The tactic " ++ str s ++ str" is not installed.")
 
-(* Summary and Object declaration *)
+(* Tactic notation tables (TacAlias) *)
 
-let mactab = ref (Gmap.empty : (ltac_constant,glob_tactic_expr) Gmap.t)
+let tacntn_tab = ref (Stringmap.empty : glob_tactic_expr Stringmap.t)
 
-let lookup_ltacref r = Gmap.find r !mactab
+let add_tactic_notation u t =
+  (tacntn_tab := Stringmap.add u t !tacntn_tab)
+
+let lookup_tactic_notation u =
+  try Stringmap.find u !tacntn_tab
+  with Not_found -> anomaly "unknown tactic notation"
 
 let _ =
-  Summary.declare_summary "tactic-definition"
-    { Summary.freeze_function   = (fun () -> !mactab);
-      Summary.unfreeze_function = (fun fs -> mactab := fs);
-      Summary.init_function     = (fun () -> mactab := Gmap.empty); }
-
+  Summary.declare_summary "TACTIC_NOTATIONS"
+    { Summary.freeze_function = (fun () -> !tacntn_tab);
+      Summary.unfreeze_function = ((:=) tacntn_tab);
+      Summary.init_function = (fun () -> tacntn_tab := Stringmap.empty) }
 
 
 (* We have identifier <| global_reference <| constr *)
@@ -658,9 +662,9 @@ let rec intern_atomic lf ist x =
   | TacExtend (loc,opn,l) ->
       let _ = lookup_tactic opn in
       TacExtend (adjust_loc loc,opn,List.map (intern_genarg ist) l)
-  | TacAlias (loc,s,l,(dir,body)) ->
+  | TacAlias (loc,s,l,u) ->
       let l = List.map (fun (id,a) -> (id,intern_genarg ist a)) l in
-      TacAlias (loc,s,l,(dir,body))
+      TacAlias (loc,s,l,u)
 
 and intern_tactic onlytac ist tac = snd (intern_tactic_seq onlytac ist tac)
 
@@ -851,11 +855,21 @@ let glob_tactic_env l env x =
     x
 
 (***************************************************************************)
-(* Tactic registration *)
+(* Ltac registration *)
+
+let mactab = ref (Gmap.empty : (ltac_constant,glob_tactic_expr) Gmap.t)
+
+let _ =
+  Summary.declare_summary "tactic-definition"
+    { Summary.freeze_function   = (fun () -> !mactab);
+      Summary.unfreeze_function = (fun fs -> mactab := fs);
+      Summary.init_function     = (fun () -> mactab := Gmap.empty); }
 
 (* Declaration of the TAC-DEFINITION object *)
 let add (kn,td) = mactab := Gmap.add kn td !mactab
 let replace (kn,td) = mactab := Gmap.add kn td (Gmap.remove kn !mactab)
+
+let lookup_ltacref r = Gmap.find r !mactab
 
 type tacdef_kind =
   | NewTac of identifier

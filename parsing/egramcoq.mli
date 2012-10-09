@@ -39,11 +39,13 @@ type notation_grammar = {
   notgram_prods : grammar_constr_prod_item list list
 }
 
+(** For tactic notations *)
+
 type tactic_grammar = {
+  tacgram_uid : string;
   tacgram_key : string;
   tacgram_level : int;
   tacgram_prods : grammar_prod_item list;
-  tacgram_tactic : dir_path * Tacexpr.glob_tactic_expr;
 }
 
 (** Adding notations *)

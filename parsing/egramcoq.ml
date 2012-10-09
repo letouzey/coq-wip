@@ -242,10 +242,10 @@ let get_tactic_entry n =
 (** State of the grammar extensions                                   *)
 
 type tactic_grammar = {
+  tacgram_uid : string;
   tacgram_key : string;
   tacgram_level : int;
   tacgram_prods : grammar_prod_item list;
-  tacgram_tactic : dir_path * Tacexpr.glob_tactic_expr;
 }
 
 type all_grammar_command =
@@ -264,19 +264,21 @@ let head_is_ident tg = match tg.tacgram_prods with
 let add_tactic_entry tg =
   let entry, pos = get_tactic_entry tg.tacgram_level in
   let rules =
+    let key = tg.tacgram_key and uid = tg.tacgram_uid in
     if tg.tacgram_level = 0 then begin
       if not (head_is_ident tg) then
         error "Notation for simple tactic must start with an identifier.";
       let mkact loc l =
-        (TacAlias (loc,tg.tacgram_key,l,tg.tacgram_tactic):raw_atomic_tactic_expr) in
+        (TacAlias (loc,key,l,uid):raw_atomic_tactic_expr) in
       make_rule mkact tg.tacgram_prods
     end
     else
       let mkact loc l =
-        (TacAtom(loc,TacAlias(loc,tg.tacgram_key,l,tg.tacgram_tactic)):raw_tactic_expr) in
+        (TacAtom(loc,TacAlias(loc,key,l,uid)):raw_tactic_expr) in
       make_rule mkact tg.tacgram_prods in
   synchronize_level_positions ();
-  grammar_extend entry None (Option.map of_coq_position pos,[(None, None, List.rev [rules])]);
+  grammar_extend entry None
+    (Option.map of_coq_position pos,[(None, None, List.rev [rules])]);
   1
 
 let (grammar_state : (int * all_grammar_command) list ref) = ref []

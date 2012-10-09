@@ -87,6 +87,10 @@ type ('a,'t) match_rule =
   | Pat of 'a match_context_hyps list * 'a match_pattern * 't
   | All of 't
 
+(** We will refer to tactic notations via long unique names
+    made of the coq path + name + a gensym integer *)
+type uniqstring = string
+
 (** Generic expressions for atomic tactics *)
 
 type ('trm,'pat,'cst,'ind,'ref,'nam,'lev) gen_atomic_tactic_expr =
@@ -166,8 +170,8 @@ type ('trm,'pat,'cst,'ind,'ref,'nam,'lev) gen_atomic_tactic_expr =
   | TacExtend of Loc.t * string * 'lev generic_argument list
 
   (* For syntax extensions *)
-  | TacAlias of Loc.t * string *
-      (identifier * 'lev generic_argument) list * (dir_path * glob_tactic_expr)
+  | TacAlias of Loc.t *
+      string * (identifier * 'lev generic_argument) list * uniqstring
 
 (** Possible arguments of a tactic definition *)
 
@@ -231,24 +235,6 @@ and ('t,'p,'c,'i,'r,'n,'l) gen_tactic_expr =
 and ('t,'p,'c,'i,'r,'n,'l) gen_tactic_fun_ast =
     identifier option list * ('t,'p,'c,'i,'r,'n,'l) gen_tactic_expr
 
-(** Globalized tactics *)
-
-and g_trm = glob_constr_and_expr
-and g_pat = glob_constr_and_expr * constr_pattern
-and g_cst = evaluable_global_reference and_short_name or_var
-and g_ind = inductive or_var
-and g_ref = ltac_constant located or_var
-and g_nam  = identifier located
-
-and glob_tactic_expr =
-    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_tactic_expr
-
-type glob_atomic_tactic_expr =
-    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_atomic_tactic_expr
-
-type glob_tactic_arg =
-    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_tactic_arg
-
 (** Raw tactics *)
 
 type r_trm = constr_expr
@@ -267,6 +253,24 @@ type raw_tactic_expr =
 
 type raw_tactic_arg =
     (r_trm, r_pat, r_cst, r_ind, r_ref, r_nam, rlevel) gen_tactic_arg
+
+(** Globalized tactics *)
+
+type g_trm = glob_constr_and_expr
+type g_pat = glob_constr_and_expr * constr_pattern
+type g_cst = evaluable_global_reference and_short_name or_var
+type g_ind = inductive or_var
+type g_ref = ltac_constant located or_var
+type g_nam  = identifier located
+
+type glob_tactic_expr =
+    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_tactic_expr
+
+type glob_atomic_tactic_expr =
+    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_atomic_tactic_expr
+
+type glob_tactic_arg =
+    (g_trm, g_pat, g_cst, g_ind, g_ref, g_nam, glevel) gen_tactic_arg
 
 (** Misc *)
 

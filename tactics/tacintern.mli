@@ -20,8 +20,9 @@ open Redexpr
 open Misctypes
 open Nametab
 
-(** Globalization of tactic expressions :
-    Conversion from [raw_tactic_expr] to [glob_tactic_expr] *)
+(** {6 Globalization of tactic expressions} *)
+
+(** Conversion from [raw_tactic_expr] to [glob_tactic_expr] *)
 
 type glob_sign = {
   ltacvars : identifier list * identifier list;
@@ -57,6 +58,8 @@ val intern_constr_with_bindings :
 
 val intern_hyp : glob_sign -> identifier Loc.located -> identifier Loc.located
 
+(** {6 Generic arguments } *)
+
 (** Adds a globalization function for extra generic arguments *)
 
 type intern_genarg_type =
@@ -66,13 +69,21 @@ val add_intern_genarg : string -> intern_genarg_type -> unit
 
 val intern_genarg : intern_genarg_type
 
-(** Adds a definition of tactics in the table *)
+(** {6 Ltac definitions } *)
+
+(** Adds a Ltac definition of tactics in the table *)
 val add_tacdef :
   Vernacexpr.locality_flag -> bool ->
   (Libnames.reference * bool * raw_tactic_expr) list -> unit
-val add_primitive_tactic : string -> glob_tactic_expr -> unit
 
-(** Tactic extensions *)
+(** Search for an Ltac definition *)
+val lookup_ltacref : ltac_constant -> glob_tactic_expr
+
+(** Print a Ltac definition *)
+val print_ltac : Libnames.qualid -> std_ppcmds
+
+(** {6 Tactic extensions (TacExtend) } *)
+
 val add_tactic :
   string -> (typed_generic_argument list -> tactic) -> unit
 val overwriting_add_tactic :
@@ -80,12 +91,16 @@ val overwriting_add_tactic :
 val lookup_tactic :
   string -> (typed_generic_argument list) -> tactic
 
-val lookup_ltacref : ltac_constant -> glob_tactic_expr
+(** {6 Tactic notation extensions (TacAlias) } *)
 
-(** printing *)
-val print_ltac : Libnames.qualid -> std_ppcmds
+val add_tactic_notation : uniqstring -> glob_tactic_expr -> unit
+val lookup_tactic_notation : uniqstring -> glob_tactic_expr
 
-(** Reduction expressions *)
+(** {6 Special table for primitive tactics } *)
+
+val add_primitive_tactic : string -> glob_tactic_expr -> unit
+
+(** {6 Reduction expressions } *)
 
 val intern_red_expr : glob_sign -> raw_red_expr -> glob_red_expr
 val dump_glob_red_expr : raw_red_expr -> unit

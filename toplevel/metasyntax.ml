@@ -65,19 +65,24 @@ type tactic_grammar_obj = {
   tacobj_local : locality_flag;
   tacobj_tacgram : tactic_grammar;
   tacobj_tacpp : Pptactic.pp_tactic;
+  tacobj_tactic : Tacexpr.glob_tactic_expr;
 }
+
+let add_tacntn tobj =
+  let u = tobj.tacobj_tacgram.tacgram_uid in
+  let t = tobj.tacobj_tactic in
+  Tacintern.add_tactic_notation u t
+
+let load_tactic_notation _ (_, tobj) = add_tacntn tobj
 
 let cache_tactic_notation (_, tobj) =
   Egramcoq.extend_grammar (Egramcoq.TacticGrammar tobj.tacobj_tacgram);
-  Pptactic.declare_extra_tactic_pprule tobj.tacobj_tacpp
-
-let subst_tactic_parule subst tg =
-  let dir, tac = tg.tacgram_tactic in
-  { tg with tacgram_tactic = (dir, Tacsubst.subst_tactic subst tac); }
+  Pptactic.declare_extra_tactic_pprule tobj.tacobj_tacpp;
+  add_tacntn tobj
 
 let subst_tactic_notation (subst, tobj) =
   { tobj with
-    tacobj_tacgram = subst_tactic_parule subst tobj.tacobj_tacgram; }
+    tacobj_tactic = Tacsubst.subst_tactic subst tobj.tacobj_tactic }
 
 let classify_tactic_notation tacobj =
   if tacobj.tacobj_local then Dispose else Substitute tacobj
@@ -85,6 +90,7 @@ let classify_tactic_notation tacobj =
 let inTacticGrammar : tactic_grammar_obj -> obj =
   declare_object {(default_object "TacticGrammar") with
        open_function = (fun i o -> if i=1 then cache_tactic_notation o);
+       load_function = load_tactic_notation;
        cache_function = cache_tactic_notation;
        subst_function = subst_tactic_notation;
        classify_function = classify_tactic_notation}
@@ -102,28 +108,33 @@ let rec next_key_away key t =
   if Pptactic.exists_extra_tactic_pprule key t then next_key_away (key^"'") t
   else key
 
+let make_uniq_string =
+  let gensym = ref 0 in
+  fun s ->
+    incr gensym;
+    string_of_dirpath (Lib.library_dp ()) ^ "." ^ s ^ "_" ^
+      string_of_int (!gensym)
+
 let add_tactic_notation (local,n,prods,e) =
   let prods = List.map (interp_prod_item n) prods in
   let tags = make_tags prods in
-  let key = next_key_away (tactic_notation_key prods) tags in
-  let pprule = {
-    Pptactic.pptac_key = key;
-    pptac_args = tags;
-    pptac_prods = (n, List.map make_terminal_status prods);
-  } in
+  let rawkey = tactic_notation_key prods in
+  let key = next_key_away rawkey tags in
   let ids = List.fold_left cons_production_parameter [] prods in
   let tac = Tacintern.glob_tactic_env ids (Global.env()) e in
-  let parule = {
-    tacgram_key = key;
-    tacgram_level = n;
-    tacgram_prods = prods;
-    tacgram_tactic = (Lib.cwd (), tac);
-  } in
   let tacobj = {
     tacobj_local = local;
-    tacobj_tacgram = parule;
-    tacobj_tacpp = pprule;
-  } in
+    tacobj_tactic = tac;
+    tacobj_tacgram = {
+      tacgram_uid = make_uniq_string rawkey;
+      tacgram_key = key;
+      tacgram_level = n;
+      tacgram_prods = prods };
+    tacobj_tacpp = {
+      Pptactic.pptac_key = key;
+      pptac_args = tags;
+      pptac_prods = (n, List.map make_terminal_status prods) }}
+  in
   Lib.add_anonymous_leaf (inTacticGrammar tacobj)
 
 (**********************************************************************)
