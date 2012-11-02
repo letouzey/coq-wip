@@ -146,20 +146,18 @@ object (self)
       Minilib.log "UNDO";
       let effective = self#process_action history in
       if effective then self#backward ();
-      Mutex.unlock undo_lock;
-      effective
+      Mutex.unlock undo_lock
     end else
-      (Minilib.log "UNDO DISCARDED"; true)
+      Minilib.log "UNDO DISCARDED"
 
   method redo () =
     if Mutex.try_lock undo_lock then begin
       Minilib.log "REDO";
       let effective = self#process_action redo in
       if effective then self#forward ();
-      Mutex.unlock undo_lock;
-      effective
+      Mutex.unlock undo_lock
     end else
-      (Minilib.log "REDO DISCARDED"; true)
+      Minilib.log "REDO DISCARDED"
 
   method private handle_insert iter s =
     (* we're inserting, so we may autocomplete *)

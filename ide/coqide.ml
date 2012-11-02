@@ -18,6 +18,8 @@ type ide_info = {
   flags : flag list;
 }
 
+type direction = Up | Down
+
 class type _analyzed_view =
 object
 
@@ -29,22 +31,22 @@ object
   method save : string -> bool
   method save_as : string -> bool
   method get_insert : GText.iter
-  method get_start_of_input : GText.iter
-  method go_to_insert : Coq.handle -> unit
-  method go_to_next_occ_of_cur_word : unit
-  method go_to_prev_occ_of_cur_word : unit
-  method tactic_wizard : Coq.handle -> string list -> unit
-  method insert_message : string -> unit
-  method process_next_phrase : Coq.handle -> bool -> unit
-  method process_until_end_or_error : Coq.handle -> unit
   method recenter_insert : unit
+  method get_start_of_input : GText.iter
+  method insert_message : string -> unit
+  method set_message : string -> unit
+  method find_next_occurrence : direction -> unit
+  method help_for_keyword : unit -> unit
+
+  method go_to_insert : Coq.handle -> unit
+  method tactic_wizard : Coq.handle -> string list -> unit
+  method process_next_phrase : Coq.handle -> unit
+  method process_until_end_or_error : Coq.handle -> unit
   method erroneous_reset_initial : Coq.handle -> unit
   method requested_reset_initial : Coq.handle -> unit
-  method set_message : string -> unit
   method raw_coq_query : Coq.handle -> string -> unit
   method show_goals : Coq.handle -> unit
   method backtrack_last_phrase : Coq.handle -> unit
-  method help_for_keyword : unit -> unit
 end
 
 
@@ -186,18 +188,6 @@ let break () =
   Minilib.log "User break received";
   Coq.break_coqtop session_notebook#current_term.toplvl
 
-let do_if_not_computing term text f =
-  let threaded_task () =
-    let info () = Minilib.log ("Discarded query:" ^ text) in
-    try Coq.try_grab term.toplvl f info
-    with
-    | e ->
-      let msg = "Unknown error, please report:\n" ^ (Printexc.to_string e) in
-      term.analyzed_view#set_message msg
-  in
-  Minilib.log ("Launching thread " ^ text);
-  ignore (Thread.create threaded_task ())
-
 let warning msg =
   GToolbox.message_box ~title:"Warning"
     ~icon:(let img = GMisc.image () in
@@ -266,9 +256,9 @@ let print_items = [
    "Display all _low-level contents","l",false)
 ]
 
-let setopts ct opts v =
+let setopts handle opts v =
   let opts = List.map (fun o -> (o, v)) opts in
-  Coq.PrintOpt.set ct opts
+  Coq.PrintOpt.set handle opts
 
 let get_current_word () =
   match session_notebook#current_term,cb#text with
@@ -564,38 +554,22 @@ object(self)
   method get_insert = get_insert input_buffer
 
   method recenter_insert =
-    (* BUG : to investigate further:
-       FIXED : Never call  GMain.* in thread !
-       PLUS : GTK BUG ??? Cannot be called from a thread...
-       ADDITION: using sync instead of async causes deadlock...*)
-    ignore (GtkThread.async (
-      input_view#scroll_to_mark
-        ~use_align:false
-        ~yalign:0.75
-        ~within_margin:0.25)
-              `INSERT)
+    input_view#scroll_to_mark
+      ~use_align:false
+      ~yalign:0.75
+      ~within_margin:0.25
+      `INSERT
 
-  method go_to_next_occ_of_cur_word =
-    let cv = session_notebook#current_term in
-    let av = cv.analyzed_view in
-    let b = (cv.script)#buffer in
-    let start = find_word_start (av#get_insert) in
+  (* go to the next occurrence of the current word, forward or backward *)
+  method find_next_occurrence dir =
+    let b = input_buffer in
+    let start = find_word_start (self#get_insert) in
     let stop = find_word_end start in
     let text = b#get_text ~start ~stop () in
-    match stop#forward_search text with
-      | None -> ()
-      | Some(start, _) ->
-        (b#place_cursor start;
-         self#recenter_insert)
-
-  method go_to_prev_occ_of_cur_word =
-    let cv = session_notebook#current_term in
-    let av = cv.analyzed_view in
-    let b = (cv.script)#buffer in
-    let start = find_word_start (av#get_insert) in
-    let stop = find_word_end start in
-    let text = b#get_text ~start ~stop () in
-    match start#backward_search text with
+    let search =
+      if dir=Down then stop#forward_search else start#backward_search
+    in
+    match search text with
       | None -> ()
       | Some(start, _) ->
         (b#place_cursor start;
@@ -605,15 +579,16 @@ object(self)
     Coq.PrintOpt.set_printing_width proof_view#width;
     match Coq.goals handle with
     | Interface.Fail (l, str) ->
-      self#set_message ("Error in coqtop:\n"^str)
+      async self#set_message ("Error in coqtop:\n"^str)
     | Interface.Good goals | Interface.Unsafe goals ->
       begin match Coq.evars handle with
       | Interface.Fail (l, str)->
-        self#set_message ("Error in coqtop:\n"^str)
+        async self#set_message ("Error in coqtop:\n"^str)
       | Interface.Good evs  | Interface.Unsafe evs ->
-        proof_view#set_goals goals;
-        proof_view#set_evars evs;
-        proof_view#refresh ()
+        async (fun () ->
+          proof_view#set_goals goals;
+          proof_view#set_evars evs;
+          proof_view#refresh ()) ()
       end
 
   (* This method is intended to perform stateless commands *)
@@ -625,8 +600,8 @@ object(self)
       else self#insert_message s;
     in
     match Coq.interp handle self#push_message ~raw:true ~verbose:false phrase with
-    | Interface.Fail (_, err) -> sync display_error err
-    | Interface.Good msg | Interface.Unsafe msg -> sync self#insert_message msg
+    | Interface.Fail (_, err) -> async display_error err
+    | Interface.Good msg | Interface.Unsafe msg -> async self#insert_message msg
 
   method private find_phrase_starting_at (start:GText.iter) =
     try
@@ -750,14 +725,14 @@ object(self)
       if verbose then
         List.iter (fun (lvl, msg) -> self#push_message lvl msg) msg;
       finish ();
-      self#recenter_insert
+      async (fun () -> self#recenter_insert) ()
     | Some (phrase, loc, msg) ->
-      self#show_error phrase loc msg
+      async (self#show_error phrase loc) msg
 
-  method process_next_phrase handle verbose =
+  method process_next_phrase handle =
     let until len start stop = 1 <= len in
     let finish () = input_buffer#place_cursor self#get_start_of_input in
-    self#process_until until finish handle verbose
+    self#process_until until finish handle true
 
   method private process_until_iter handle iter =
     let until len start stop =
@@ -845,9 +820,9 @@ object(self)
       in
       Minilib.log "Send_to_coq starting now";
       match Coq.interp handle default_logger ~verbose:false phrase with
-      | Interface.Fail (l, str) -> sync display_error (l, str); None
-      | Interface.Good msg -> sync self#insert_message msg; Some []
-      | Interface.Unsafe msg -> sync self#insert_message msg; Some [`UNSAFE]
+      | Interface.Fail (l, str) -> async display_error (l, str); None
+      | Interface.Good msg -> async self#insert_message msg; Some []
+      | Interface.Unsafe msg -> async self#insert_message msg; Some [`UNSAFE]
 
   method private insert_this_phrase_on_success handle coqphrase insertphrase =
     let mark_processed flags =
@@ -874,10 +849,18 @@ object(self)
       self#show_goals handle;
     in
     match self#send_to_coq handle coqphrase with
-    | Some flags -> sync mark_processed flags; true
+    | Some flags -> async mark_processed flags; true
     | None ->
-      sync (fun _ -> self#insert_message ("Unsuccessfully tried: "^coqphrase)) ();
+      async self#insert_message ("Unsuccessfully tried: "^coqphrase);
       false
+
+  method tactic_wizard handle l =
+    async message_view#clear ();
+    ignore
+      (List.exists
+         (fun p ->
+           self#insert_this_phrase_on_success handle
+             ("progress "^p^".") (p^".")) l)
 
   method private generic_reset_initial handle =
     let start = input_buffer#start_iter in
@@ -906,14 +889,6 @@ object(self)
 
   method requested_reset_initial handle =
     self#generic_reset_initial handle
-
-  method tactic_wizard handle l =
-    async message_view#clear ();
-    ignore
-      (List.exists
-         (fun p ->
-           self#insert_this_phrase_on_success handle
-             ("progress "^p^".") (p^".")) l)
 
   method private include_file_dir_in_path handle =
     match filename with
@@ -1327,14 +1302,10 @@ let do_load file = load_file flash_info file
 
 let saveall_f () =
   List.iter
-    (function
-       | {script = view ; analyzed_view = av} ->
-           begin match av#filename with
-             | None -> ()
-             | Some f ->
-		 ignore (av#save f)
-           end
-    )  session_notebook#pages
+    (function {analyzed_view = av} -> match av#filename with
+      | None -> ()
+      | Some f -> ignore (av#save f))
+    session_notebook#pages
 
 let forbid_quit_to_save () =
     begin try save_pref() with e -> flash_info "Cannot save preferences" end;
@@ -1404,6 +1375,8 @@ let main files =
    with _ -> ());
 
   let vbox = GPack.vbox ~homogeneous:false ~packing:w#add () in
+
+  let current_view () = session_notebook#current_term.analyzed_view in
 
   let new_f _ =
     let session = create_session None in
@@ -1481,8 +1454,7 @@ let main files =
      with _ -> av#revert)
   in
   let export_f kind _ =
-    let v = session_notebook#current_term in
-    let av = v.analyzed_view in
+    let av = current_view () in
     match av#filename with
       | None ->
         flash_info "Cannot print: this buffer has no name"
@@ -1519,10 +1491,7 @@ let main files =
     if current.global_auto_revert then
       revert_timer := Some
 	(GMain.Timeout.add ~ms:current.global_auto_revert_delay
-	   ~callback:
-	   (fun () ->
-            List.iter (fun p -> do_if_not_computing p "revert" (fun _ -> sync revert_f p)) session_notebook#pages;
-	     true))
+	   ~callback:(fun () -> List.iter revert_f session_notebook#pages; true))
   in reset_revert_timer (); (* to enable statup preferences timer *)
   (* XXX *)
   let auto_save_f {analyzed_view = av} =
@@ -1537,40 +1506,40 @@ let main files =
       auto_save_timer := Some
 	(GMain.Timeout.add ~ms:current.auto_save_delay
 	   ~callback:
-	   (fun () ->
-	     List.iter (fun p -> do_if_not_computing p "autosave" (fun _ -> sync auto_save_f p)) session_notebook#pages;
-	     true))
+	     (fun () -> List.iter auto_save_f session_notebook#pages; true))
   in reset_auto_save_timer (); (* to enable statup preferences timer *)
 (* end Preferences *)
 
-  let do_or_activate f () =
-    let p = session_notebook#current_term in
-    do_if_not_computing p "do_or_activate"
-      (fun handle ->
-        let av = p.analyzed_view in
-        ignore (f handle av);
-        pop_info ();
-        let msg = match Coq.status handle with
-        | Interface.Fail (l, str) ->
-          "Oops, problem while fetching coq status."
-        | Interface.Good status | Interface.Unsafe status ->
-          let path = match status.Interface.status_path with
+  let update_status handle =
+    let msg = match Coq.status handle with
+      | Interface.Fail (l, str) ->
+        "Oops, problem while fetching coq status."
+      | Interface.Good status | Interface.Unsafe status ->
+        let path = match status.Interface.status_path with
           | [] | _ :: [] -> "" (* Drop the topmost level, usually "Top" *)
           | _ :: l -> " in " ^ String.concat "." l
-          in
-          let name = match status.Interface.status_proofname with
+        in
+        let name = match status.Interface.status_proofname with
           | None -> ""
           | Some n -> ", proving " ^ n
-          in
-          "Ready" ^ path ^ name
         in
-        push_info msg
-      )
+        "Ready" ^ path ^ name
+    in
+    async (fun () -> pop_info (); push_info msg) ()
   in
-  let do_if_active f () =
-    let p = session_notebook#current_term in
-    do_if_not_computing p "do_if_active"
-      (fun handle -> ignore (f handle p.analyzed_view))
+  let thread_to_coq f =
+    let term = session_notebook#current_term in
+    let av = term.analyzed_view in
+    let threaded_task () =
+      let info () = Minilib.log ("Coq locked, discarding query") in
+      let f handle = ignore (f av handle); update_status handle in
+      try Coq.try_grab term.toplvl f info
+      with e ->
+	let msg = "Unknown error, please report:\n" ^ (Printexc.to_string e)
+	in async av#set_message msg
+    in
+    Minilib.log ("Launching thread to coq");
+    ignore (Thread.create threaded_task ())
   in
   let match_callback _ =
     let w = get_current_word () in
@@ -1626,8 +1595,7 @@ let main files =
 	end
   in
   let make_f _ =
-    let v = session_notebook#current_term in
-    let av = v.analyzed_view in
+    let av = current_view () in
     match av#filename with
       | None ->
 	flash_info "Cannot make: this buffer has no name"
@@ -1673,13 +1641,10 @@ let main files =
       v.script#misc#grab_focus ()
     with Not_found ->
       last_make_index := 0;
-      let v = session_notebook#current_term in
-      let av = v.analyzed_view in
-      av#set_message "No more errors.\n"
+      (current_view ())#set_message "No more errors.\n"
   in
   let coq_makefile_f _ =
-    let v = session_notebook#current_term in
-    let av = v.analyzed_view in
+    let av = current_view () in
     match av#filename with
       | None ->
 	flash_info "Cannot make makefile: this buffer has no name"
@@ -1687,7 +1652,8 @@ let main files =
 	let cmd = local_cd f ^ current.cmd_coqmakefile in
 	let s,res = CUnix.run_command Ideutils.try_convert av#insert_message cmd in
 	flash_info
-	  (current.cmd_coqmakefile ^ if s = Unix.WEXITED 0 then " succeeded" else " failed")
+	  (current.cmd_coqmakefile ^
+	   if s = Unix.WEXITED 0 then " succeeded" else " failed")
   in
 
   let file_actions = GAction.action_group ~name:"File" () in
@@ -1712,8 +1678,11 @@ let main files =
 	else text ^" "
       in
       GAction.add_action (menu_name^" "^(no_under text)) ~label:text
-	~callback:(fun _ -> let {script = view } = session_notebook#current_term in
-			    ignore (view#buffer#insert_interactive text')) act_grp
+	~callback:
+	(fun _ ->
+	  let v = session_notebook#current_term.script in
+	  ignore (v#buffer#insert_interactive text'))
+	act_grp
     in
     List.iter (function
       | [] -> ()
@@ -1725,7 +1694,9 @@ let main files =
   in
   let tactic_shortcut s sc = GAction.add_action s ~label:("_"^s)
     ~accel:(current.modifier_for_tactics^sc)
-    ~callback:(fun _ -> do_if_active (fun handle a -> a#tactic_wizard handle [s]) ()) in
+    ~callback:
+    (fun _ -> thread_to_coq (fun a handle -> a#tactic_wizard handle [s]))
+  in
   let query_searchabout () =
     let word = get_current_word () in
     let term = session_notebook#current_term in
@@ -1768,13 +1739,13 @@ let main files =
   let add_complex_template (name, label, text, offset, len, key) =
     (* Templates/Lemma *)
     let callback _ =
-      let {script = view } = session_notebook#current_term in
-      if view#buffer#insert_interactive text then begin
-	let iter = view#buffer#get_iter_at_mark `INSERT in
+      let v = session_notebook#current_term.script in
+      if v#buffer#insert_interactive text then begin
+	let iter = v#buffer#get_iter_at_mark `INSERT in
 	ignore (iter#nocopy#backward_chars offset);
-	view#buffer#move_mark `INSERT ~where:iter;
+	v#buffer#move_mark `INSERT ~where:iter;
 	ignore (iter#nocopy#backward_chars len);
-	view#buffer#move_mark `SEL_BOUND ~where:iter;
+	v#buffer#move_mark `SEL_BOUND ~where:iter;
       end in
       match key with
 	|Some ac -> GAction.add_action name ~label ~callback ~accel:(current.modifier_for_templates^ac)
@@ -1809,9 +1780,15 @@ let main files =
       GAction.add_action "Save" ~callback:save_f ~stock:`SAVE ~tooltip:"Save current buffer";
       GAction.add_action "Save as" ~label:"S_ave as" ~callback:saveas_f ~stock:`SAVE_AS;
       GAction.add_action "Save all" ~label:"Sa_ve all" ~callback:(fun _ -> saveall_f ());
-      GAction.add_action "Revert all buffers" ~label:"_Revert all buffers" ~callback:(fun _ -> List.iter revert_f session_notebook#pages) ~stock:`REVERT_TO_SAVED;
-      GAction.add_action "Close buffer" ~label:"_Close buffer" ~callback:(fun _ -> remove_current_view_page ()) ~stock:`CLOSE ~tooltip:"Close current buffer";
-      GAction.add_action "Print..." ~label:"_Print..." ~callback:(fun _ -> do_print session_notebook#current_term) ~stock:`PRINT ~accel:"<Ctrl>p";
+      GAction.add_action "Revert all buffers" ~label:"_Revert all buffers"
+	~callback:(fun _ -> List.iter revert_f session_notebook#pages)
+	~stock:`REVERT_TO_SAVED;
+      GAction.add_action "Close buffer" ~label:"_Close buffer"
+	~callback:(fun _ -> remove_current_view_page ())
+	~stock:`CLOSE ~tooltip:"Close current buffer";
+      GAction.add_action "Print..." ~label:"_Print..."
+	~callback:(fun _ -> do_print session_notebook#current_term)
+	~stock:`PRINT ~accel:"<Ctrl>p";
       GAction.add_action "Rehighlight" ~label:"Reh_ighlight" ~accel:"<Ctrl>l"
 	~callback:(fun _ -> force_retag
                      session_notebook#current_term.script#buffer;
@@ -1829,14 +1806,10 @@ let main files =
     ];
     GAction.add_actions edit_actions [
       GAction.add_action "Edit" ~label:"_Edit";
-      GAction.add_action "Undo" ~accel:"<Ctrl>u"
-	~callback:(fun _ ->
-                     let term = session_notebook#current_term in
-                     do_if_not_computing term "undo"
-		     (fun handle ->
-			ignore (term.script#undo ()))) ~stock:`UNDO;
+      GAction.add_action "Undo" ~accel:"<Ctrl>u" ~stock:`UNDO
+	~callback:(fun _ -> session_notebook#current_term.script#undo ());
       GAction.add_action "Redo" ~stock:`REDO
-	~callback:(fun _ -> ignore (session_notebook#current_term.script#redo ()));
+	~callback:(fun _ -> session_notebook#current_term.script#redo ());
       GAction.add_action "Cut"
         ~callback:(fun _ -> emit_to_focus GtkText.View.S.cut_clipboard) ~stock:`CUT;
       GAction.add_action "Copy"
@@ -1859,7 +1832,7 @@ let main files =
 	       av#complete_at_offset (av#get_insert)#offset*)
 	     )) ~accel:"<Ctrl>slash";
       GAction.add_action "External editor" ~label:"External editor" ~callback:(fun _ ->
-	let av = session_notebook#current_term.analyzed_view in
+	let av = current_view () in
 	match av#filename with
 	  | None -> warning "Call to external editor available only on named files"
 	  | Some f ->
@@ -1895,26 +1868,27 @@ let main files =
       (fun (opts,name,label,key,dflt) ->
          GAction.add_toggle_action name ~active:dflt ~label
            ~accel:(current.modifier_for_display^key)
-          ~callback:(fun v -> do_or_activate (fun handle av ->
-            let () = setopts handle opts v#get_active in
-            av#show_goals handle) ()) view_actions)
+           ~callback:(fun v -> thread_to_coq (fun av handle ->
+             setopts handle opts v#get_active;
+             av#show_goals handle))
+	   view_actions)
       print_items;
     GAction.add_actions navigation_actions [
       GAction.add_action "Navigation" ~label:"_Navigation";
       GAction.add_action "Forward" ~label:"_Forward" ~stock:`GO_DOWN
-	~callback:(fun _ -> do_or_activate (fun handle a -> a#process_next_phrase handle true) ())
+	~callback:(fun _ -> thread_to_coq (fun a -> a#process_next_phrase))
 	~tooltip:"Forward one command" ~accel:(current.modifier_for_navigation^"Down");
       GAction.add_action "Backward" ~label:"_Backward" ~stock:`GO_UP
-	~callback:(fun _ -> do_or_activate (fun handle a -> a#backtrack_last_phrase handle) ())
+	~callback:(fun _ -> thread_to_coq (fun a -> a#backtrack_last_phrase))
 	~tooltip:"Backward one command" ~accel:(current.modifier_for_navigation^"Up");
       GAction.add_action "Go to" ~label:"_Go to" ~stock:`JUMP_TO
-	~callback:(fun _ -> do_or_activate (fun handle a -> a#go_to_insert handle) ())
+	~callback:(fun _ -> thread_to_coq (fun a -> a#go_to_insert))
 	~tooltip:"Go to cursor" ~accel:(current.modifier_for_navigation^"Right");
       GAction.add_action "Start" ~label:"_Start" ~stock:`GOTO_TOP
 	~callback:(fun _ -> force_reset_initial ())
 	~tooltip:"Restart coq" ~accel:(current.modifier_for_navigation^"Home");
       GAction.add_action "End" ~label:"_End" ~stock:`GOTO_BOTTOM
-	~callback:(fun _ -> do_or_activate (fun handle a -> a#process_until_end_or_error handle) ())
+	~callback:(fun _ -> thread_to_coq (fun a -> a#process_until_end_or_error))
 	~tooltip:"Go to end" ~accel:(current.modifier_for_navigation^"End");
       GAction.add_action "Interrupt" ~label:"_Interrupt" ~stock:`STOP
 	~callback:(fun _ -> break ()) ~tooltip:"Interrupt computations"
@@ -1926,17 +1900,19 @@ let main files =
 		       sess.analyzed_view#get_insert) ~tooltip:"Hide proof"
 	~accel:(current.modifier_for_navigation^"h");*)
       GAction.add_action "Previous" ~label:"_Previous" ~stock:`GO_BACK
-	~callback:(fun _ -> do_or_activate (fun _ a -> a#go_to_prev_occ_of_cur_word) ())
+	~callback:(fun _ -> (current_view ())#find_next_occurrence Up)
 	~tooltip:"Previous occurence" ~accel:(current.modifier_for_navigation^"less");
       GAction.add_action "Next" ~label:"_Next" ~stock:`GO_FORWARD
-	~callback:(fun _ -> do_or_activate (fun _ a -> a#go_to_next_occ_of_cur_word) ())
+	~callback:(fun _ -> (current_view ())#find_next_occurrence Down)
 	~tooltip:"Next occurence" ~accel:(current.modifier_for_navigation^"greater");
     ];
     GAction.add_actions tactics_actions [
       GAction.add_action "Try Tactics" ~label:"_Try Tactics";
       GAction.add_action "Wizard" ~tooltip:"Proof Wizard" ~label:"<Proof Wizard>"
-	~stock:`DIALOG_INFO ~callback:(fun _ -> do_if_active (fun handle a -> a#tactic_wizard handle
-						       current.automatic_tactics) ())
+	~stock:`DIALOG_INFO
+	~callback:
+	(fun _ -> thread_to_coq
+	  (fun a handle -> a#tactic_wizard handle current.automatic_tactics))
 	~accel:(current.modifier_for_tactics^"dollar");
       tactic_shortcut "auto" "a";
       tactic_shortcut "auto with *" "asterisk";
@@ -2004,16 +1980,12 @@ let main files =
     GAction.add_actions help_actions [
       GAction.add_action "Help" ~label:"_Help";
       GAction.add_action "Browse Coq Manual" ~label:"Browse Coq _Manual"
-	~callback:(fun _ ->
-		     let av = session_notebook#current_term.analyzed_view in
-		       browse av#insert_message (doc_url ()));
+	~callback:(fun _ -> browse (current_view ())#insert_message (doc_url ()));
       GAction.add_action "Browse Coq Library" ~label:"Browse Coq _Library"
-	~callback:(fun _ ->
-		     let av = session_notebook#current_term.analyzed_view in
-		       browse av#insert_message current.library_url);
+	~callback:
+	  (fun _ -> browse (current_view ())#insert_message current.library_url);
       GAction.add_action "Help for keyword" ~label:"Help for _keyword"
-	~callback:(fun _ -> let av = session_notebook#current_term.analyzed_view in
-		     av#help_for_keyword ()) ~stock:`HELP;
+	~callback:(fun _ -> (current_view ())#help_for_keyword ()) ~stock:`HELP;
       GAction.add_action "About Coq" ~label:"_About" ~stock:`ABOUT;
     ];
     Coqide_ui.init ();
