@@ -577,19 +577,18 @@ object(self)
 
   method show_goals handle =
     Coq.PrintOpt.set_printing_width proof_view#width;
-    match Coq.goals handle with
-    | Interface.Fail (l, str) ->
-      async self#set_message ("Error in coqtop:\n"^str)
-    | Interface.Good goals | Interface.Unsafe goals ->
-      begin match Coq.evars handle with
-      | Interface.Fail (l, str)->
-        async self#set_message ("Error in coqtop:\n"^str)
-      | Interface.Good evs  | Interface.Unsafe evs ->
-        async (fun () ->
-          proof_view#set_goals goals;
-          proof_view#set_evars evs;
-          proof_view#refresh ()) ()
-      end
+    Coq.goals handle (function
+      | Interface.Fail (l, str) ->
+	async self#set_message ("Error in coqtop:\n"^str)
+      | Interface.Good goals | Interface.Unsafe goals ->
+	Coq.evars handle (function
+	  | Interface.Fail (l, str)->
+	    async self#set_message ("Error in coqtop:\n"^str)
+	  | Interface.Good evs  | Interface.Unsafe evs ->
+	    async (fun () ->
+	      proof_view#set_goals goals;
+	      proof_view#set_evars evs;
+	      proof_view#refresh ()) ()))
 
   (* This method is intended to perform stateless commands *)
   method raw_coq_query handle phrase =
@@ -599,9 +598,11 @@ object(self)
         flash_info "This error is so nasty that I can't even display it."
       else self#insert_message s;
     in
-    match Coq.interp handle self#push_message ~raw:true ~verbose:false phrase with
-    | Interface.Fail (_, err) -> async display_error err
-    | Interface.Good msg | Interface.Unsafe msg -> async self#insert_message msg
+    Coq.interp handle self#push_message ~raw:true ~verbose:false phrase
+      (function
+	| Interface.Fail (_, err) -> async display_error err
+	| Interface.Good msg | Interface.Unsafe msg ->
+	  async self#insert_message msg)
 
   method private find_phrase_starting_at (start:GText.iter) =
     try
@@ -637,51 +638,7 @@ object(self)
     in
     try loop 0 self#get_start_of_input with Exit -> ()
 
-  method private process_command_queue ?(verbose = false) queue handle =
-    let error = ref None in
-    let info = ref [] in
-    let current_flags = ref [] in
-    let push_info level message = info := (level, message) :: !info in
-    (* First, process until error *)
-    Minilib.log "Begin command processing";
-    while not (Queue.is_empty queue) && !error = None do
-      let sentence = Queue.peek queue in
-      (* If the line is not a comment, we interpret it. *)
-      if not (List.mem `COMMENT sentence.flags) then begin
-        let start = input_buffer#get_iter_at_mark sentence.start in
-        let stop = input_buffer#get_iter_at_mark sentence.stop in
-        let phrase = start#get_slice ~stop in
-        match Coq.interp handle push_info ~verbose phrase with
-        | Interface.Fail (loc, msg) ->
-          error := Some (phrase, loc, msg);
-        | Interface.Good msg ->
-          push_info Interface.Notice msg;
-          current_flags := []
-        | Interface.Unsafe msg ->
-          current_flags := [`UNSAFE]
-      end;
-      (* If there is no error, then we mark it done *)
-      if !error = None then begin
-        (* We reget the iters here because Gtk is unable to warranty that they
-           were not modified meanwhile. Not really necessary but who knows... *)
-        let start = input_buffer#get_iter_at_mark sentence.start in
-        let stop = input_buffer#get_iter_at_mark sentence.stop in
-        let sentence = { sentence with
-          flags = !current_flags @ sentence.flags
-        } in
-        let tag =
-          if List.mem `UNSAFE !current_flags then Tags.Script.unjustified
-          else Tags.Script.processed
-        in
-        input_buffer#move_mark ~where:stop (`NAME "start_of_input");
-        input_buffer#apply_tag tag ~start ~stop;
-        input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
-        (* Discard the old stack info and put it were it belongs *)
-        ignore (Queue.pop queue);
-        Stack.push sentence cmd_stack;
-      end;
-    done;
-    (* Then clear all irrelevant commands *)
+  method private discard_command_queue queue =
     while not (Queue.is_empty queue) do
       let sentence = Queue.pop queue in
       let start = input_buffer#get_iter_at_mark sentence.start in
@@ -689,20 +646,41 @@ object(self)
       input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
       input_buffer#delete_mark sentence.start;
       input_buffer#delete_mark sentence.stop;
-    done;
-    (* Return the list of info messages and the error *)
-    (List.rev !info, !error)
+    done
 
-  method private show_error phrase loc msg = match loc with
-  | None ->
-    message_view#clear ();
-    message_view#push Interface.Error msg
-  | Some (start, stop) ->
-    let soi = self#get_start_of_input in
-    let start = soi#forward_chars (byte_offset_to_char_offset phrase start) in
-    let stop = soi#forward_chars (byte_offset_to_char_offset phrase stop) in
-    input_buffer#apply_tag Tags.Script.error ~start ~stop;
-    input_buffer#place_cursor ~where:start;
+  method private commit_queue_transaction queue sentence newflags =
+    (* A queued command has been successfully done, we push it to [cmd_stack].
+       We reget the iters here because Gtk is unable to warranty that they
+       were not modified meanwhile. Not really necessary but who knows... *)
+    let start = input_buffer#get_iter_at_mark sentence.start in
+    let stop = input_buffer#get_iter_at_mark sentence.stop in
+    let sentence = { sentence with flags = newflags @ sentence.flags } in
+    let tag =
+      if List.mem `UNSAFE newflags then Tags.Script.unjustified
+      else Tags.Script.processed
+    in
+    input_buffer#move_mark ~where:stop (`NAME "start_of_input");
+    input_buffer#apply_tag tag ~start ~stop;
+    input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
+    ignore (Queue.pop queue);
+    Stack.push sentence cmd_stack
+
+  method private process_error queue handle phrase loc msg =
+    let position_error = function
+      | None -> ()
+      | Some (start, stop) ->
+	let soi = self#get_start_of_input in
+	let start =
+	  soi#forward_chars (byte_offset_to_char_offset phrase start) in
+	let stop =
+	  soi#forward_chars (byte_offset_to_char_offset phrase stop) in
+	input_buffer#apply_tag Tags.Script.error ~start ~stop;
+	input_buffer#place_cursor ~where:start
+    in
+    self#discard_command_queue queue;
+    pop_info ();
+    self#show_goals handle;
+    position_error loc;
     message_view#clear ();
     message_view#push Interface.Error msg
 
@@ -716,18 +694,39 @@ object(self)
     self#fill_command_queue until queue;
     (* Now unlock and process asynchronously *)
     input_view#set_editable true;
-    let (msg, error) = self#process_command_queue ~verbose queue handle in
-    pop_info ();
-    (* Display the goal and any error *)
-    self#show_goals handle;
-    match error with
-    | None ->
-      if verbose then
-        List.iter (fun (lvl, msg) -> self#push_message lvl msg) msg;
+    let do_finish () =
+      pop_info ();
+      self#show_goals handle;
       finish ();
-      async (fun () -> self#recenter_insert) ()
-    | Some (phrase, loc, msg) ->
-      async (self#show_error phrase loc) msg
+      self#recenter_insert
+    in
+    let push_info lvl msg = if verbose then self#push_message lvl msg
+    in
+    Minilib.log "Begin command processing";
+    let rec loop () =
+      if Queue.is_empty queue then do_finish ()
+      else
+	let sentence = Queue.peek queue in
+	if List.mem `COMMENT sentence.flags then
+	  (self#commit_queue_transaction queue sentence []; loop ())
+	else
+	  (* If the line is not a comment, we interpret it. *)
+          let start = input_buffer#get_iter_at_mark sentence.start in
+          let stop = input_buffer#get_iter_at_mark sentence.stop in
+          let phrase = start#get_slice ~stop in
+	  let commit_and_continue msg flags =
+	    push_info Interface.Notice msg;
+	    self#commit_queue_transaction queue sentence flags;
+	    loop ()
+	  in
+          Coq.interp handle push_info ~verbose phrase
+	    (function
+	      |Interface.Good msg -> commit_and_continue msg []
+	      |Interface.Unsafe msg -> commit_and_continue msg [`UNSAFE]
+	      |Interface.Fail (loc, msg) ->
+		self#process_error queue handle phrase loc msg)
+    in
+    loop ()
 
   method process_next_phrase handle =
     let until len start stop = 1 <= len in
@@ -771,15 +770,15 @@ object(self)
 
   (** Actually performs the undoing *)
   method private undo_command_stack handle n =
-    match Coq.rewind handle n with
-    | Interface.Good n | Interface.Unsafe n ->
-      let until _ len _ _ = n <= len in
-      (* Coqtop requested [n] more ACTUAL backtrack *)
-      ignore (self#clear_command_stack until)
-    | Interface.Fail (l, str) ->
-      self#set_message
+    Coq.rewind handle n (function
+      | Interface.Good n | Interface.Unsafe n ->
+	let until _ len _ _ = n <= len in
+	(* Coqtop requested [n] more ACTUAL backtrack *)
+	ignore (self#clear_command_stack until)
+      | Interface.Fail (l, str) ->
+	self#set_message
         ("Error while backtracking: " ^ str ^
-          "\nCoqIDE and coqtop may be out of sync, you may want to use Restart.")
+         "\nCoqIDE and coqtop may be out of sync, you may want to use Restart."))
 
   (** Wrapper around the raw undo command *)
   method private backtrack_until until finish handle =
@@ -812,31 +811,15 @@ object(self)
     then self#process_until_iter handle point
     else self#backtrack_to_iter handle point
 
-  method private send_to_coq handle phrase =
-    let display_error (loc, s) =
-        if not (Glib.Utf8.validate s) then
-          flash_info "This error is so nasty that I can't even display it."
-        else self#insert_message s
-      in
-      Minilib.log "Send_to_coq starting now";
-      match Coq.interp handle default_logger ~verbose:false phrase with
-      | Interface.Fail (l, str) -> async display_error (l, str); None
-      | Interface.Good msg -> async self#insert_message msg; Some []
-      | Interface.Unsafe msg -> async self#insert_message msg; Some [`UNSAFE]
-
-  method private insert_this_phrase_on_success handle coqphrase insertphrase =
-    let mark_processed flags =
+  method tactic_wizard handle l =
+    let insert_phrase phrase tag =
       let stop = self#get_start_of_input in
       if stop#starts_line then
-        input_buffer#insert ~iter:stop insertphrase
-      else input_buffer#insert ~iter:stop ("\n"^insertphrase);
+        input_buffer#insert ~iter:stop phrase
+      else input_buffer#insert ~iter:stop ("\n"^phrase);
       tag_on_insert (input_buffer :> GText.buffer);
       let start = self#get_start_of_input in
       input_buffer#move_mark ~where:stop (`NAME "start_of_input");
-      let tag =
-        if List.mem `UNSAFE flags then Tags.Script.unjustified
-        else Tags.Script.processed
-      in
       input_buffer#apply_tag tag ~start ~stop;
       if self#get_insert#compare stop <= 0 then
         input_buffer#place_cursor ~where:stop;
@@ -847,20 +830,34 @@ object(self)
       } in
       Stack.push ide_payload cmd_stack;
       self#show_goals handle;
+      async message_view#clear ();
     in
-    match self#send_to_coq handle coqphrase with
-    | Some flags -> async mark_processed flags; true
-    | None ->
-      async self#insert_message ("Unsuccessfully tried: "^coqphrase);
-      false
-
-  method tactic_wizard handle l =
-    async message_view#clear ();
-    ignore
-      (List.exists
-         (fun p ->
-           self#insert_this_phrase_on_success handle
-             ("progress "^p^".") (p^".")) l)
+    let display_error (loc, s) =
+      if not (Glib.Utf8.validate s) then
+        flash_info "This error is so nasty that I can't even display it."
+      else self#insert_message s
+    in
+    let try_phrase phrase stop more =
+      Minilib.log "Sending to coq now";
+      Coq.interp handle default_logger ~verbose:false phrase
+	(function
+	  |Interface.Fail (l, str) ->
+	    async display_error (l, str);
+	    async self#insert_message ("Unsuccessfully tried: "^phrase);
+	    more ()
+	  |Interface.Good msg ->
+	    async self#insert_message msg;
+	    async stop Tags.Script.processed
+	  |Interface.Unsafe msg ->
+	    async self#insert_message msg;
+	    async stop Tags.Script.unjustified)
+    in
+    let rec loop l () = match l with
+      | [] -> ()
+      | p :: l' ->
+        try_phrase ("progress "^p^".") (insert_phrase (p^".")) (loop l')
+    in
+    loop l ()
 
   method private generic_reset_initial handle =
     let start = input_buffer#start_iter in
@@ -895,17 +892,17 @@ object(self)
       | None -> ()
       | Some f ->
 	let dir = Filename.dirname f in
-	match Coq.inloadpath handle dir with
+	Coq.inloadpath handle dir (function
 	  | Interface.Fail (_,str) ->
 	    self#set_message
 	      ("Could not determine lodpath, this might lead to problems:\n"^str)
 	  | Interface.Good true | Interface.Unsafe true -> ()
 	  | Interface.Good false | Interface.Unsafe false ->
 	    let cmd = Printf.sprintf "Add LoadPath \"%s\". "  dir in
-	    match Coq.interp handle default_logger cmd with
+	    Coq.interp handle default_logger cmd (function
 	      | Interface.Fail (l,str) ->
 		self#set_message ("Couln't add loadpath:\n"^str)
-	      | Interface.Good _ | Interface.Unsafe _ -> ()
+	      | Interface.Good _ | Interface.Unsafe _ -> ()))
 
   method help_for_keyword () =
     browse_keyword (self#insert_message) (get_current_word ())
@@ -1511,10 +1508,13 @@ let main files =
 (* end Preferences *)
 
   let update_status handle =
-    let msg = match Coq.status handle with
-      | Interface.Fail (l, str) ->
-        "Oops, problem while fetching coq status."
-      | Interface.Good status | Interface.Unsafe status ->
+    let display msg =
+      async (fun () -> pop_info (); push_info msg) ()
+    in
+    Coq.status handle (function
+      |Interface.Fail (l, str) ->
+        display "Oops, problem while fetching coq status."
+      |Interface.Good status | Interface.Unsafe status ->
         let path = match status.Interface.status_path with
           | [] | _ :: [] -> "" (* Drop the topmost level, usually "Top" *)
           | _ :: l -> " in " ^ String.concat "." l
@@ -1523,9 +1523,7 @@ let main files =
           | None -> ""
           | Some n -> ", proving " ^ n
         in
-        "Ready" ^ path ^ name
-    in
-    async (fun () -> pop_info (); push_info msg) ()
+        display ("Ready" ^ path ^ name))
   in
   let thread_to_coq f =
     let term = session_notebook#current_term in
@@ -1544,33 +1542,32 @@ let main files =
   let match_callback _ =
     let w = get_current_word () in
     let coqtop = session_notebook#current_term.toplvl in
-    try
-      Coq.try_grab coqtop begin fun handle -> match Coq.mkcases handle w with
-        | Interface.Fail _ -> raise Not_found
-        | Interface.Good cases | Interface.Unsafe cases ->
-          let print_branch c l =
-	    Format.fprintf c " | @[<hov 1>%a@]=> _@\n"
-	      (print_list (fun c s -> Format.fprintf c "%s@ " s)) l
-          in
-          let b = Buffer.create 1024 in
-          let fmt = Format.formatter_of_buffer b in
-          Format.fprintf fmt "@[match var with@\n%aend@]@."
-            (print_list print_branch) cases;
-          let s = Buffer.contents b in
-          Minilib.log s;
-          let {script = view } = session_notebook#current_term in
-          ignore (view#buffer#delete_selection ());
-          let m = view#buffer#create_mark
-            (view#buffer#get_iter `INSERT)
-          in
-          if view#buffer#insert_interactive s then
-            let i = view#buffer#get_iter (`MARK m) in
-            let _ = i#nocopy#forward_chars 9 in
-            view#buffer#place_cursor ~where:i;
-            view#buffer#move_mark ~where:(i#backward_chars 3)
-              `SEL_BOUND
-      end ignore
-    with Not_found -> flash_info "Not an inductive type"
+    let display_match = function
+      |Interface.Fail _ -> flash_info "Not an inductive type"
+      |Interface.Good cases | Interface.Unsafe cases ->
+        let print_branch c l =
+	  Format.fprintf c " | @[<hov 1>%a@]=> _@\n"
+	    (print_list (fun c s -> Format.fprintf c "%s@ " s)) l
+        in
+        let b = Buffer.create 1024 in
+        let fmt = Format.formatter_of_buffer b in
+        Format.fprintf fmt "@[match var with@\n%aend@]@."
+          (print_list print_branch) cases;
+        let s = Buffer.contents b in
+        Minilib.log s;
+        let {script = view } = session_notebook#current_term in
+        ignore (view#buffer#delete_selection ());
+        let m = view#buffer#create_mark
+          (view#buffer#get_iter `INSERT)
+        in
+        if view#buffer#insert_interactive s then
+          let i = view#buffer#get_iter (`MARK m) in
+          let _ = i#nocopy#forward_chars 9 in
+          view#buffer#place_cursor ~where:i;
+          view#buffer#move_mark ~where:(i#backward_chars 3) `SEL_BOUND
+    in
+    Coq.try_grab coqtop
+      (fun handle -> Coq.mkcases handle w display_match) ignore
   in
 (* External command callback *)
   let compile_f _ =
@@ -1700,23 +1697,24 @@ let main files =
   let query_searchabout () =
     let word = get_current_word () in
     let term = session_notebook#current_term in
-    let query handle =
-      let results = Coq.search handle [Interface.SubType_Pattern word, true] in
-      let results = match results with | Interface.Good l -> l | _ -> [] in
-      let buf =  term.message_view#buffer in
-      let insert result =
-        let qualid = result.Interface.coq_object_qualid in
-        let name = String.concat "." qualid in
-        let tpe = result.Interface.coq_object_object in
-        buf#insert ~tags:[Tags.Message.item] name;
-        buf#insert "\n";
-        buf#insert tpe;
-        buf#insert "\n";
-      in
-      term.message_view#clear ();
-      List.iter insert results
+    let buf =  term.message_view#buffer in
+    let insert result =
+      let qualid = result.Interface.coq_object_qualid in
+      let name = String.concat "." qualid in
+      let tpe = result.Interface.coq_object_object in
+      buf#insert ~tags:[Tags.Message.item] name;
+      buf#insert "\n";
+      buf#insert tpe;
+      buf#insert "\n";
     in
-    Coq.try_grab term.toplvl query ignore
+    let display_results r =
+      term.message_view#clear ();
+      List.iter insert (match r with Interface.Good l -> l | _ -> [])
+    in
+    let launch_query handle =
+      Coq.search handle [Interface.SubType_Pattern word, true] display_results
+    in
+    Coq.try_grab term.toplvl launch_query ignore
   in
   let query_callback command _ =
     let word = get_current_word () in

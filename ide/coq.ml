@@ -369,7 +369,9 @@ let try_grab coqtop f g =
 
 (** Cf [Ide_intf] for more details *)
 
-let eval_call coqtop logger c =
+type 'a async_answer = ('a Interface.value -> unit) -> unit
+
+let eval_call coqtop logger c k =
   (** Retrieve the messages sent by coqtop until an answer has been received *)
   let rec loop () =
     let xml = Xml_parser.parse coqtop.xml_parser in
@@ -379,7 +381,7 @@ let eval_call coqtop logger c =
       let content = message.Interface.message_content in
       let () = logger level content  in
       loop ()
-    else (Serialize.to_answer xml c)
+    else k (Serialize.to_answer xml c)
   in
   try
     Xml_utils.print_xml coqtop.cin (Serialize.of_call c);
@@ -399,20 +401,25 @@ let eval_call coqtop logger c =
 
 let interp coqtop log ?(raw=false) ?(verbose=true) s =
   eval_call coqtop log (Serialize.interp (raw,verbose,s))
-let rewind coqtop i = eval_call coqtop default_logger (Serialize.rewind i)
-let inloadpath coqtop s = eval_call coqtop default_logger (Serialize.inloadpath s)
-let mkcases coqtop s = eval_call coqtop default_logger (Serialize.mkcases s)
-let status coqtop = eval_call coqtop default_logger Serialize.status
-let hints coqtop = eval_call coqtop default_logger Serialize.hints
-let search coqtop flags = eval_call coqtop default_logger (Serialize.search flags)
+let rewind coqtop i =
+  eval_call coqtop default_logger (Serialize.rewind i)
+let inloadpath coqtop s =
+  eval_call coqtop default_logger (Serialize.inloadpath s)
+let mkcases coqtop s =
+  eval_call coqtop default_logger (Serialize.mkcases s)
+let status coqtop =
+  eval_call coqtop default_logger Serialize.status
+let hints coqtop =
+  eval_call coqtop default_logger Serialize.hints
+let search coqtop flags =
+  eval_call coqtop default_logger (Serialize.search flags)
 
 let unsafe_close coqtop =
   if Mutex.try_lock coqtop.lock then begin
     let () =
       try
-        match eval_call coqtop.handle default_logger Serialize.quit with
-        | Interface.Good _ -> ()
-        | _ -> raise Exit
+        eval_call coqtop.handle default_logger Serialize.quit
+	  (function Interface.Good _ -> () | _ -> raise Exit)
       with err -> kill_coqtop coqtop
     in
     Mutex.unlock coqtop.lock
@@ -479,9 +486,10 @@ struct
     let () = List.iter (fun (name, v) -> Hashtbl.replace state_hack name v) options in
     let options = List.map (fun (name, v) -> (name, Interface.BoolValue v)) options in
     let options = (width, Interface.IntValue !width_ref):: options in
-    match eval_call coqtop default_logger (Serialize.set_options options) with
-    | Interface.Good () -> ()
-    | _ -> raise (Failure "Cannot set options.")
+    eval_call coqtop default_logger (Serialize.set_options options)
+      (function
+	| Interface.Good () -> ()
+	| _ -> raise (Failure "Cannot set options."))
 
   let enforce_hack coqtop =
     let elements = Hashtbl.fold (fun opt v acc -> (opt, v) :: acc) state_hack [] in

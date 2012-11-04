@@ -90,16 +90,22 @@ val interrupter : (int -> unit) ref
 type logger = Interface.message_level -> string -> unit
 (** Except for interp, we use the default logger for any call. *)
 
+type 'a async_answer = ('a Interface.value -> unit) -> unit
+
 val interp :
-  handle -> logger -> ?raw:bool -> ?verbose:bool -> string -> string Interface.value
-val rewind : handle -> int -> int Interface.value
-val status : handle -> Interface.status Interface.value
-val goals : handle -> Interface.goals option Interface.value
-val evars : handle -> Interface.evar list option Interface.value
-val hints : handle -> (Interface.hint list * Interface.hint) option Interface.value
-val inloadpath : handle -> string -> bool Interface.value
-val mkcases : handle -> string -> string list list Interface.value
-val search : handle -> Interface.search_flags -> string Interface.coq_object list Interface.value
+  handle -> logger -> ?raw:bool -> ?verbose:bool -> string ->
+  string async_answer
+val rewind : handle -> int -> int async_answer
+val status : handle -> Interface.status async_answer
+val goals : handle -> Interface.goals option async_answer
+val evars : handle -> Interface.evar list option async_answer
+val hints :
+  handle -> (Interface.hint list * Interface.hint) option async_answer
+val inloadpath : handle -> string -> bool async_answer
+val mkcases : handle -> string -> string list list async_answer
+val search :
+  handle -> Interface.search_flags ->
+  string Interface.coq_object list async_answer
 
 (** A specialized version of [raw_interp] dedicated to
     set/unset options. *)
