@@ -38,15 +38,16 @@ object
   method find_next_occurrence : direction -> unit
   method help_for_keyword : unit -> unit
 
-  method go_to_insert : Coq.handle -> unit
-  method tactic_wizard : Coq.handle -> string list -> unit
-  method process_next_phrase : Coq.handle -> unit
-  method process_until_end_or_error : Coq.handle -> unit
-  method erroneous_reset_initial : Coq.handle -> unit
-  method requested_reset_initial : Coq.handle -> unit
-  method raw_coq_query : Coq.handle -> string -> unit
-  method show_goals : Coq.handle -> unit
-  method backtrack_last_phrase : Coq.handle -> unit
+  method go_to_insert : Coq.task
+  method tactic_wizard : string list -> Coq.task
+  method process_next_phrase : Coq.task
+  method process_until_end_or_error : Coq.task
+  method erroneous_reset_initial : Coq.task
+  method requested_reset_initial : Coq.task
+  method raw_coq_query : string -> Coq.task
+  method show_goals : Coq.task
+  method backtrack_last_phrase : Coq.task
+  method include_file_dir_in_path : Coq.task
 end
 
 
@@ -256,9 +257,7 @@ let print_items = [
    "Display all _low-level contents","l",false)
 ]
 
-let setopts handle opts v =
-  let opts = List.map (fun o -> (o, v)) opts in
-  Coq.PrintOpt.set handle opts
+let setopts opts v = Coq.PrintOpt.set (List.map (fun o -> (o, v)) opts)
 
 let get_current_word () =
   match session_notebook#current_term,cb#text with
@@ -575,34 +574,34 @@ object(self)
         (b#place_cursor start;
          self#recenter_insert)
 
-  method show_goals handle =
+  method show_goals h k =
     Coq.PrintOpt.set_printing_width proof_view#width;
-    Coq.goals handle (function
-      | Interface.Fail (l, str) ->
-	async self#set_message ("Error in coqtop:\n"^str)
-      | Interface.Good goals | Interface.Unsafe goals ->
-	Coq.evars handle (function
-	  | Interface.Fail (l, str)->
-	    async self#set_message ("Error in coqtop:\n"^str)
-	  | Interface.Good evs  | Interface.Unsafe evs ->
-	    async (fun () ->
-	      proof_view#set_goals goals;
-	      proof_view#set_evars evs;
-	      proof_view#refresh ()) ()))
+    Coq.goals h (function
+      |Interface.Fail (l, str) ->
+	(self#set_message ("Error in coqtop:\n"^str); k())
+      |Interface.Good goals | Interface.Unsafe goals ->
+	Coq.evars h (function
+	  |Interface.Fail (l, str)->
+	    (self#set_message ("Error in coqtop:\n"^str); k())
+	  |Interface.Good evs  | Interface.Unsafe evs ->
+	    proof_view#set_goals goals;
+	    proof_view#set_evars evs;
+	    proof_view#refresh ();
+	    k()))
 
   (* This method is intended to perform stateless commands *)
-  method raw_coq_query handle phrase =
+  method raw_coq_query phrase h k =
     let () = Minilib.log "raw_coq_query starting now" in
     let display_error s =
       if not (Glib.Utf8.validate s) then
         flash_info "This error is so nasty that I can't even display it."
       else self#insert_message s;
     in
-    Coq.interp handle self#push_message ~raw:true ~verbose:false phrase
+    Coq.interp ~logger:self#push_message ~raw:true ~verbose:false phrase h
       (function
-	| Interface.Fail (_, err) -> async display_error err
+	| Interface.Fail (_, err) -> display_error err; k ()
 	| Interface.Good msg | Interface.Unsafe msg ->
-	  async self#insert_message msg)
+	  self#insert_message msg; k ())
 
   method private find_phrase_starting_at (start:GText.iter) =
     try
@@ -665,7 +664,7 @@ object(self)
     ignore (Queue.pop queue);
     Stack.push sentence cmd_stack
 
-  method private process_error queue handle phrase loc msg =
+  method private process_error queue phrase loc msg h k =
     let position_error = function
       | None -> ()
       | Some (start, stop) ->
@@ -679,13 +678,13 @@ object(self)
     in
     self#discard_command_queue queue;
     pop_info ();
-    self#show_goals handle;
     position_error loc;
     message_view#clear ();
-    message_view#push Interface.Error msg
+    message_view#push Interface.Error msg;
+    self#show_goals h k
 
   (** Compute the phrases until [until] returns [true]. *)
-  method private process_until until finish handle verbose =
+  method private process_until until verbose h k =
     let queue = Queue.create () in
     (* Lock everything and fill the waiting queue *)
     push_info "Coq is computing";
@@ -694,18 +693,15 @@ object(self)
     self#fill_command_queue until queue;
     (* Now unlock and process asynchronously *)
     input_view#set_editable true;
-    let do_finish () =
-      pop_info ();
-      self#show_goals handle;
-      finish ();
-      self#recenter_insert
-    in
     let push_info lvl msg = if verbose then self#push_message lvl msg
     in
     Minilib.log "Begin command processing";
     let rec loop () =
-      if Queue.is_empty queue then do_finish ()
-      else
+      if Queue.is_empty queue then begin
+	pop_info ();
+	self#recenter_insert;
+	self#show_goals h k
+      end else
 	let sentence = Queue.peek queue in
 	if List.mem `COMMENT sentence.flags then
 	  (self#commit_queue_transaction queue sentence []; loop ())
@@ -719,30 +715,29 @@ object(self)
 	    self#commit_queue_transaction queue sentence flags;
 	    loop ()
 	  in
-          Coq.interp handle push_info ~verbose phrase
+          Coq.interp ~logger:push_info ~verbose phrase h
 	    (function
 	      |Interface.Good msg -> commit_and_continue msg []
 	      |Interface.Unsafe msg -> commit_and_continue msg [`UNSAFE]
 	      |Interface.Fail (loc, msg) ->
-		self#process_error queue handle phrase loc msg)
+		self#process_error queue phrase loc msg h k)
     in
     loop ()
 
-  method process_next_phrase handle =
+  method process_next_phrase h k =
     let until len start stop = 1 <= len in
-    let finish () = input_buffer#place_cursor self#get_start_of_input in
-    self#process_until until finish handle true
+    self#process_until until true h
+      (fun () -> input_buffer#place_cursor self#get_start_of_input; k())
 
-  method private process_until_iter handle iter =
+  method private process_until_iter iter h k =
     let until len start stop =
       if current.stop_before then stop#compare iter > 0
       else start#compare iter >= 0
     in
-    let finish () = () in
-    self#process_until until finish handle false
+    self#process_until until false h k
 
-  method process_until_end_or_error handle =
-    self#process_until_iter handle input_buffer#end_iter
+  method process_until_end_or_error h k =
+    self#process_until_iter input_buffer#end_iter h k
 
   (** Clear the command stack until [until] returns [true]. Returns the number
       of commands sent to Coqtop to backtrack. *)
@@ -769,49 +764,52 @@ object(self)
     loop 0 0
 
   (** Actually performs the undoing *)
-  method private undo_command_stack handle n =
-    Coq.rewind handle n (function
+  method private undo_command_stack n h k =
+    Coq.rewind n h (function
       | Interface.Good n | Interface.Unsafe n ->
 	let until _ len _ _ = n <= len in
 	(* Coqtop requested [n] more ACTUAL backtrack *)
-	ignore (self#clear_command_stack until)
+	ignore (self#clear_command_stack until);
+	k ()
       | Interface.Fail (l, str) ->
 	self#set_message
         ("Error while backtracking: " ^ str ^
-         "\nCoqIDE and coqtop may be out of sync, you may want to use Restart."))
+         "\nCoqIDE and coqtop may be out of sync, you may want to use Restart.");
+	k ())
 
   (** Wrapper around the raw undo command *)
-  method private backtrack_until until finish handle =
+  method private backtrack_until until h k =
     push_info "Coq is undoing";
     message_view#clear ();
     (* Lock everything *)
     input_view#set_editable false;
     let to_undo = self#clear_command_stack until in
-    self#undo_command_stack handle to_undo;
-    input_view#set_editable true;
-    pop_info ();
-    finish ()
+    self#undo_command_stack to_undo h
+      (fun () ->
+	input_view#set_editable true;
+	pop_info ();
+	k ())
 
-  method private backtrack_to_iter handle iter =
+  method private backtrack_to_iter iter h k =
     let until _ _ _ stop = iter#compare stop >= 0 in
-    let finish () = () in
-    self#backtrack_until until finish handle;
-    (* We may have backtracked too much: let's replay *)
-    self#process_until_iter handle iter
+    self#backtrack_until until h
+      (* We may have backtracked too much: let's replay *)
+      (fun () -> self#process_until_iter iter h k)
 
-  method backtrack_last_phrase handle =
+  method backtrack_last_phrase h k =
     let until len _ _ _ = 1 <= len in
-    let finish () = input_buffer#place_cursor self#get_start_of_input in
-    self#backtrack_until until finish handle;
-    self#show_goals handle
+    self#backtrack_until until h
+      (fun () ->
+	input_buffer#place_cursor self#get_start_of_input;
+	self#show_goals h k)
 
-  method go_to_insert handle =
+  method go_to_insert h k =
     let point = self#get_insert in
     if point#compare self#get_start_of_input >= 0
-    then self#process_until_iter handle point
-    else self#backtrack_to_iter handle point
+    then self#process_until_iter point h k
+    else self#backtrack_to_iter point h k
 
-  method tactic_wizard handle l =
+  method tactic_wizard l h k =
     let insert_phrase phrase tag =
       let stop = self#get_start_of_input in
       if stop#starts_line then
@@ -829,8 +827,8 @@ object(self)
         flags = [];
       } in
       Stack.push ide_payload cmd_stack;
-      self#show_goals handle;
-      async message_view#clear ();
+      message_view#clear ();
+      self#show_goals h k;
     in
     let display_error (loc, s) =
       if not (Glib.Utf8.validate s) then
@@ -839,27 +837,27 @@ object(self)
     in
     let try_phrase phrase stop more =
       Minilib.log "Sending to coq now";
-      Coq.interp handle default_logger ~verbose:false phrase
+      Coq.interp ~verbose:false phrase h
 	(function
 	  |Interface.Fail (l, str) ->
-	    async display_error (l, str);
-	    async self#insert_message ("Unsuccessfully tried: "^phrase);
+	    display_error (l, str);
+	    self#insert_message ("Unsuccessfully tried: "^phrase);
 	    more ()
 	  |Interface.Good msg ->
-	    async self#insert_message msg;
-	    async stop Tags.Script.processed
+	    self#insert_message msg;
+	    stop Tags.Script.processed
 	  |Interface.Unsafe msg ->
-	    async self#insert_message msg;
-	    async stop Tags.Script.unjustified)
+	    self#insert_message msg;
+	    stop Tags.Script.unjustified)
     in
     let rec loop l () = match l with
-      | [] -> ()
+      | [] -> k ()
       | p :: l' ->
         try_phrase ("progress "^p^".") (insert_phrase (p^".")) (loop l')
     in
     loop l ()
 
-  method private generic_reset_initial handle =
+  method private generic_reset_initial h k =
     let start = input_buffer#start_iter in
     (* clear the stack *)
     while not (Stack.is_empty cmd_stack) do
@@ -877,32 +875,36 @@ object(self)
     message_view#clear ();
     proof_view#clear ();
     (* apply the initial commands to coq *)
-    self#include_file_dir_in_path handle;
+    self#include_file_dir_in_path h k
 
-  method erroneous_reset_initial handle =
-    self#generic_reset_initial handle;
-    (* warn the user *)
-    warning "Coqtop died badly. Resetting."
+  method erroneous_reset_initial h k =
+    self#generic_reset_initial h
+      (fun () ->
+	(* warn the user with a pop-up *)
+	warning "Coqtop died badly. Resetting.";
+	k ())
 
-  method requested_reset_initial handle =
-    self#generic_reset_initial handle
+  method requested_reset_initial h k =
+    self#generic_reset_initial h k
 
-  method private include_file_dir_in_path handle =
+  method include_file_dir_in_path h k =
     match filename with
-      | None -> ()
+      | None -> k ()
       | Some f ->
 	let dir = Filename.dirname f in
-	Coq.inloadpath handle dir (function
+	Coq.inloadpath dir h (function
 	  | Interface.Fail (_,str) ->
 	    self#set_message
-	      ("Could not determine lodpath, this might lead to problems:\n"^str)
-	  | Interface.Good true | Interface.Unsafe true -> ()
+	      ("Could not determine lodpath, this might lead to problems:\n"^str);
+	    k ()
+	  | Interface.Good true | Interface.Unsafe true -> k ()
 	  | Interface.Good false | Interface.Unsafe false ->
 	    let cmd = Printf.sprintf "Add LoadPath \"%s\". "  dir in
-	    Coq.interp handle default_logger cmd (function
+	    Coq.interp cmd h (function
 	      | Interface.Fail (l,str) ->
-		self#set_message ("Couln't add loadpath:\n"^str)
-	      | Interface.Good _ | Interface.Unsafe _ -> ()))
+		self#set_message ("Couln't add loadpath:\n"^str);
+		k ()
+	      | Interface.Good _ | Interface.Unsafe _ -> k ()))
 
   method help_for_keyword () =
     browse_keyword (self#insert_message) (get_current_word ())
@@ -938,76 +940,70 @@ object(self)
   untagged and then retagged. *)
 
   initializer
-    ignore (input_buffer#connect#insert_text
-              ~callback:(fun it s ->
-                if (it#compare self#get_start_of_input)<0
-                then GtkSignal.stop_emit ();
-                if String.length s > 1 then
-                  (Minilib.log "insert_text: Placing cursor";input_buffer#place_cursor ~where:it)));
-    ignore (input_buffer#connect#after#apply_tag
-              ~callback:(fun tag ~start ~stop ->
-                if (start#compare self#get_start_of_input)>=0
-                then
-                  begin
-                    input_buffer#remove_tag
-                      Tags.Script.processed
-                      ~start
-                      ~stop;
-                    input_buffer#remove_tag
-                      Tags.Script.unjustified
-                      ~start
-                      ~stop
-                  end
-              )
-    );
-    ignore (input_buffer#connect#begin_user_action
-	      ~callback:(fun () ->
-		           let here = input_buffer#get_iter_at_mark `INSERT in
-			   input_buffer#move_mark (`NAME "prev_insert") here
-	      )
-    );
-    ignore (input_buffer#connect#end_user_action
-              ~callback:(fun () ->
-                last_modification_time <- Unix.time ();
-                let r = input_view#visible_rect in
-                let stop =
-                  input_view#get_iter_at_location
-                    ~x:(Gdk.Rectangle.x r + Gdk.Rectangle.width r)
-                    ~y:(Gdk.Rectangle.y r + Gdk.Rectangle.height r)
-                in
-                input_buffer#remove_tag
-                  Tags.Script.error
-                  ~start:self#get_start_of_input
-                  ~stop;
-                tag_on_insert (input_buffer :> GText.buffer)
-              )
-    );
-    ignore (input_buffer#add_selection_clipboard cb);
-    ignore (input_buffer#connect#after#mark_set
-              ~callback:(fun it (m:Gtk.text_mark) ->
-                !set_location
-                  (Printf.sprintf
-                     "Line: %5d Char: %3d" (self#get_insert#line + 1)
-                     (self#get_insert#line_offset + 1));
-                match GtkText.Mark.get_name m  with
-                  | Some "insert" -> ()
-                  | Some s ->
-                    Minilib.log (s^" moved")
-                  | None -> () )
-    );
-    ignore (input_buffer#connect#insert_text
-              ~callback:(fun it s ->
-                Minilib.log "Should recenter ?";
-                if String.contains s '\n' then begin
-                  Minilib.log "Should recenter: yes";
-                  self#recenter_insert
-                end));
-    let callback () =
+  let _ = input_buffer#connect#insert_text
+    ~callback:(fun it s ->
+      if (it#compare self#get_start_of_input)<0
+      then GtkSignal.stop_emit ();
+      if String.length s > 1 then begin
+        Minilib.log "insert_text: Placing cursor";
+	input_buffer#place_cursor ~where:it
+      end)
+  in
+  let _ = input_buffer#connect#after#apply_tag
+    ~callback:(fun tag ~start ~stop ->
+      if (start#compare self#get_start_of_input)>=0
+      then begin
+        input_buffer#remove_tag Tags.Script.processed ~start ~stop;
+        input_buffer#remove_tag Tags.Script.unjustified ~start ~stop
+      end)
+  in
+  let _ = input_buffer#connect#begin_user_action
+    ~callback:(fun () ->
+      let here = input_buffer#get_iter_at_mark `INSERT in
+      input_buffer#move_mark (`NAME "prev_insert") here)
+  in
+  let _ = input_buffer#connect#end_user_action
+    ~callback:(fun () ->
+      last_modification_time <- Unix.time ();
+      let r = input_view#visible_rect in
+      let stop =
+        input_view#get_iter_at_location
+          ~x:(Gdk.Rectangle.x r + Gdk.Rectangle.width r)
+          ~y:(Gdk.Rectangle.y r + Gdk.Rectangle.height r)
+      in
+      input_buffer#remove_tag
+        Tags.Script.error
+        ~start:self#get_start_of_input
+        ~stop;
+      tag_on_insert (input_buffer :> GText.buffer))
+  in
+  let _ = input_buffer#add_selection_clipboard cb
+  in
+  let _ = input_buffer#connect#after#mark_set
+    ~callback:(fun it (m:Gtk.text_mark) ->
+      !set_location
+        (Printf.sprintf
+           "Line: %5d Char: %3d" (self#get_insert#line + 1)
+           (self#get_insert#line_offset + 1));
+      match GtkText.Mark.get_name m  with
+        | Some "insert" -> ()
+        | Some s ->
+          Minilib.log (s^" moved")
+        | None -> ())
+  in
+  let _ = input_buffer#connect#insert_text
+      ~callback:(fun it s ->
+        Minilib.log "Should recenter ?";
+        if String.contains s '\n' then begin
+          Minilib.log "Should recenter: yes";
+          self#recenter_insert
+        end)
+  in
+  let _ = Glib.Timeout.add ~ms:300
+    ~callback:(fun () ->
       if Coq.is_computing mycoqtop then pbar#pulse ();
-      not (Coq.is_closed mycoqtop);
-    in
-    ignore (Glib.Timeout.add ~ms:300 ~callback);
-    Coq.grab mycoqtop self#include_file_dir_in_path;
+      not (Coq.is_closed mycoqtop))
+  in ()
 end
 
 let last_make = ref "";;
@@ -1068,20 +1064,25 @@ let create_session file =
   let command = new Wg_Command.command_window ct in
   let finder = new Wg_Find.finder (script :> GText.view) in
   let legacy_av = new analyzed_view script proof message ct file in
-  let () = reset := legacy_av#erroneous_reset_initial in
-  let () = legacy_av#update_stats in
+  (* TODOPL *)
+  reset := (fun h -> legacy_av#erroneous_reset_initial h (fun () -> ()));
+  legacy_av#update_stats;
   let _ =
     script#buffer#create_mark ~name:"start_of_input" script#buffer#start_iter in
   let _ =
     script#buffer#create_mark ~name:"prev_insert" script#buffer#start_iter in
   let _ =
     GtkBase.Widget.add_events proof#as_widget [`ENTER_NOTIFY;`POINTER_MOTION] in
-  let () =
-    let fold accu (opts, _, _, _, dflt) =
-      List.fold_left (fun accu opt -> (opt, dflt) :: accu) accu opts
-    in
-    let options = List.fold_left fold [] print_items in
-    Coq.grab ct (fun handle -> Coq.PrintOpt.set handle options) in
+  let _ = Coq.init_coqtop ct
+    (fun h k ->
+      legacy_av#include_file_dir_in_path h
+	(fun () ->
+	  let fold accu (opts, _, _, _, dflt) =
+	    List.fold_left (fun accu opt -> (opt, dflt) :: accu) accu opts
+	  in
+	  let options = List.fold_left fold [] print_items in
+	  Coq.PrintOpt.set options h k))
+  in
   script#misc#set_name "ScriptWindow";
   script#buffer#place_cursor ~where:script#buffer#start_iter;
   proof#misc#set_can_focus true;
@@ -1305,54 +1306,58 @@ let saveall_f () =
     session_notebook#pages
 
 let forbid_quit_to_save () =
-    begin try save_pref() with e -> flash_info "Cannot save preferences" end;
-    (if List.exists
-      (function
-        | {script=view} -> view#buffer#modified
-      )
-      session_notebook#pages then
-      match (GToolbox.question_box ~title:"Quit"
-               ~buttons:["Save Named Buffers and Quit";
-                         "Quit without Saving";
-                         "Don't Quit"]
-               ~default:0
-               ~icon:
-               (let img = GMisc.image () in
-                img#set_stock `DIALOG_WARNING;
-                img#set_icon_size `DIALOG;
-                img#coerce)
-               "There are unsaved buffers"
-      )
-      with 1 -> saveall_f () ; false
+  begin try save_pref() with e -> flash_info "Cannot save preferences" end;
+  (if List.exists (fun p -> p.script#buffer#modified) session_notebook#pages
+   then
+      let res = GToolbox.question_box
+	~title:"Quit"
+	~buttons:["Save Named Buffers and Quit";
+                  "Quit without Saving";
+                  "Don't Quit"]
+        ~default:0
+        ~icon:
+        (let img = GMisc.image () in
+         img#set_stock `DIALOG_WARNING;
+         img#set_icon_size `DIALOG;
+         img#coerce)
+        "There are unsaved buffers"
+      in
+      match res with
+	| 1 -> saveall_f (); false
         | 2 -> false
         | _ -> true
-    else false)||
-      (let wait_window =
-        GWindow.window ~modal:true ~wm_class:"CoqIde" ~wm_name:"CoqIde" ~kind:`POPUP
-          ~title:"Terminating coqtops" () in
-      let _ =
-        GMisc.label ~text:"Terminating coqtops processes, please wait ..."
-          ~packing:wait_window#add () in
-      let warning_window =
-        GWindow.message_dialog ~message_type:`WARNING ~buttons:GWindow.Buttons.yes_no
-          ~message:
-	  ("Some coqtops processes are still running.\n" ^
-	     "If you quit CoqIDE right now, you may have to kill them manually.\n" ^
-	     "Do you want to wait for those processes to terminate ?") () in
-      let () = List.iter (fun _ -> session_notebook#remove_page 0) session_notebook#pages in
-      let nb_try=ref (0) in
-      let () = wait_window#show () in
-      let () = while (Coq.coqtop_zombies () <> 0)&&(!nb_try <= 50) do
-	incr nb_try;
-	Thread.delay 0.1 ;
-      done in
-	if (!nb_try = 50) then begin
-	  wait_window#misc#hide ();
-	  match warning_window#run () with
-	    | `YES -> warning_window#misc#hide (); true
-	    | `NO | `DELETE_EVENT -> false
-	end
-	else false)
+    else false)
+  ||
+    (let wait_window = GWindow.window ~modal:true ~wm_class:"CoqIde"
+       ~wm_name:"CoqIde" ~kind:`POPUP ~title:"Terminating coqtops" ()
+     in
+     let _ = GMisc.label
+       ~text:"Terminating coqtops processes, please wait ..."
+       ~packing:wait_window#add ()
+     in
+     let warning_window = GWindow.message_dialog
+       ~message_type:`WARNING
+       ~buttons:GWindow.Buttons.yes_no
+       ~message:
+       ("Some coqtops processes are still running.\n" ^
+	"If you quit CoqIDE right now, you may have to kill them manually.\n" ^
+	"Do you want to wait for those processes to terminate ?") ()
+     in
+     let () = List.iter (fun _ -> session_notebook#remove_page 0) session_notebook#pages in
+     let nb_try = ref 0 in
+     wait_window#show ();
+     while (Coq.coqtop_zombies () <> 0)&&(!nb_try <= 50) do
+       incr nb_try;
+       (* TODOPL : faire des sleep gtk en retournant une réponse ? *)
+       (* Thread.delay 0.1 ; *)
+     done;
+     if (!nb_try = 50) then begin
+       wait_window#misc#hide ();
+       match warning_window#run () with
+	 | `YES -> warning_window#misc#hide (); true
+	 | `NO | `DELETE_EVENT -> false
+     end
+     else false)
 
 let main files =
 
@@ -1507,13 +1512,12 @@ let main files =
   in reset_auto_save_timer (); (* to enable statup preferences timer *)
 (* end Preferences *)
 
-  let update_status handle =
-    let display msg =
-      async (fun () -> pop_info (); push_info msg) ()
+  let update_status h k =
+    let display msg = pop_info (); push_info msg
     in
-    Coq.status handle (function
+    Coq.status h (function
       |Interface.Fail (l, str) ->
-        display "Oops, problem while fetching coq status."
+        display "Oops, problem while fetching coq status."; k ()
       |Interface.Good status | Interface.Unsafe status ->
         let path = match status.Interface.status_path with
           | [] | _ :: [] -> "" (* Drop the topmost level, usually "Top" *)
@@ -1523,28 +1527,25 @@ let main files =
           | None -> ""
           | Some n -> ", proving " ^ n
         in
-        display ("Ready" ^ path ^ name))
+        display ("Ready" ^ path ^ name); k ())
   in
-  let thread_to_coq f =
+  let send_to_coq f =
     let term = session_notebook#current_term in
     let av = term.analyzed_view in
-    let threaded_task () =
-      let info () = Minilib.log ("Coq locked, discarding query") in
-      let f handle = ignore (f av handle); update_status handle in
-      try Coq.try_grab term.toplvl f info
-      with e ->
-	let msg = "Unknown error, please report:\n" ^ (Printexc.to_string e)
-	in async av#set_message msg
-    in
-    Minilib.log ("Launching thread to coq");
-    ignore (Thread.create threaded_task ())
+    let info () = Minilib.log ("Coq locked, discarding query") in
+    let f h k = f av h (fun () -> update_status h k) in
+    try Coq.try_grab term.toplvl f info
+    with e ->
+      let msg = "Unknown error, please report:\n" ^ (Printexc.to_string e)
+      in av#set_message msg
   in
   let match_callback _ =
     let w = get_current_word () in
     let coqtop = session_notebook#current_term.toplvl in
-    let display_match = function
-      |Interface.Fail _ -> flash_info "Not an inductive type"
+    let display_match k = function
+      |Interface.Fail _ -> (flash_info "Not an inductive type"; k ())
       |Interface.Good cases | Interface.Unsafe cases ->
+	k ();
         let print_branch c l =
 	  Format.fprintf c " | @[<hov 1>%a@]=> _@\n"
 	    (print_list (fun c s -> Format.fprintf c "%s@ " s)) l
@@ -1566,8 +1567,7 @@ let main files =
           view#buffer#place_cursor ~where:i;
           view#buffer#move_mark ~where:(i#backward_chars 3) `SEL_BOUND
     in
-    Coq.try_grab coqtop
-      (fun handle -> Coq.mkcases handle w display_match) ignore
+    Coq.try_grab coqtop (fun h k -> Coq.mkcases w h (display_match k)) ignore
   in
 (* External command callback *)
   let compile_f _ =
@@ -1692,7 +1692,7 @@ let main files =
   let tactic_shortcut s sc = GAction.add_action s ~label:("_"^s)
     ~accel:(current.modifier_for_tactics^sc)
     ~callback:
-    (fun _ -> thread_to_coq (fun a handle -> a#tactic_wizard handle [s]))
+    (fun _ -> send_to_coq (fun a -> a#tactic_wizard [s]))
   in
   let query_searchabout () =
     let word = get_current_word () in
@@ -1707,19 +1707,20 @@ let main files =
       buf#insert tpe;
       buf#insert "\n";
     in
-    let display_results r =
+    let display_results k r =
       term.message_view#clear ();
-      List.iter insert (match r with Interface.Good l -> l | _ -> [])
+      List.iter insert (match r with Interface.Good l -> l | _ -> []);
+      k ()
     in
-    let launch_query handle =
-      Coq.search handle [Interface.SubType_Pattern word, true] display_results
+    let launch_query h k =
+      Coq.search [Interface.SubType_Pattern word, true] h (display_results k)
     in
     Coq.try_grab term.toplvl launch_query ignore
   in
   let query_callback command _ =
     let word = get_current_word () in
     let term = session_notebook#current_term in
-    let f query handle = term.analyzed_view#raw_coq_query handle query in
+    let f query = term.analyzed_view#raw_coq_query query in
     if not (word = "") then
       let query = command ^ " " ^ word ^ "." in
       term.message_view#clear ();
@@ -1866,27 +1867,27 @@ let main files =
       (fun (opts,name,label,key,dflt) ->
          GAction.add_toggle_action name ~active:dflt ~label
            ~accel:(current.modifier_for_display^key)
-           ~callback:(fun v -> thread_to_coq (fun av handle ->
-             setopts handle opts v#get_active;
-             av#show_goals handle))
+           ~callback:(fun v -> send_to_coq (fun av h k ->
+             setopts opts v#get_active h
+               (fun () -> av#show_goals h k)))
 	   view_actions)
       print_items;
     GAction.add_actions navigation_actions [
       GAction.add_action "Navigation" ~label:"_Navigation";
       GAction.add_action "Forward" ~label:"_Forward" ~stock:`GO_DOWN
-	~callback:(fun _ -> thread_to_coq (fun a -> a#process_next_phrase))
+	~callback:(fun _ -> send_to_coq (fun a -> a#process_next_phrase))
 	~tooltip:"Forward one command" ~accel:(current.modifier_for_navigation^"Down");
       GAction.add_action "Backward" ~label:"_Backward" ~stock:`GO_UP
-	~callback:(fun _ -> thread_to_coq (fun a -> a#backtrack_last_phrase))
+	~callback:(fun _ -> send_to_coq (fun a -> a#backtrack_last_phrase))
 	~tooltip:"Backward one command" ~accel:(current.modifier_for_navigation^"Up");
       GAction.add_action "Go to" ~label:"_Go to" ~stock:`JUMP_TO
-	~callback:(fun _ -> thread_to_coq (fun a -> a#go_to_insert))
+	~callback:(fun _ -> send_to_coq (fun a -> a#go_to_insert))
 	~tooltip:"Go to cursor" ~accel:(current.modifier_for_navigation^"Right");
       GAction.add_action "Start" ~label:"_Start" ~stock:`GOTO_TOP
 	~callback:(fun _ -> force_reset_initial ())
 	~tooltip:"Restart coq" ~accel:(current.modifier_for_navigation^"Home");
       GAction.add_action "End" ~label:"_End" ~stock:`GOTO_BOTTOM
-	~callback:(fun _ -> thread_to_coq (fun a -> a#process_until_end_or_error))
+	~callback:(fun _ -> send_to_coq (fun a -> a#process_until_end_or_error))
 	~tooltip:"Go to end" ~accel:(current.modifier_for_navigation^"End");
       GAction.add_action "Interrupt" ~label:"_Interrupt" ~stock:`STOP
 	~callback:(fun _ -> break ()) ~tooltip:"Interrupt computations"
@@ -1909,8 +1910,8 @@ let main files =
       GAction.add_action "Wizard" ~tooltip:"Proof Wizard" ~label:"<Proof Wizard>"
 	~stock:`DIALOG_INFO
 	~callback:
-	(fun _ -> thread_to_coq
-	  (fun a handle -> a#tactic_wizard handle current.automatic_tactics))
+	(fun _ -> send_to_coq
+	  (fun a -> a#tactic_wizard current.automatic_tactics))
 	~accel:(current.modifier_for_tactics^"dollar");
       tactic_shortcut "auto" "a";
       tactic_shortcut "auto with *" "asterisk";
@@ -2164,26 +2165,25 @@ let main files =
   initial_about ();
   !refresh_toolbar_hook ();
   !refresh_editor_hook ();
-  session_notebook#current_term.script#misc#grab_focus ();;
+  session_notebook#current_term.script#misc#grab_focus ();
+  Minilib.log "End of Coqide.main";;
 
 (* This function check every half of second if GeoProof has send
    something on his private clipboard *)
 
-let rec check_for_geoproof_input () =
+let check_for_geoproof_input () =
   let cb_Dr = GData.clipboard (Gdk.Atom.intern "_GeoProof") in
-  while true do
-    Thread.delay 0.1;
-    let s = cb_Dr#text in
-    (match s with
-	Some s ->
-	  if s <> "Ack" then
-	    session_notebook#current_term.script#buffer#insert (s^"\n");
-	  cb_Dr#set_text "Ack"
-      | None -> ()
-    );
-  (* cb_Dr#clear does not work so i use : *)
-  (* cb_Dr#set_text "Ack" *)
-  done
+  let handler () =
+    match cb_Dr#text with
+      | None -> true
+      | Some "Ack" -> true
+      | Some s ->
+	session_notebook#current_term.script#buffer#insert (s^"\n");
+	(* cb_Dr#clear does not work so i use : *)
+	cb_Dr#set_text "Ack";
+	true
+  in
+  ignore (GMain.Timeout.add ~ms:100 ~callback:handler)
 
 (** By default, the coqtop we try to launch is exactly the current coqide
     full name, with the last occurrence of "coqide" replaced by "coqtop".

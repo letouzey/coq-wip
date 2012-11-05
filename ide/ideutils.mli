@@ -6,12 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-val async : ('a -> unit) -> 'a -> unit
-val sync  : ('a -> 'b) -> 'a -> 'b
-
-(* avoid running two instances of a function concurrently *)
-val mutex : string -> ('a -> unit) -> 'a -> unit
-
 val doc_url : unit -> string
 val browse : (string -> unit) -> string -> unit
 val browse_keyword : (string -> unit) -> string -> unit
@@ -71,5 +65,6 @@ val requote : string -> string
 val textview_width : #GText.view -> int
 (** Returns an approximate value of the character width of a textview *)
 
+type logger = Interface.message_level -> string -> unit
 val default_logger : Interface.message_level -> string -> unit
 (** Default logger. It logs messages that the casual user should not see. *)

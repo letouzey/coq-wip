@@ -57,8 +57,8 @@ let get_completion (buffer : GText.buffer) coqtop w k =
   in
   let get_semantic accu =
     let flags = [Interface.Name_Pattern ("^" ^ w), true] in
-    let query handle =
-      Coq.search handle flags
+    let query h finally =
+      Coq.search flags h
 	(function
 	  | Interface.Good l ->
 	    let fold accu elt =
@@ -69,8 +69,9 @@ let get_completion (buffer : GText.buffer) coqtop w k =
               in
               last accu elt.Interface.coq_object_qualid
 	    in
+	    finally ();
 	    k (List.fold_left fold accu l)
-	  | _ -> k accu)
+	  | _ -> finally (); k accu)
     in
     Coq.try_grab coqtop query ignore;
   in
@@ -87,8 +88,6 @@ object (self)
   val mutable last_completion = (-1, "", Proposals.empty)
   (* this variable prevents CoqIDE from autocompleting when we have deleted something *)
   val mutable is_auto_completing = false
-
-  val undo_lock = Mutex.create ()
 
   method auto_complete = auto_complete
 
@@ -142,49 +141,35 @@ object (self)
     self#buffer#insert_interactive ~iter s
 
   method undo () =
-    if Mutex.try_lock undo_lock then begin
-      Minilib.log "UNDO";
-      let effective = self#process_action history in
-      if effective then self#backward ();
-      Mutex.unlock undo_lock
-    end else
-      Minilib.log "UNDO DISCARDED"
+    Minilib.log "UNDO";
+    let effective = self#process_action history in
+    if effective then self#backward ()
 
   method redo () =
-    if Mutex.try_lock undo_lock then begin
-      Minilib.log "REDO";
-      let effective = self#process_action redo in
-      if effective then self#forward ();
-      Mutex.unlock undo_lock
-    end else
-      Minilib.log "REDO DISCARDED"
+    Minilib.log "REDO";
+    let effective = self#process_action redo in
+    if effective then self#forward ()
 
   method private handle_insert iter s =
     (* we're inserting, so we may autocomplete *)
     is_auto_completing <- true;
     (* Save the insert action *)
-    if Mutex.try_lock undo_lock then begin
-      let action = Insert (s, iter#offset, Glib.Utf8.length s) in
-      history <- action :: history;
-      redo <- [];
-      self#dump_debug ();
-      Mutex.unlock undo_lock
-    end
+    let action = Insert (s, iter#offset, Glib.Utf8.length s) in
+    history <- action :: history;
+    redo <- [];
+    self#dump_debug ()
 
   method private handle_delete ~start ~stop =
     (* disable autocomplete *)
     is_auto_completing <- false;
     (* Save the delete action *)
-    if Mutex.try_lock undo_lock then begin
-      let start_offset = start#offset in
-      let stop_offset = stop#offset in
-      let s = self#buffer#get_text ~start ~stop () in
-      let action = Delete (s, start_offset, stop_offset - start_offset) in
-      history <- action :: history;
-      redo <- [];
-      self#dump_debug ();
-      Mutex.unlock undo_lock
-    end
+    let start_offset = start#offset in
+    let stop_offset = stop#offset in
+    let s = self#buffer#get_text ~start ~stop () in
+    let action = Delete (s, start_offset, stop_offset - start_offset) in
+    history <- action :: history;
+    redo <- [];
+    self#dump_debug ();
 
   method private do_auto_complete () =
     let iter = self#buffer#get_iter `INSERT in

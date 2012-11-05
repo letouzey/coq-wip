@@ -27,9 +27,9 @@ val check_connection : string list -> unit
 (** * The structure describing a coqtop sub-process *)
 
 (** Liveness management of coqtop is automatic. Whenever a Coqtop dies abruptly,
-    this module is responsible for relaunching the whole process. The hook 
+    this module is responsible for relaunching the whole process. The hook
     passed as an argument in coqtop construction will be called after such an
-    abrupt failure. In particular, it is NOT called when explicitely requesting 
+    abrupt failure. In particular, it is NOT called when explicitely requesting
     coqtop to close or to reset. *)
 
 type coqtop
@@ -38,11 +38,33 @@ type handle
 (** Count of all active coqtops *)
 val coqtop_zombies : unit -> int
 
+(** * Coqtop tasks
+
+  A task is a group of sequential calls to be perform on a coqtop.
+  If a task is already sent to coqtop, it is considered busy
+  ([is_computing] will answer [true]), and other task submission
+  will be rejected.
+
+  A task is represented as a continuation, with a coqtop [handle]
+  as first argument, and a final inner continuation as 2nd argument.
+  This inner continuation should be runned at the end of the task.
+*)
+
+type task = handle -> (unit->unit) -> unit
+
+(** Check if coqtop is computing, i.e. already has a current task *)
+val is_computing : coqtop -> bool
+
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
-(** Create a coqtop process out of a hook and some command-line arguments.
+(** Create a coqtop process out of a hook (called if coqtop dies badly)
+    and some command-line arguments.
     The hook SHALL NOT use [grab] or its variants, otherwise you'll deadlock! *)
 val spawn_coqtop : (handle -> unit) -> string list -> coqtop
+
+(** Finish initializing a freshly spawned coqtop, by running a first task on it.
+    The task should run its inner continuation at the end. *)
+val init_coqtop : coqtop -> task -> unit
 
 (** Interrupt the current computation of coqtop. Asynchronous. *)
 val break_coqtop : coqtop -> unit
@@ -50,65 +72,59 @@ val break_coqtop : coqtop -> unit
 (** Close coqtop. Subsequent requests will be discarded. Hook ignored. *)
 val close_coqtop : coqtop -> unit
 
-(** Reset coqtop. Pending requests will be discarded. Default hook ignored, 
-    provided one used instead. *)
-val reset_coqtop : coqtop -> (handle -> unit) -> unit
+(** Check if coqtop is closed. *)
+val is_closed : coqtop -> bool
 
-(** Last resort against a reluctant coqtop (a.k.a. chainsaw massacre). 
+(** Reset coqtop. Pending requests will be discarded. Default hook ignored,
+    provided one used instead. *)
+val reset_coqtop : coqtop -> task -> unit
+
+(** Last resort against a reluctant coqtop (a.k.a. chainsaw massacre).
     Asynchronous. *)
 val kill_coqtop : coqtop -> unit
-
-(** * Coqtop commmunication *)
-
-(** Start a coqtop dialogue and ensure that there is no interfering process.
-    - If coqtop ever dies during the computation, this function restarts coqtop 
-      and calls the restart hook with the fresh coqtop.
-    - If the argument function raises an exception, it is propagated.
-    - The request may be discarded if a [close_coqtop] or [reset_coqtop] occurs
-      before its completion.
-*)
-val grab : coqtop -> (handle -> unit) -> unit
-
-(** As [grab], but applies the second callback if coqtop is already busy. Please
-    consider using [try_grab] instead of [grab] except if you REALLY want 
-    something to happen. *)
-val try_grab : coqtop -> (handle -> unit) -> (unit -> unit) -> unit
-
-(** Check if coqtop is computing. Does not take any lock. *)
-val is_computing : coqtop -> bool
-
-(** Check if coqtop is closed. Does not take any lock. *)
-val is_closed : coqtop -> bool
 
 (** In win32, we'll use a different kill function than Unix.kill *)
 
 val killer : (int -> unit) ref
 val interrupter : (int -> unit) ref
 
-(** * Calls to Coqtop, cf [Serialize] for more details *)
+(** * Coqtop commmunication *)
 
-type logger = Interface.message_level -> string -> unit
-(** Except for interp, we use the default logger for any call. *)
+(** Try to schedule a task on a coqtop. If coqtop is available, the task
+    callback is run (asynchronously), otherwise the [(unit->unit)] callback
+    is triggered.
+    - If coqtop ever dies during the computation, this function restarts coqtop
+      and calls the restart hook with the fresh coqtop.
+    - If the argument function raises an exception, it is propagated.
+    - The task may be discarded if a [close_coqtop] or [reset_coqtop] occurs
+      before its completion.
+    - The task callback should run its inner continuation at the end. *)
 
-type 'a async_answer = ('a Interface.value -> unit) -> unit
+val try_grab : coqtop -> task -> (unit -> unit) -> unit
 
-val interp :
-  handle -> logger -> ?raw:bool -> ?verbose:bool -> string ->
-  string async_answer
-val rewind : handle -> int -> int async_answer
-val status : handle -> Interface.status async_answer
-val goals : handle -> Interface.goals option async_answer
-val evars : handle -> Interface.evar list option async_answer
-val hints :
-  handle -> (Interface.hint list * Interface.hint) option async_answer
-val inloadpath : handle -> string -> bool async_answer
-val mkcases : handle -> string -> string list list async_answer
-val search :
-  handle -> Interface.search_flags ->
-  string Interface.coq_object list async_answer
+(** * Atomic calls to coqtop
 
-(** A specialized version of [raw_interp] dedicated to
-    set/unset options. *)
+  These atomic calls can be combined to form arbitrary multi-call tasks.
+  They correspond to the protocol calls (cf [Serialize] for more details).
+  Note that each call is asynchronous: it will return immediately,
+  but the inner callback will be executed later to handle the call answer
+  when this answer is available.
+  Except for interp, we use the default logger for any call. *)
+
+type 'a atask = handle -> ('a Interface.value -> unit) -> unit
+
+val interp : ?logger:Ideutils.logger -> ?raw:bool -> ?verbose:bool ->
+  string -> string atask
+val rewind : int -> int atask
+val status : Interface.status atask
+val goals : Interface.goals option atask
+val evars : Interface.evar list option atask
+val hints : (Interface.hint list * Interface.hint) option atask
+val inloadpath : string -> bool atask
+val mkcases : string -> string list list atask
+val search : Interface.search_flags -> string Interface.coq_object list atask
+
+(** A specialized version of [raw_interp] dedicated to set/unset options. *)
 
 module PrintOpt :
 sig
@@ -122,5 +138,5 @@ sig
   val universes : t
 
   val set_printing_width : int -> unit
-  val set : handle -> (t * bool) list -> unit
+  val set : (t * bool) list -> task
 end
