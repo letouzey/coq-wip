@@ -35,9 +35,6 @@ val check_connection : string list -> unit
 type coqtop
 type handle
 
-(** Count of all active coqtops *)
-val coqtop_zombies : unit -> int
-
 (** * Coqtop tasks
 
   A task is a group of sequential calls to be perform on a coqtop.
@@ -48,6 +45,7 @@ val coqtop_zombies : unit -> int
   A task is represented as a continuation, with a coqtop [handle]
   as first argument, and a final inner continuation as 2nd argument.
   This inner continuation should be runned at the end of the task.
+  Any exception occuring within the task will trigger a coqtop reset.
 *)
 
 type task = handle -> (unit->unit) -> unit
@@ -58,29 +56,24 @@ val is_computing : coqtop -> bool
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
 (** Create a coqtop process out of a hook (called if coqtop dies badly)
-    and some command-line arguments.
-    The hook SHALL NOT use [grab] or its variants, otherwise you'll deadlock! *)
-val spawn_coqtop : (handle -> unit) -> string list -> coqtop
+    and some command-line arguments. *)
+val spawn_coqtop : task -> string list -> coqtop
 
 (** Finish initializing a freshly spawned coqtop, by running a first task on it.
     The task should run its inner continuation at the end. *)
 val init_coqtop : coqtop -> task -> unit
 
-(** Interrupt the current computation of coqtop. Asynchronous. *)
+(** Interrupt the current computation of coqtop. *)
 val break_coqtop : coqtop -> unit
 
 (** Close coqtop. Subsequent requests will be discarded. Hook ignored. *)
 val close_coqtop : coqtop -> unit
 
-(** Check if coqtop is closed. *)
-val is_closed : coqtop -> bool
-
 (** Reset coqtop. Pending requests will be discarded. Default hook ignored,
     provided one used instead. *)
 val reset_coqtop : coqtop -> task -> unit
 
-(** Last resort against a reluctant coqtop (a.k.a. chainsaw massacre).
-    Asynchronous. *)
+(** Last resort against a reluctant coqtop (a.k.a. chainsaw massacre). *)
 val kill_coqtop : coqtop -> unit
 
 (** In win32, we'll use a different kill function than Unix.kill *)
@@ -95,7 +88,7 @@ val interrupter : (int -> unit) ref
     is triggered.
     - If coqtop ever dies during the computation, this function restarts coqtop
       and calls the restart hook with the fresh coqtop.
-    - If the argument function raises an exception, it is propagated.
+    - If the argument function raises an exception, a coqtop reset occurs.
     - The task may be discarded if a [close_coqtop] or [reset_coqtop] occurs
       before its completion.
     - The task callback should run its inner continuation at the end. *)

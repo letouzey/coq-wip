@@ -55,7 +55,7 @@ IFDEF QUARTZ THEN
     ~callback:(fun x -> Coqide.do_load x; true)
   in
   let _ = osx#connect#ns_application_block_termination
-    ~callback:Coqide.forbid_quit_to_save
+    ~callback:(fun _ -> not Coqide.confirm_quit ())
   in
   ()
 END

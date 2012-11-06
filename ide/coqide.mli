@@ -20,8 +20,8 @@ val read_coqide_args : string list -> string list
 val main : string list -> unit
 
 (** Function to save anything and kill all coqtops
-    @return [false] if you're allowed to quit. *)
-val forbid_quit_to_save : unit -> bool
+    @return [true] if you're allowed to quit. *)
+val confirm_quit : unit -> bool
 
 (** Function to load of a file. *)
 val do_load : string -> unit

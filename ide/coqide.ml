@@ -1018,7 +1018,7 @@ let create_session file =
 	  Project_file.args_from_project the_file !custom_project_files
 	    current.project_file_name
   in
-  let reset = ref (fun _ -> ()) in
+  let reset = ref (fun _ k -> k ()) in
   let trigger handle = !reset handle in
   let ct = Coq.spawn_coqtop trigger coqtop_args in
   let script =
@@ -1029,8 +1029,7 @@ let create_session file =
   let command = new Wg_Command.command_window ct in
   let finder = new Wg_Find.finder (script :> GText.view) in
   let legacy_av = new analyzed_view script proof message ct file in
-  (* TODOPL *)
-  reset := (fun h -> legacy_av#erroneous_reset_initial h (fun () -> ()));
+  reset := legacy_av#erroneous_reset_initial;
   legacy_av#update_stats;
   ignore
     (script#buffer#create_mark ~name:"start_of_input" script#buffer#start_iter);
@@ -1240,57 +1239,33 @@ let export kind _ =
       let st,_ = run_command av cmd in
       flash_info (cmd ^ pr_exit_status st)
 
-let forbid_quit_to_save () =
-  begin try save_pref() with e -> flash_info "Cannot save preferences" end;
-  (if List.exists (fun p -> p.script#buffer#modified) session_notebook#pages
-   then
-      let res = GToolbox.question_box
-	~title:"Quit"
-	~buttons:["Save Named Buffers and Quit";
-                  "Quit without Saving";
-                  "Don't Quit"]
-        ~default:0
-        ~icon:warn_image
-        "There are unsaved buffers"
-      in
-      match res with
-	| 1 -> saveall (); false
-        | 2 -> false
-        | _ -> true
-    else false)
-  ||
-    (let wait_window = GWindow.window ~modal:true ~wm_class:"CoqIde"
-       ~wm_name:"CoqIde" ~kind:`POPUP ~title:"Terminating coqtops" ()
-     in
-     let _ = GMisc.label
-       ~text:"Terminating coqtops processes, please wait ..."
-       ~packing:wait_window#add ()
-     in
-     let warning_window = GWindow.message_dialog
-       ~message_type:`WARNING
-       ~buttons:GWindow.Buttons.yes_no
-       ~message:
-       ("Some coqtops processes are still running.\n" ^
-	"If you quit CoqIDE right now, you may have to kill them manually.\n" ^
-	"Do you want to wait for those processes to terminate ?") ()
-     in
-     List.iter (fun _ -> session_notebook#remove_page 0) session_notebook#pages;
-     let nb_try = ref 0 in
-     wait_window#show ();
-     while (Coq.coqtop_zombies () <> 0)&&(!nb_try <= 50) do
-       incr nb_try;
-       (* TODOPL : faire des sleep gtk en retournant une réponse ? *)
-       (* Thread.delay 0.1 ; *)
-     done;
-     if (!nb_try = 50) then begin
-       wait_window#misc#hide ();
-       match warning_window#run () with
-	 | `YES -> warning_window#misc#hide (); true
-	 | `NO | `DELETE_EVENT -> false
-     end
-     else false)
+exception DontQuit
 
-let quit _ = if not (forbid_quit_to_save ()) then exit 0
+let confirm_quit () =
+  begin try save_pref() with e -> flash_info "Cannot save preferences" end;
+  let ask_confirmation () =
+    let res = GToolbox.question_box
+      ~title:"Quit"
+      ~buttons:["Save Named Buffers and Quit";
+		"Quit without Saving";
+		"Don't Quit"]
+      ~default:0
+      ~icon:warn_image
+      "There are unsaved buffers"
+    in
+    match res with
+      | 1 -> saveall ()
+      | 2 -> ()
+      | _ -> raise DontQuit
+  in
+  try
+    if List.exists (fun p -> p.script#buffer#modified) session_notebook#pages
+    then ask_confirmation ();
+    List.iter (fun p -> Coq.close_coqtop p.toplvl) session_notebook#pages;
+    true
+  with DontQuit -> false
+
+let quit _ = if confirm_quit () then exit 0
 
 let close_buffer _ =
   let do_remove () =
@@ -1376,7 +1351,7 @@ let highlight _ =
 
 end
 
-let forbid_quit_to_save = File.forbid_quit_to_save
+let confirm_quit = File.confirm_quit
 
 (** Callbacks for external commands *)
 
@@ -1563,12 +1538,9 @@ let update_status h k =
 let send_to_coq f =
   let term = session_notebook#current_term in
   let av = term.analyzed_view in
-  let info () = Minilib.log ("Coq locked, discarding query") in
+  let info () = Minilib.log ("Coq busy, discarding query") in
   let f h k = f av h (fun () -> update_status h k) in
-  try Coq.try_grab term.toplvl f info
-  with e ->
-    let msg = "Unknown error, please report:\n" ^ (Printexc.to_string e)
-    in av#set_message msg
+  Coq.try_grab term.toplvl f info
 
 module Nav = struct
   let forward_one _ = send_to_coq (fun a -> a#process_next_phrase)

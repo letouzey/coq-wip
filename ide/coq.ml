@@ -175,8 +175,6 @@ let with_ccb ccb e = ccb.open_ccb e
 
 (** * The structure describing a coqtop sub-process *)
 
-type logger = Interface.message_level -> string -> unit
-
 type handle = {
   pid : int; (* Unix process id *)
   cout : Unix.file_descr;
@@ -186,37 +184,28 @@ type handle = {
   mutable io_watch_id : Glib.Io.id option; (* for removing the gtk io watch *)
 }
 
+(** Coqtop process status :
+  - New    : a process has been spawned, but not initialized via [init_coqtop].
+             It will reject tasks given via [try_grab].
+  - Ready  : no current task, accepts new tasks via [try_grab].
+  - Busy   : has accepted a task via [init_coqtop] or [try_grab],
+             It will reject other tasks for the moment
+  - Closed : the coqide buffer has been closed, we discard any further task.
+*)
+
+type status = New | Ready | Busy | Closed
+
+type task = handle -> (unit -> unit) -> unit
+
 type coqtop = {
   (* non quoted command-line arguments of coqtop *)
   sup_args : string list;
-  (* actual coqtop process *)
-  mutable handle : handle;
   (* trigger called whenever coqtop dies abruptly *)
-  trigger : handle -> unit;
-  (* whether coqtop may be relaunched *)
-  mutable is_closed : bool;
-  (* whether coqtop is busy *)
-  mutable is_computing : bool;
-  (* whether coqtop is waiting to be resetted *)
-  mutable is_to_reset : bool;
-  (* whether coqtop has received its first initialization commands *)
-  mutable is_initialized : bool;
+  trigger : task;
+  (* actual coqtop process and its status *)
+  mutable handle : handle;
+  mutable status : status;
 }
-
-(** Invariants:
-  - any outside request takes the coqtop.lock and is discarded when
-    [is_closed = true].
-  - coqtop.handle may be written ONLY when toplvl_ctr_mtx AND coqtop.lock is 
-    taken.
-*)
-
-exception DeadCoqtop
-
-(** * Count of all active coqtops *)
-
-let toplvl_ctr = ref 0
-
-let coqtop_zombies () = !toplvl_ctr
 
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
@@ -278,7 +267,7 @@ let io_read_all chan =
 exception TubeError
 exception AnswerWithoutRequest
 
-let install_input_watch handle =
+let install_input_watch handle respawner =
   let io_chan = Glib.Io.channel_of_descr handle.cout in
   let all_conds = [`ERR; `HUP; `IN; `NVAL; `PRI] in (* all except `OUT *)
   let rec check_errors = function
@@ -293,7 +282,7 @@ let install_input_watch handle =
     logger level content
   in
   let handle_final_answer ccb xml =
-    Minilib.log "END Wait";
+    Minilib.log "Handling coqtop answer";
     handle.waiting_for <- None;
     with_ccb ccb { bind_ccb = fun (c,f) -> f (Serialize.to_answer xml c) }
   in
@@ -317,7 +306,7 @@ let install_input_watch handle =
 	    else
 	      handle_final_answer ccb xml
 	in
-	loop (); true
+	loop ()
   in
   let print_exception = function
     | Xml_parser.Error e -> Xml_parser.error e
@@ -325,24 +314,23 @@ let install_input_watch handle =
     | e -> Printexc.to_string e
   in
   let handle_input conds =
-    try unsafe_handle_input conds
-    with e ->
-      Minilib.log ("Exception in coqtop reader: "^print_exception e);
-      (* TODOPL : trigger a reset *)
-      false
+    if handle.alive = false then false (* coqtop already terminated *)
+    else
+      try unsafe_handle_input conds; true
+      with e ->
+	Minilib.log ("Coqtop reader failed, resetting: "^print_exception e);
+	respawner ();
+	false
   in
   handle.io_watch_id <-
     (Some (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan))
 
-(* TODOPL : remove the handler someday *)
-
 (** This launches a fresh handle from its command line arguments. *)
-let unsafe_spawn_handle args =
+let spawn_handle args =
   let prog = coqtop_path () in
   let args = Array.of_list (prog :: "-ideslave" :: args) in
   let (pid, in_fd, oc) = open_process_pid prog args in
-  incr toplvl_ctr;
-  let h = {
+  {
     pid = pid;
     cin = oc;
     cout = in_fd;
@@ -350,39 +338,46 @@ let unsafe_spawn_handle args =
     waiting_for = None;
     io_watch_id = None;
   }
-  in
-  install_input_watch h;
-  h
 
 (** This clears any potentially remaining open garbage. *)
-let unsafe_clear_handle coqtop =
-  let handle = coqtop.handle in
-  if handle.alive then begin
+let clear_handle h =
+  if h.alive then begin
     (* invalidate the old handle *)
-    handle.alive <- false;
-    ignore_error close_out handle.cin;
-    ignore_error Unix.close handle.cout;
-    ignore_error (Unix.waitpid []) handle.pid;
-    decr toplvl_ctr
+    h.alive <- false;
+    ignore_error (Option.iter Glib.Io.remove) h.io_watch_id;
+    ignore_error close_out h.cin;
+    ignore_error Unix.close h.cout;
+    ignore_error (Unix.waitpid []) h.pid;
   end
 
+let rec respawn_coqtop ?(hook=None) coqtop =
+  clear_handle coqtop.handle;
+  ignore_error (fun () -> coqtop.handle <- spawn_handle coqtop.sup_args) ();
+  (* Normally, the handle is now a fresh one.
+     If not, there isn't much we can do ... *)
+  assert (coqtop.handle.alive = true);
+  coqtop.status <- New;
+  install_input_watch coqtop.handle (fun () -> respawn_coqtop coqtop);
+  (* Process the reset callback, either the provided or default one *)
+  let callback = Option.default coqtop.trigger hook in
+  callback coqtop.handle (fun () -> coqtop.status <- Ready)
+
 let spawn_coqtop hook sup_args =
+  let ct =
   {
-    handle = unsafe_spawn_handle sup_args;
+    handle = spawn_handle sup_args;
     sup_args = sup_args;
     trigger = hook;
-    is_closed = false;
-    is_computing = false;
-    is_to_reset = false;
-    is_initialized = false;
+    status = New;
   }
+  in
+  install_input_watch ct.handle (fun () -> respawn_coqtop ct);
+  ct
 
 let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
 let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
 
-let is_computing coqtop = coqtop.is_computing
-
-let is_closed coqtop = coqtop.is_closed
+let is_computing coqtop = (coqtop.status = Busy)
 
 (** These are asynchronous signals *)
 let break_coqtop coqtop =
@@ -393,44 +388,24 @@ let kill_coqtop coqtop =
   try !killer coqtop.handle.pid
   with _ -> Minilib.log "Kill -9 failed. Process already terminated ?"
 
-type task = handle -> (unit -> unit) -> unit
-
 let unsafe_process coqtop task =
-  coqtop.is_computing <- true;
+  assert (coqtop.status = Ready || coqtop.status = New);
+  coqtop.status <- Busy;
   try
-    task coqtop.handle
-      (fun () ->
-	coqtop.is_computing <- false;
-	coqtop.is_initialized <- true)
-  with
-  | DeadCoqtop ->
-    coqtop.is_computing <- false;
-    (* Coqtop died from an non natural cause, let's try to relaunch it *)
-    if not coqtop.is_closed && not coqtop.is_to_reset then begin
-      ignore_error unsafe_clear_handle coqtop;
-      let try_respawn () =
-	coqtop.handle <- unsafe_spawn_handle coqtop.sup_args;
-      in
-      ignore_error try_respawn ();
-      (* If respawning coqtop failed, there is not much we can do... *)
-      assert (coqtop.handle.alive = true);
-      (* Process the reset callback *)
-      ignore_error coqtop.trigger coqtop.handle;
-    end
-  | err ->
-    (* Another error occured, we propagate it. *)
-    coqtop.is_computing <- false;
-    raise err
+    task coqtop.handle (fun () -> coqtop.status <- Ready)
+  with e ->
+    Minilib.log ("Coqtop writer failed, resetting: " ^ Printexc.to_string e);
+    if coqtop.status <> Closed then respawn_coqtop coqtop
 
 let try_grab coqtop task abort =
-  if coqtop.is_computing || not coqtop.is_initialized then abort ()
-  else if coqtop.is_closed || coqtop.is_to_reset then ()
-  else unsafe_process coqtop task
+  match coqtop.status with
+    |Closed -> ()
+    |Busy|New -> abort ()
+    |Ready -> unsafe_process coqtop task
 
 let init_coqtop coqtop task =
-  assert (coqtop.is_initialized = false);
-  if coqtop.is_closed || coqtop.is_to_reset then ()
-  else unsafe_process coqtop task
+  assert (coqtop.status = New);
+  unsafe_process coqtop task
 
 (** * Calls to coqtop *)
 
@@ -440,21 +415,12 @@ type 'a atask = handle -> ('a Interface.value -> unit) -> unit
 
 let eval_call ?(logger=default_logger) call handle k =
   (** Send messages to coqtop and prepare the decoding of the answer *)
-  try
-    Minilib.log ("Start of eval_call " ^ Serialize.pr_call call);
-    assert (handle.waiting_for = None); (* TODOPL !! *)
-    Minilib.log "START Wait";
-    handle.waiting_for <- Some (mk_ccb (call,k), logger);
-    Xml_utils.print_xml handle.cin (Serialize.of_call call);
-    flush handle.cin;
-    Minilib.log "End of eval_call";
-  with err ->
-    (* if anything else happens here, coqtop is most likely dead *)
-    let msg = Printf.sprintf "Error communicating with pid [%i]: %s"
-      handle.pid (Printexc.to_string err)
-    in
-    Minilib.log msg;
-    raise DeadCoqtop
+  Minilib.log ("Start eval_call " ^ Serialize.pr_call call);
+  assert (handle.waiting_for = None);
+  handle.waiting_for <- Some (mk_ccb (call,k), logger);
+  Xml_utils.print_xml handle.cin (Serialize.of_call call);
+  flush handle.cin;
+  Minilib.log "End eval_call"
 
 let interp ?(logger=default_logger) ?(raw=false) ?(verbose=true) s =
   eval_call ~logger (Serialize.interp (raw,verbose,s))
@@ -465,39 +431,25 @@ let status = eval_call Serialize.status
 let hints = eval_call Serialize.hints
 let search flags = eval_call (Serialize.search flags)
 
-let unsafe_close coqtop =
-  if not (coqtop.is_computing) then
-    try
-      eval_call Serialize.quit coqtop.handle
-	(function Interface.Good _ -> () | _ -> kill_coqtop coqtop)
+(* If possible, try first to end coqtop process nicely *)
+
+let unsafe_close coqtop = function
+  |Closed -> ()
+  |Busy -> kill_coqtop coqtop
+  |Ready|New ->
+    try eval_call Serialize.quit coqtop.handle
+	  (function Interface.Good _ -> () | _ -> kill_coqtop coqtop)
     with _ -> kill_coqtop coqtop
-  else
-    (* bring me the chainsaw! *)
-    kill_coqtop coqtop
 
 let close_coqtop coqtop =
-  coqtop.is_closed <- true;
-  (* try to quit coqtop gently *)
-  unsafe_close coqtop;
-  (* Finalize the handle *)
-  ignore_error unsafe_clear_handle coqtop
+  let status = coqtop.status in
+  coqtop.status <- Closed;
+  unsafe_close coqtop status;
+  clear_handle coqtop.handle
 
 let reset_coqtop coqtop hook =
-  coqtop.is_to_reset <- true;
-  (* try to quit coqtop gently *)
-  unsafe_close coqtop;
-  (* Reset the handle *)
-  ignore_error unsafe_clear_handle coqtop;
-  let try_respawn () =
-    coqtop.handle <- unsafe_spawn_handle coqtop.sup_args;
-  in
-  ignore_error try_respawn ();
-  (* If respawning coqtop failed, there is not much we can do... *)
-  assert (coqtop.handle.alive = true);
-  (* Reset done *)
-  coqtop.is_to_reset <- false;
-  (* Process the reset callback with the given hook *)
-  ignore_error (hook coqtop.handle) (fun () -> coqtop.is_initialized <- true)
+  unsafe_close coqtop coqtop.status;
+  respawn_coqtop ~hook:(Some hook) coqtop
 
 module PrintOpt =
 struct
@@ -527,8 +479,7 @@ struct
     eval_call (Serialize.set_options opts) h
       (function
 	| Interface.Good () -> k ()
-	| _ -> (* TODOPL *)
-	  raise (Failure "Cannot set options."))
+	| _ -> failwith "Cannot set options. Resetting coqtop")
 
   let enforce_hack h k =
     let elements = Hashtbl.fold (fun opt v acc -> (opt, v) :: acc) state_hack []
