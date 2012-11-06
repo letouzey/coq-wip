@@ -27,8 +27,6 @@ let flash_info =
 
 let set_location = ref  (function s -> failwith "not ready")
 
-let pbar = GRange.progress_bar ~pulse_step:0.2 ()
-
 let get_insert input_buffer = input_buffer#get_iter_at_mark `INSERT
 
 let byte_offset_to_char_offset s byte_offset =

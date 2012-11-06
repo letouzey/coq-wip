@@ -53,8 +53,6 @@ val flash_info : ?delay:int -> string -> unit
 
 val set_location : (string -> unit) ref
 
-val pbar : GRange.progress_bar
-
 (* In win32, when a command-line is to be executed via cmd.exe
    (i.e. Sys.command, Unix.open_process, ...), it cannot contain several
    quoted "..." zones otherwise some quotes are lost. Solution: we re-quote
