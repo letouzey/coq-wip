@@ -250,20 +250,6 @@ let open_process_pid prog args =
   Unix.close top2ide_w;
   (pid,top2ide_r,Unix.out_channel_of_descr ide2top_w)
 
-let maxread = 1024
-
-let read_string = String.make maxread ' '
-let read_buffer = Buffer.create maxread
-
-let io_read_all chan =
-  Buffer.clear read_buffer;
-  let rec loop () =
-    let len = Glib.Io.read ~buf:read_string ~pos:0 ~len:maxread chan in
-    Buffer.add_substring read_buffer read_string 0 len;
-    if len < maxread then Buffer.contents read_buffer
-    else loop ()
-  in loop ()
-
 exception TubeError
 exception AnswerWithoutRequest
 

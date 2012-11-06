@@ -66,3 +66,11 @@ val textview_width : #GText.view -> int
 type logger = Interface.message_level -> string -> unit
 val default_logger : Interface.message_level -> string -> unit
 (** Default logger. It logs messages that the casual user should not see. *)
+
+(** * subprocess interaction via Glib.Io *)
+
+val io_read_all : Glib.Io.channel -> string
+
+(** [run_command display finally cmd] *)
+val run_command :
+  (string -> unit) -> (Unix.process_status -> unit) -> string -> unit

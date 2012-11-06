@@ -314,3 +314,39 @@ let default_logger level message =
   in
   Minilib.log ~level message
 
+
+let maxread = 1024
+
+(* In a mono-thread coqide, we can use the same buffer for many [io_read_all] *)
+
+let read_string = String.make maxread ' '
+let read_buffer = Buffer.create maxread
+
+let io_read_all chan =
+  Buffer.clear read_buffer;
+  let rec loop () =
+    let len = Glib.Io.read ~buf:read_string ~pos:0 ~len:maxread chan in
+    Buffer.add_substring read_buffer read_string 0 len;
+    if len < maxread then Buffer.contents read_buffer
+    else loop ()
+  in loop ()
+
+let run_command display finally cmd =
+  let cin = Unix.open_process_in cmd in
+  let io_chan = Glib.Io.channel_of_descr (Unix.descr_of_in_channel cin) in
+  let all_conds = [`ERR; `HUP; `IN; `NVAL; `PRI] in (* all except `OUT *)
+  let rec has_errors = function
+    | [] -> false
+    | (`IN | `PRI) :: conds -> has_errors conds
+    | e :: _ -> true
+  in
+  let handle_end () = finally (Unix.close_process_in cin); false
+  in
+  let handle_input conds =
+    if has_errors conds then handle_end ()
+    else
+      let s = io_read_all io_chan in
+      if s = "" then handle_end ()
+      else (display (try_convert s); true)
+  in
+  ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)

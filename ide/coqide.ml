@@ -966,13 +966,22 @@ object(self)
   in ()
 end
 
+(** [last_make_buf] contains the output of the last make compilation.
+    [last_make] is the same, but as a string, refreshed only when searching
+    the next error.
+*)
+
+let last_make_buf = Buffer.create 1024;;
 let last_make = ref "";;
 let last_make_index = ref 0;;
+let last_make_dir = ref "";;
 let search_compile_error_regexp =
   Str.regexp
     "File \"\\([^\"]+\\)\", line \\([0-9]+\\), characters \\([0-9]+\\)-\\([0-9]+\\)";;
 
 let search_next_error () =
+  if String.length !last_make <> Buffer.length last_make_buf
+  then last_make := Buffer.contents last_make_buf;
   let _ =
     Str.search_forward search_compile_error_regexp !last_make !last_make_index
   in
@@ -983,7 +992,7 @@ let search_next_error () =
   and msg_index = Str.match_beginning ()
   in
   last_make_index := Str.group_end 4;
-  (f,l,b,e,
+  (Filename.concat !last_make_dir f, l, b, e,
    String.sub !last_make msg_index (String.length !last_make - msg_index))
 
 
@@ -1074,9 +1083,6 @@ let pr_exit_status = function
   | Unix.WEXITED 0 -> " succeeded"
   | _ -> " failed"
 
-let run_command av cmd =
-  CUnix.run_command Ideutils.try_convert av#insert_message cmd
-
 let local_cd file =
   "cd " ^ Filename.quote (Filename.dirname file) ^ " && "
 
@@ -1086,7 +1092,7 @@ let load_file handler f =
     Minilib.log "Loading file starts";
     let is_f = CUnix.same_file f in
       if not (Util.List.fold_left_i
-		(fun i found x -> if found then found else
+		(fun i found x -> found ||
                    let {analyzed_view=av} = x in
                      (match av#filename with
 			| None -> false
@@ -1233,11 +1239,13 @@ let export kind _ =
           | _ -> assert false
       in
       let cmd =
-        local_cd f ^ current.cmd_coqdoc ^ " --" ^ kind ^
-	  " -o " ^ (Filename.quote output) ^ " " ^ (Filename.quote basef)
+        local_cd f ^ current.cmd_coqdoc ^ " --" ^ kind ^ " -o " ^
+	(Filename.quote output) ^ " " ^ (Filename.quote basef) ^ " 2>&1"
       in
-      let st,_ = run_command av cmd in
-      flash_info (cmd ^ pr_exit_status st)
+      av#set_message ("Running: "^cmd);
+      let finally st = flash_info (cmd ^ pr_exit_status st)
+      in
+      run_command av#insert_message finally cmd
 
 exception DontQuit
 
@@ -1335,10 +1343,10 @@ let print _ =
 	~packing:hbox_print#add ()
       in
       let callback_print () =
+        print_window#destroy ();
         let cmd = print_entry#text in
-        let st,_ = run_command av cmd in
-        flash_info (cmd ^ pr_exit_status st);
-        print_window#destroy ()
+	let finally st = flash_info (cmd ^ pr_exit_status st) in
+	run_command (fun _ -> ()) finally cmd
       in
       let _ = cancel_button#connect#clicked ~callback:print_window#destroy in
       let _ = print_button#connect#clicked ~callback:callback_print in
@@ -1366,31 +1374,44 @@ let compile _ =
     |Some f ->
       let cmd = current.cmd_coqc ^ " -I "
 	^ (Filename.quote (Filename.dirname f))
-	^ " " ^ (Filename.quote f) in
-      let st,res = run_command av cmd in
-      if st = Unix.WEXITED 0 then
-	flash_info (f ^ " successfully compiled")
-      else begin
-	flash_info (f ^ " failed to compile");
-	Coq.try_grab v.toplvl av#process_until_end_or_error ignore;
-	av#insert_message "Compilation output:\n";
-	av#insert_message res
-      end
+	^ " " ^ (Filename.quote f) ^ " 2>&1" in
+      let buf = Buffer.create 1024 in
+      av#set_message ("Running: "^cmd);
+      let display s =
+	av#insert_message s;
+	Buffer.add_string buf s
+      in
+      let finally st =
+	if st = Unix.WEXITED 0 then
+	  flash_info (f ^ " successfully compiled")
+	else begin
+	  flash_info (f ^ " failed to compile");
+	  av#set_message "Compilation output:\n";
+	  av#insert_message (Buffer.contents buf);
+	end
+      in
+      run_command display finally cmd
 
 let make _ =
   let av = current_view () in
   match av#filename with
     |None -> flash_info "Cannot make: this buffer has no name"
     |Some f ->
-      let cmd = local_cd f ^ current.cmd_make in
-      (*
-	File.save ();
-      *)
-      av#insert_message "Command output:\n";
-      let st,res = run_command av cmd in
-      last_make := res;
+      File.saveall ();
+      let cmd = local_cd f ^ current.cmd_make ^ " 2>&1" in
+      av#set_message "Compilation output:\n";
+      Buffer.reset last_make_buf;
+      last_make := "";
       last_make_index := 0;
-      flash_info (current.cmd_make ^ pr_exit_status st)
+      last_make_dir := Filename.dirname f;
+      let display s =
+	av#insert_message s;
+	Buffer.add_string last_make_buf s
+      in
+      let finally st =
+	flash_info (current.cmd_make ^ pr_exit_status st)
+      in
+      run_command display finally cmd
 
 let next_error _ =
   try
@@ -1429,9 +1450,11 @@ let coq_makefile _ =
   match av#filename with
     |None -> flash_info "Cannot make makefile: this buffer has no name"
     |Some f ->
+      File.save ();
       let cmd = local_cd f ^ current.cmd_coqmakefile in
-      let st,res = run_command av cmd in
-      flash_info (current.cmd_coqmakefile ^ pr_exit_status st)
+      let finally st = flash_info (current.cmd_coqmakefile ^ pr_exit_status st)
+      in
+      run_command (fun _ -> ()) finally cmd
 
 let editor _ =
   let av = current_view () in
@@ -1439,11 +1462,11 @@ let editor _ =
     |None -> warning "Call to external editor available only on named files"
     |Some f ->
       File.save ();
-      let com =
+      let cmd =
 	Util.subst_command_placeholder current.cmd_editor (Filename.quote f)
       in
-      let _ = run_command av com in
-      av#revert
+      run_command (fun _ -> ()) (fun _ -> av#revert) cmd
+
 end
 
 let detach_view _ =
