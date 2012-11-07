@@ -336,7 +336,7 @@ let clear_handle h =
     ignore_error (Unix.waitpid []) h.pid;
   end
 
-let rec respawn_coqtop ?(hook=None) coqtop =
+let rec respawn_coqtop ?hook coqtop =
   clear_handle coqtop.handle;
   ignore_error (fun () -> coqtop.handle <- spawn_handle coqtop.sup_args) ();
   (* Normally, the handle is now a fresh one.
@@ -435,7 +435,7 @@ let close_coqtop coqtop =
 
 let reset_coqtop coqtop hook =
   unsafe_close coqtop coqtop.status;
-  respawn_coqtop ~hook:(Some hook) coqtop
+  respawn_coqtop ~hook coqtop
 
 module PrintOpt =
 struct
