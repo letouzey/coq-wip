@@ -184,24 +184,60 @@ type retry = int
 
 let zombies = ref ([] : (unix_process_id * retry) list)
 
-let max_retry = 5
+let pr_zombies ?(full=false) l =
+  let pr (pid,retries) =
+    string_of_int pid ^
+    if full then "["^string_of_int retries^"]" else ""
+  in
+  String.concat ", " (List.map pr l)
 
-let check_zombies others (pid,retry) =
-  if fst (Unix.waitpid [Unix.WNOHANG] pid) = 0 then
-    (* Still there ... *)
-    let _ =
-      try
-	if retry = 0 then !soft_killer pid
-	else if retry < max_retry then !killer pid
-	else () (* we give up... *)
-      with _ -> ()
+let is_buried pid =
+  try fst (Unix.waitpid [Unix.WNOHANG] pid) <> 0
+  with Unix.Unix_error _ -> false
+
+let max_retry = 3 (* one soft then two hard kill attempts *)
+
+let countdown = ref None
+let set_final_countdown () = (countdown := Some max_retry)
+
+let check_zombies () =
+  (* First, do [waitpid] on our zombies and try to kill the survivors *)
+  let handle_zombie others (pid,retries) =
+    if is_buried pid then others
+    else
+      let () = match retries with
+	| 0 -> () (* freshly closed coqtop, leave it some time *)
+	| 1 -> ignore_error !soft_killer pid
+	| _ -> ignore_error !killer pid
+      in (pid,retries+1) :: others
+  in
+  let zs = List.fold_left handle_zombie [] !zombies
+  in
+  if zs <> [] then
+    Minilib.log ("Remaining zombies: "^ pr_zombies ~full:true zs);
+  (* Second, we warn the user about old zombies that refuses to die
+     (except in the middle of the final countdown) *)
+  let chk_old = !countdown = None || !countdown = Some 0 in
+  let old_zombies, new_zombies =
+    List.partition (fun (_,n) -> chk_old && n >= max_retry) zs
+  in
+  if old_zombies <> [] then begin
+    let msg1 = "Some coqtop processes are still running.\n" in
+    let msg2 = "You may have to kill them manually.\nPids: " in
+    let msg3 = pr_zombies old_zombies in
+    let popup = GWindow.message_dialog ~buttons:GWindow.Buttons.close
+      ~message_type:`ERROR ~message:(msg1 ^ msg2 ^ msg3) ()
     in
-    (pid,min max_retry (retry+1)) :: others
-  else others
-  (* TODO : warn the user concerning resilient zombies *)
+    ignore (popup#run ());
+    ignore (popup#destroy ())
+  end;
+  zombies := new_zombies;
+  (* Finally, we might end coqide if the final countdown has started *)
+  if !countdown = Some 0 || (!countdown <> None && zs = []) then exit 0;
+  countdown := Option.map pred !countdown;
+  true
 
-let _ = Glib.Timeout.add ~ms:300 ~callback:
-  (fun () -> zombies := List.fold_left check_zombies [] !zombies; true)
+let _ = Glib.Timeout.add ~ms:300 ~callback:check_zombies
 
 (** * The structure describing a coqtop sub-process *)
 

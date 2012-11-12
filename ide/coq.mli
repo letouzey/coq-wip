@@ -79,6 +79,11 @@ val killer : (int -> unit) ref
 val soft_killer : (int -> unit) ref
 val interrupter : (int -> unit) ref
 
+(** [set_final_countdown] triggers an exit of coqide after
+    some last cycles for closing remaining coqtop zombies *)
+
+val set_final_countdown : unit -> unit
+
 (** * Coqtop commmunication *)
 
 (** Try to schedule a task on a coqtop. If coqtop is available, the task

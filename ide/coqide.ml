@@ -1273,7 +1273,7 @@ let confirm_quit () =
     true
   with DontQuit -> false
 
-let quit _ = if confirm_quit () then exit 0
+let quit _ = if confirm_quit () then Coq.set_final_countdown ()
 
 let close_buffer _ =
   let do_remove () =
