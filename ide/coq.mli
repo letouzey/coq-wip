@@ -73,12 +73,10 @@ val close_coqtop : coqtop -> unit
     provided one used instead. *)
 val reset_coqtop : coqtop -> task -> unit
 
-(** Last resort against a reluctant coqtop (a.k.a. chainsaw massacre). *)
-val kill_coqtop : coqtop -> unit
-
 (** In win32, we'll use a different kill function than Unix.kill *)
 
 val killer : (int -> unit) ref
+val soft_killer : (int -> unit) ref
 val interrupter : (int -> unit) ref
 
 (** * Coqtop commmunication *)

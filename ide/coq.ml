@@ -173,10 +173,40 @@ type ccb = { open_ccb : 't. 't scoped_ccb -> 't }
 let mk_ccb poly = { open_ccb = fun scope -> scope.bind_ccb poly }
 let with_ccb ccb e = ccb.open_ccb e
 
+let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
+let soft_killer = ref (fun pid -> Unix.kill pid Sys.sigterm)
+let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
+
+(** Handling old processes *)
+
+type unix_process_id = int
+type retry = int
+
+let zombies = ref ([] : (unix_process_id * retry) list)
+
+let max_retry = 5
+
+let check_zombies others (pid,retry) =
+  if fst (Unix.waitpid [Unix.WNOHANG] pid) = 0 then
+    (* Still there ... *)
+    let _ =
+      try
+	if retry = 0 then !soft_killer pid
+	else if retry < max_retry then !killer pid
+	else () (* we give up... *)
+      with _ -> ()
+    in
+    (pid,min max_retry (retry+1)) :: others
+  else others
+  (* TODO : warn the user concerning resilient zombies *)
+
+let _ = Glib.Timeout.add ~ms:300 ~callback:
+  (fun () -> zombies := List.fold_left check_zombies [] !zombies; true)
+
 (** * The structure describing a coqtop sub-process *)
 
 type handle = {
-  pid : int; (* Unix process id *)
+  pid : unix_process_id;
   cout : Unix.file_descr;
   cin : out_channel;
   mutable alive : bool;
@@ -329,7 +359,8 @@ let clear_handle h =
     ignore_error (Option.iter Glib.Io.remove) h.io_watch_id;
     ignore_error close_out h.cin;
     ignore_error Unix.close h.cout;
-    ignore_error (Unix.waitpid []) h.pid;
+    (* we monitor the death of the old process *)
+    zombies := (h.pid,0) :: !zombies
   end
 
 let rec respawn_coqtop ?hook coqtop =
@@ -356,21 +387,24 @@ let spawn_coqtop hook sup_args =
   install_input_watch ct.handle (fun () -> respawn_coqtop ct);
   ct
 
-let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
-let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
-
 let is_computing coqtop = (coqtop.status = Busy)
 
-(** These are asynchronous signals *)
+(* For closing a coqtop, we don't try to send it a Quit call anymore,
+   but rather close its channels:
+    - a listening coqtop will handle this just as a Quit call
+    - a busy coqtop will anyway have to be killed *)
+
+let close_coqtop coqtop =
+  coqtop.status <- Closed;
+  clear_handle coqtop.handle
+
+let reset_coqtop coqtop hook = respawn_coqtop ~hook coqtop
+
 let break_coqtop coqtop =
   try !interrupter coqtop.handle.pid
   with _ -> Minilib.log "Error while sending Ctrl-C"
 
-let kill_coqtop coqtop =
-  try !killer coqtop.handle.pid
-  with _ -> Minilib.log "Kill -9 failed. Process already terminated ?"
-
-let unsafe_process coqtop task =
+let process_task coqtop task =
   assert (coqtop.status = Ready || coqtop.status = New);
   coqtop.status <- Busy;
   try
@@ -383,11 +417,11 @@ let try_grab coqtop task abort =
   match coqtop.status with
     |Closed -> ()
     |Busy|New -> abort ()
-    |Ready -> unsafe_process coqtop task
+    |Ready -> process_task coqtop task
 
 let init_coqtop coqtop task =
   assert (coqtop.status = New);
-  unsafe_process coqtop task
+  process_task coqtop task
 
 (** * Calls to coqtop *)
 
@@ -412,26 +446,6 @@ let mkcases s = eval_call (Serialize.mkcases s)
 let status = eval_call Serialize.status
 let hints = eval_call Serialize.hints
 let search flags = eval_call (Serialize.search flags)
-
-(* If possible, try first to end coqtop process nicely *)
-
-let unsafe_close coqtop = function
-  |Closed -> ()
-  |Busy -> kill_coqtop coqtop
-  |Ready|New ->
-    try eval_call Serialize.quit coqtop.handle
-	  (function Interface.Good _ -> () | _ -> kill_coqtop coqtop)
-    with _ -> kill_coqtop coqtop
-
-let close_coqtop coqtop =
-  let status = coqtop.status in
-  coqtop.status <- Closed;
-  unsafe_close coqtop status;
-  clear_handle coqtop.handle
-
-let reset_coqtop coqtop hook =
-  unsafe_close coqtop coqtop.status;
-  respawn_coqtop ~hook coqtop
 
 module PrintOpt =
 struct

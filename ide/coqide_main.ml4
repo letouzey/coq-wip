@@ -39,6 +39,7 @@ external win32_kill : int -> unit = "win32_kill"
 external win32_interrupt : int -> unit = "win32_interrupt"
 let () =
   Coq.killer := win32_kill;
+  Coq.soft_killer := win32_kill;
   Coq.interrupter := win32_interrupt;
   set_win32_path ();
   reroute_stdout_stderr ()
