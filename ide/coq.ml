@@ -275,24 +275,20 @@ let install_input_watch handle respawner =
   let unsafe_handle_input conds =
     check_errors conds;
     let s = io_read_all io_chan in
-    let len = String.length s in
     if s = "" then raise TubeError;
     match handle.waiting_for with
       |None -> raise AnswerWithoutRequest
       |Some (ccb,logger) ->
-	let lex = Lexing.from_string s in
-	let p = Xml_parser.make (Xml_parser.SLexbuf lex) in
-	Xml_parser.check_eof p false;
+	let p = Xml_parser.make (Xml_parser.SString s) in
 	let rec loop () =
-	  if Lexing.lexeme_end lex = len then (* EOF *) ()
+	  let xml = Xml_parser.parse p in
+	  if Serialize.is_message xml then
+	    (handle_intermediate_message logger xml; loop ())
 	  else
-	    let xml = Xml_parser.parse p in
-	    if Serialize.is_message xml then
-	      (handle_intermediate_message logger xml; loop ())
-	    else
-	      handle_final_answer ccb xml
+	    handle_final_answer ccb xml
 	in
-	loop ()
+	try loop ()
+	with Xml_parser.Error (Xml_parser.Empty, _) -> () (* end of s *)
   in
   let print_exception = function
     | Xml_parser.Error e -> Xml_parser.error e
