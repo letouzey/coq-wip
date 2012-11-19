@@ -244,57 +244,6 @@ let rec print_list print fmt = function
 
 let requote cmd = if Sys.os_type = "Win32" then "\""^cmd^"\"" else cmd
 
-let browse f url =
-  let com = Util.subst_command_placeholder current.cmd_browse url in
-  let _ = Unix.open_process_out com in ()
-(* This beautiful message will wait for twt ...
-  if s = 127 then
-    f ("Could not execute\n\""^com^
-       "\"\ncheck your preferences for setting a valid browser command\n")
-*)
-let doc_url () =
-  if current.doc_url = use_default_doc_url || current.doc_url = "" then
-    let addr = List.fold_left Filename.concat (Coq_config.docdir) ["html";"refman";"index.html"] in
-    if Sys.file_exists addr then "file://"^addr else Coq_config.wwwrefman
-  else current.doc_url
-
-let url_for_keyword =
-  let ht = Hashtbl.create 97 in
-    lazy (
-      begin try
-	let cin =
-	  try let index_urls = Filename.concat (List.find
-            (fun x -> Sys.file_exists (Filename.concat x "index_urls.txt"))
-	    (Minilib.coqide_config_dirs ())) "index_urls.txt" in
-	    open_in index_urls
-	  with Not_found ->
-	    let doc_url = doc_url () in
-	    let n = String.length doc_url in
-	      if n > 8 && String.sub doc_url 0 7 = "file://" then
-		open_in (String.sub doc_url 7 (n-7) ^ "index_urls.txt")
-	      else
-		raise Exit
-	in
-	  try while true do
-	    let s = input_line cin in
-	      try
-		let i = String.index s ',' in
-		let k = String.sub s 0 i in
-		let u = String.sub s (i + 1) (String.length s - i - 1) in
-		  Hashtbl.add ht k u
-	      with _ ->
-		Minilib.log "Warning: Cannot parse documentation index file."
-	  done with End_of_file ->
-	    close_in cin
-      with _ ->
-	Minilib.log "Warning: Cannot find documentation index file."
-      end;
-      Hashtbl.find ht : string -> string)
-
-let browse_keyword f text =
-  try let u = Lazy.force url_for_keyword text in browse f (doc_url() ^ u)
-  with Not_found -> f ("No documentation found for \""^text^"\".\n")
-
 let textview_width (view : #GText.view) =
   let rect = view#visible_rect in
   let pixel_width = Gdk.Rectangle.width rect in
@@ -350,3 +299,59 @@ let run_command display finally cmd =
       else (display (try_convert s); true)
   in
   ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)
+
+let browse prerr url =
+  let com = Util.subst_command_placeholder current.cmd_browse url in
+  let finally = function
+    | Unix.WEXITED 127 ->
+      prerr
+	("Could not execute:\n"^com^"\n"^
+	 "check your preferences for setting a valid browser command\n")
+    | _ -> ()
+  in
+  run_command (fun _ -> ()) finally com
+
+let doc_url () =
+  if current.doc_url = use_default_doc_url || current.doc_url = "" then
+    let addr = List.fold_left Filename.concat (Coq_config.docdir) ["html";"refman";"index.html"] in
+    if Sys.file_exists addr then "file://"^addr else Coq_config.wwwrefman
+  else current.doc_url
+
+let url_for_keyword =
+  let ht = Hashtbl.create 97 in
+    lazy (
+      begin try
+	let cin =
+	  try let index_urls = Filename.concat (List.find
+            (fun x -> Sys.file_exists (Filename.concat x "index_urls.txt"))
+	    (Minilib.coqide_config_dirs ())) "index_urls.txt" in
+	    open_in index_urls
+	  with Not_found ->
+	    let doc_url = doc_url () in
+	    let n = String.length doc_url in
+	      if n > 8 && String.sub doc_url 0 7 = "file://" then
+		open_in (String.sub doc_url 7 (n-7) ^ "index_urls.txt")
+	      else
+		raise Exit
+	in
+	  try while true do
+	    let s = input_line cin in
+	      try
+		let i = String.index s ',' in
+		let k = String.sub s 0 i in
+		let u = String.sub s (i + 1) (String.length s - i - 1) in
+		  Hashtbl.add ht k u
+	      with _ ->
+		Minilib.log "Warning: Cannot parse documentation index file."
+	  done with End_of_file ->
+	    close_in cin
+      with _ ->
+	Minilib.log "Warning: Cannot find documentation index file."
+      end;
+      Hashtbl.find ht : string -> string)
+
+let browse_keyword prerr text =
+  try
+    let u = Lazy.force url_for_keyword text in
+    browse prerr (doc_url() ^ u)
+  with Not_found -> prerr ("No documentation found for \""^text^"\".\n")
