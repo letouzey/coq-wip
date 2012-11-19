@@ -247,7 +247,6 @@ type handle = {
   cin : out_channel;
   mutable alive : bool;
   mutable waiting_for : (ccb * logger) option; (* last call + callback + log *)
-  mutable io_watch_id : Glib.Io.id option; (* for removing the gtk io watch *)
 }
 
 (** Coqtop process status :
@@ -362,7 +361,7 @@ let install_input_watch handle respawner =
     | e -> Printexc.to_string e
   in
   let handle_input conds =
-    if handle.alive = false then false (* coqtop already terminated *)
+    if not handle.alive then false (* coqtop already terminated *)
     else
       try unsafe_handle_input conds; true
       with e ->
@@ -370,8 +369,7 @@ let install_input_watch handle respawner =
 	respawner ();
 	false
   in
-  handle.io_watch_id <-
-    (Some (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan))
+  ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)
 
 (** This launches a fresh handle from its command line arguments. *)
 let spawn_handle args =
@@ -384,7 +382,6 @@ let spawn_handle args =
     cout = in_fd;
     alive = true;
     waiting_for = None;
-    io_watch_id = None;
   }
 
 (** This clears any potentially remaining open garbage. *)
@@ -392,7 +389,6 @@ let clear_handle h =
   if h.alive then begin
     (* invalidate the old handle *)
     h.alive <- false;
-    ignore_error (Option.iter Glib.Io.remove) h.io_watch_id;
     ignore_error close_out h.cin;
     ignore_error Unix.close h.cout;
     (* we monitor the death of the old process *)
