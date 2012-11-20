@@ -42,8 +42,7 @@ object
   method tactic_wizard : string list -> Coq.task
   method process_next_phrase : Coq.task
   method process_until_end_or_error : Coq.task
-  method erroneous_reset_initial : Coq.task
-  method requested_reset_initial : Coq.task
+  method handle_reset_initial : Coq.reset_kind -> Coq.task
   method raw_coq_query : string -> Coq.task
   method show_goals : Coq.task
   method backtrack_last_phrase : Coq.task
@@ -151,7 +150,7 @@ let signals_to_crash = [Sys.sigabrt; Sys.sigalrm; Sys.sigfpe; Sys.sighup;
 			Sys.sigill; Sys.sigpipe; Sys.sigquit;
 			(* Sys.sigsegv; Sys.sigterm;*) Sys.sigusr2]
 
-let crash_save i =
+let crash_save _ =
   (*  ignore (Unix.sigprocmask Unix.SIG_BLOCK signals_to_crash);*)
   Minilib.log "Trying to save all buffers in .crashcoqide files";
   let count = ref 0 in
@@ -169,9 +168,7 @@ let crash_save i =
 	 else Minilib.log ("Could not save "^filename)
        with _ -> Minilib.log ("Could not save "^filename))
     )
-    session_notebook#pages;
-  Minilib.log "Done. Please report.";
-  if i <> 127 then exit i
+    session_notebook#pages
 
 let ignore_break () =
   List.iter
@@ -186,8 +183,7 @@ exception Unsuccessful
 
 let force_reset_initial () =
   Minilib.log "Reset Initial";
-  let term = session_notebook#current_term in
-  Coq.reset_coqtop term.toplvl term.analyzed_view#requested_reset_initial
+  Coq.reset_coqtop session_notebook#current_term.toplvl
 
 let break () =
   Minilib.log "User break received";
@@ -408,7 +404,7 @@ object(self)
         let do_revert () = begin
           push_info "Reverting buffer";
           try
-            Coq.reset_coqtop mycoqtop self#requested_reset_initial;
+            Coq.reset_coqtop mycoqtop;
             let b = Buffer.create 1024 in
             with_file flash_info f ~f:(input_channel b);
             let s = try_convert (Buffer.contents b) in
@@ -822,7 +818,8 @@ object(self)
     in
     loop l ()
 
-  method private generic_reset_initial h k =
+  method handle_reset_initial why h k =
+    if why = Coq.Unexpected then warning "Coqtop died badly. Resetting.";
     let start = input_buffer#start_iter in
     (* clear the stack *)
     while not (Stack.is_empty cmd_stack) do
@@ -839,18 +836,10 @@ object(self)
     (* clear the views *)
     message_view#clear ();
     proof_view#clear ();
+    clear_info ();
+    push_info "Restarted";
     (* apply the initial commands to coq *)
     self#include_file_dir_in_path h k
-
-  method erroneous_reset_initial h k =
-    self#generic_reset_initial h
-      (fun () ->
-	(* warn the user with a pop-up *)
-	warning "Coqtop died badly. Resetting.";
-	k ())
-
-  method requested_reset_initial h k =
-    self#generic_reset_initial h k
 
   method include_file_dir_in_path h k =
     match filename with
@@ -1027,9 +1016,7 @@ let create_session file =
 	  Project_file.args_from_project the_file !custom_project_files
 	    current.project_file_name
   in
-  let reset = ref (fun _ k -> k ()) in
-  let trigger handle = !reset handle in
-  let ct = Coq.spawn_coqtop trigger coqtop_args in
+  let ct = Coq.spawn_coqtop coqtop_args in
   let script =
     Wg_ScriptView.script_view ct
       ~source_buffer:script_buffer
@@ -1038,7 +1025,7 @@ let create_session file =
   let command = new Wg_Command.command_window ct in
   let finder = new Wg_Find.finder (script :> GText.view) in
   let legacy_av = new analyzed_view script proof message ct file in
-  reset := legacy_av#erroneous_reset_initial;
+  Coq.set_reset_handler ct legacy_av#handle_reset_initial;
   legacy_av#update_stats;
   ignore
     (script#buffer#create_mark ~name:"start_of_input" script#buffer#start_iter);
@@ -1273,12 +1260,12 @@ let confirm_quit () =
     true
   with DontQuit -> false
 
-let quit _ = if confirm_quit () then Coq.set_final_countdown ()
+let quit _ = if confirm_quit () then Coq.final_countdown ()
 
 (* For MacOs, just to be sure, we close all coqtops (again?) *)
 let close_and_quit () =
   List.iter (fun p -> Coq.close_coqtop p.toplvl) session_notebook#pages;
-  Coq.set_final_countdown ()
+  Coq.final_countdown ()
 
 let close_buffer _ =
   let do_remove () =

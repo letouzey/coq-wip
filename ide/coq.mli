@@ -55,9 +55,12 @@ val is_computing : coqtop -> bool
 
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
-(** Create a coqtop process out of a hook (called if coqtop dies badly)
-    and some command-line arguments. *)
-val spawn_coqtop : task -> string list -> coqtop
+(** Create a coqtop process with some command-line arguments. *)
+val spawn_coqtop : string list -> coqtop
+
+(** Register a handler called when a coqtop dies (badly or on purpose) *)
+type reset_kind = Planned | Unexpected
+val set_reset_handler : coqtop -> (reset_kind -> task) -> unit
 
 (** Finish initializing a freshly spawned coqtop, by running a first task on it.
     The task should run its inner continuation at the end. *)
@@ -69,9 +72,9 @@ val break_coqtop : coqtop -> unit
 (** Close coqtop. Subsequent requests will be discarded. Hook ignored. *)
 val close_coqtop : coqtop -> unit
 
-(** Reset coqtop. Pending requests will be discarded. Default hook ignored,
-    provided one used instead. *)
-val reset_coqtop : coqtop -> task -> unit
+(** Reset coqtop. Pending requests will be discarded. The reset handler
+    of coqtop will be called with [Planned] as first argument *)
+val reset_coqtop : coqtop -> unit
 
 (** In win32, we'll use a different kill function than Unix.kill *)
 
@@ -82,7 +85,7 @@ val interrupter : (int -> unit) ref
 (** [set_final_countdown] triggers an exit of coqide after
     some last cycles for closing remaining coqtop zombies *)
 
-val set_final_countdown : unit -> unit
+val final_countdown : unit -> unit
 
 (** * Coqtop commmunication *)
 

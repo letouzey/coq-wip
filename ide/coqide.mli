@@ -34,8 +34,7 @@ val do_load : string -> unit
     exiting for others received signals *)
 val ignore_break : unit -> unit
 
-(** Emergency saving of opened files as "foo.v.crashcoqide",
-    and exit (if the integer isn't 127). *)
-val crash_save : int -> unit
+(** Emergency saving of opened files as "foo.v.crashcoqide" and exit *)
+val crash_save : 'a -> unit
 
 val check_for_geoproof_input : unit -> unit

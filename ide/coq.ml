@@ -198,7 +198,7 @@ let is_buried pid =
 let max_retry = 3 (* one soft then two hard kill attempts *)
 
 let countdown = ref None
-let set_final_countdown () = (countdown := Some max_retry)
+let final_countdown () = (countdown := Some max_retry)
 
 let check_zombies () =
   (* First, do [waitpid] on our zombies and try to kill the survivors *)
@@ -262,11 +262,13 @@ type status = New | Ready | Busy | Closed
 
 type task = handle -> (unit -> unit) -> unit
 
+type reset_kind = Planned | Unexpected
+
 type coqtop = {
   (* non quoted command-line arguments of coqtop *)
   sup_args : string list;
-  (* trigger called whenever coqtop dies abruptly *)
-  trigger : task;
+  (* called whenever coqtop dies *)
+  mutable reset_handler : reset_kind -> task;
   (* actual coqtop process and its status *)
   mutable handle : handle;
   mutable status : status;
@@ -395,7 +397,7 @@ let clear_handle h =
     zombies := (h.pid,0) :: !zombies
   end
 
-let rec respawn_coqtop ?hook coqtop =
+let rec respawn_coqtop ?(why=Unexpected) coqtop =
   clear_handle coqtop.handle;
   ignore_error (fun () -> coqtop.handle <- spawn_handle coqtop.sup_args) ();
   (* Normally, the handle is now a fresh one.
@@ -403,21 +405,21 @@ let rec respawn_coqtop ?hook coqtop =
   assert (coqtop.handle.alive = true);
   coqtop.status <- New;
   install_input_watch coqtop.handle (fun () -> respawn_coqtop coqtop);
-  (* Process the reset callback, either the provided or default one *)
-  let callback = Option.default coqtop.trigger hook in
-  callback coqtop.handle (fun () -> coqtop.status <- Ready)
+  coqtop.reset_handler why coqtop.handle (fun () -> coqtop.status <- Ready)
 
-let spawn_coqtop hook sup_args =
+let spawn_coqtop sup_args =
   let ct =
   {
     handle = spawn_handle sup_args;
     sup_args = sup_args;
-    trigger = hook;
+    reset_handler = (fun _ _ k -> k ());
     status = New;
   }
   in
   install_input_watch ct.handle (fun () -> respawn_coqtop ct);
   ct
+
+let set_reset_handler coqtop hook = coqtop.reset_handler <- hook
 
 let is_computing coqtop = (coqtop.status = Busy)
 
@@ -430,7 +432,7 @@ let close_coqtop coqtop =
   coqtop.status <- Closed;
   clear_handle coqtop.handle
 
-let reset_coqtop coqtop hook = respawn_coqtop ~hook coqtop
+let reset_coqtop coqtop = respawn_coqtop ~why:Planned coqtop
 
 let break_coqtop coqtop =
   try !interrupter coqtop.handle.pid
@@ -464,7 +466,7 @@ type 'a atask = handle -> ('a Interface.value -> unit) -> unit
 let eval_call ?(logger=default_logger) call handle k =
   (** Send messages to coqtop and prepare the decoding of the answer *)
   Minilib.log ("Start eval_call " ^ Serialize.pr_call call);
-  assert (handle.waiting_for = None);
+  assert (handle.alive && handle.waiting_for = None);
   handle.waiting_for <- Some (mk_ccb (call,k), logger);
   Xml_utils.print_xml handle.cin (Serialize.of_call call);
   flush handle.cin;

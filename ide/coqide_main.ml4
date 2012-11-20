@@ -107,13 +107,11 @@ IFDEF QUARTZ THEN
   osx#ready ()
 END
 
-    while true do
-      try
-	GMain.main ()
-      with
-	| Sys.Break -> Minilib.log "Interrupted."
-	| e ->
-	    Minilib.log
-	      ("CoqIde unexpected error:" ^ (Printexc.to_string e));
-	    Coqide.crash_save 127
-    done
+
+let _ =
+  try
+    GMain.main ();
+    failwith "Gtk loop ended"
+  with e ->
+    Minilib.log ("Unexpected error: " ^ Printexc.to_string e);
+    Coqide.crash_save ()

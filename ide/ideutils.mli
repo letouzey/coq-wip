@@ -49,6 +49,7 @@ val coqtop_path : unit -> string
 val status : GMisc.statusbar
 val push_info : string -> unit
 val pop_info : unit -> unit
+val clear_info : unit -> unit
 val flash_info : ?delay:int -> string -> unit
 
 val set_location : (string -> unit) ref

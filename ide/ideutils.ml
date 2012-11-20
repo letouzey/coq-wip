@@ -15,9 +15,12 @@ exception Forbidden
 
 let status = GMisc.statusbar ()
 
-let push_info,pop_info =
+let push_info,pop_info,clear_info =
   let status_context = status#new_context ~name:"Messages" in
-    (fun s -> ignore (status_context#push s)),status_context#pop
+  let size = ref 0 in
+  (fun s -> incr size; ignore (status_context#push s)),
+  (fun () -> decr size; status_context#pop ()),
+  (fun () -> for i = 1 to !size do status_context#pop () done; size := 0)
 
 let flash_info =
   let flash_context = status#new_context ~name:"Flash" in
