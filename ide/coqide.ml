@@ -1275,6 +1275,11 @@ let confirm_quit () =
 
 let quit _ = if confirm_quit () then Coq.set_final_countdown ()
 
+(* For MacOs, just to be sure, we close all coqtops (again?) *)
+let close_and_quit () =
+  List.iter (fun p -> Coq.close_coqtop p.toplvl) session_notebook#pages;
+  Coq.set_final_countdown ()
+
 let close_buffer _ =
   let do_remove () =
     let c = session_notebook#current_page in
@@ -1360,6 +1365,7 @@ let highlight _ =
 end
 
 let confirm_quit = File.confirm_quit
+let close_and_quit = File.close_and_quit
 
 (** Callbacks for external commands *)
 

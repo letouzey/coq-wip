@@ -58,6 +58,9 @@ IFDEF QUARTZ THEN
   let _ = osx#connect#ns_application_block_termination
     ~callback:(fun _ -> not (Coqide.confirm_quit ()))
   in
+  let _ = osx#connect#ns_application_will_terminate
+    ~callback:Coqide.close_and_quit
+  in
   ()
 END
 
