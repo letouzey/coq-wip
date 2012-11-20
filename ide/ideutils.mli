@@ -6,12 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-val async : ('a -> unit) -> 'a -> unit
-val sync  : ('a -> 'b) -> 'a -> 'b
-
-(* avoid running two instances of a function concurrently *)
-val mutex : string -> ('a -> unit) -> 'a -> unit
-
 val doc_url : unit -> string
 val browse : (string -> unit) -> string -> unit
 val browse_keyword : (string -> unit) -> string -> unit
@@ -50,7 +44,9 @@ val stock_to_widget :  ?size:Gtk.Tags.icon_size -> GtkStock.id -> GObj.widget
 open Format
 val print_list : (formatter -> 'a -> unit) -> formatter -> 'a list -> unit
 
-val run_command : (string -> unit) -> string -> Unix.process_status*string
+(* [run_commmand display finally cmd] *)
+val run_command :
+  (string -> unit) -> (Unix.process_status -> unit) -> string -> unit
 
 val custom_coqtop : string option ref
 (* @return command to call coqtop
@@ -63,6 +59,7 @@ val coqtop_path : unit -> string
 val status : GMisc.statusbar
 val push_info : string -> unit
 val pop_info : unit -> unit
+val clear_info : unit -> unit
 val flash_info : ?delay:int -> string -> unit
 
 val set_location : (string -> unit) ref
@@ -80,3 +77,7 @@ val absolute_filename : string -> string
    everything. Reference: http://ss64.com/nt/cmd.html *)
 
 val requote : string -> string
+
+(** subprocess interaction via Glib.Io *)
+
+val io_read_all : Glib.Io.channel -> string

@@ -155,27 +155,123 @@ let check_connection args =
     | st -> raise (WrongExitStatus (print_status st))
   with e -> connection_error cmd !lines e
 
+(** Useful stuff *)
+
+let ignore_error f arg =
+  try ignore (f arg) with _ -> ()
+
+(** ccb : existential type for a (call + callback) type.
+
+    Reference: http://alan.petitepomme.net/cwn/2004.01.13.html
+    To rewrite someday with GADT. *)
+
+type 'a poly_ccb = 'a Ide_intf.call * ('a Interface.value-> unit)
+type 't scoped_ccb = { bind_ccb : 'a. 'a poly_ccb -> 't }
+type ccb = { open_ccb : 't. 't scoped_ccb -> 't }
+
+let mk_ccb poly = { open_ccb = fun scope -> scope.bind_ccb poly }
+let with_ccb ccb e = ccb.open_ccb e
+
+let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
+let soft_killer = ref (fun pid -> Unix.kill pid Sys.sigterm)
+let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
+
+(** Handling old processes *)
+
+type unix_process_id = int
+type retry = int
+
+let zombies = ref ([] : (unix_process_id * retry) list)
+
+let pr_zombies ?(full=false) l =
+  let pr (pid,retries) =
+    string_of_int pid ^
+    if full then "["^string_of_int retries^"]" else ""
+  in
+  String.concat ", " (List.map pr l)
+
+let is_buried pid =
+  try fst (Unix.waitpid [Unix.WNOHANG] pid) <> 0
+  with Unix.Unix_error _ -> false
+
+let max_retry = 3 (* one soft then two hard kill attempts *)
+
+let countdown = ref None
+let final_countdown () = (countdown := Some max_retry)
+
+let check_zombies () =
+  (* First, do [waitpid] on our zombies and try to kill the survivors *)
+  let handle_zombie others (pid,retries) =
+    if is_buried pid then others
+    else
+      let () = match retries with
+	| 0 -> () (* freshly closed coqtop, leave it some time *)
+	| 1 -> ignore_error !soft_killer pid
+	| _ -> ignore_error !killer pid
+      in (pid,retries+1) :: others
+  in
+  let zs = List.fold_left handle_zombie [] !zombies
+  in
+  if zs <> [] then
+    prerr_endline ("Remaining zombies: "^ pr_zombies ~full:true zs);
+  (* Second, we warn the user about old zombies that refuses to die
+     (except in the middle of the final countdown) *)
+  let chk_old = !countdown = None || !countdown = Some 0 in
+  let old_zombies, new_zombies =
+    List.partition (fun (_,n) -> chk_old && n >= max_retry) zs
+  in
+  if old_zombies <> [] then begin
+    let msg1 = "Some coqtop processes are still running.\n" in
+    let msg2 = "You may have to kill them manually.\nPids: " in
+    let msg3 = pr_zombies old_zombies in
+    let popup = GWindow.message_dialog ~buttons:GWindow.Buttons.close
+      ~message_type:`ERROR ~message:(msg1 ^ msg2 ^ msg3) ()
+    in
+    ignore (popup#run ());
+    ignore (popup#destroy ())
+  end;
+  zombies := new_zombies;
+  (* Finally, we might end coqide if the final countdown has started *)
+  if !countdown = Some 0 || (!countdown <> None && zs = []) then exit 0;
+  countdown := (match !countdown with None -> None | Some n -> Some (n-1));
+  true
+
+let _ = Glib.Timeout.add ~ms:300 ~callback:check_zombies
+
 (** * The structure describing a coqtop sub-process *)
 
-type coqtop = {
-  pid : int; (* Unix process id *)
-  cout : in_channel ;
-  cin : out_channel ;
-  sup_args : string list;
+type handle = {
+  pid : unix_process_id;
+  cout : Unix.file_descr;
+  cin : out_channel;
+  mutable alive : bool;
+  mutable waiting_for : ccb option; (* last call + callback *)
 }
 
-(** * Count of all active coqtops *)
+(** Coqtop process status :
+  - New    : a process has been spawned, but not initialized via [init_coqtop].
+             It will reject tasks given via [try_grab].
+  - Ready  : no current task, accepts new tasks via [try_grab].
+  - Busy   : has accepted a task via [init_coqtop] or [try_grab],
+             It will reject other tasks for the moment
+  - Closed : the coqide buffer has been closed, we discard any further task.
+*)
 
-let toplvl_ctr = ref 0
+type status = New | Ready | Busy | Closed
 
-let toplvl_ctr_mtx = Mutex.create ()
+type task = handle -> (unit -> unit) -> unit
 
-let coqtop_zombies () =
-  Mutex.lock toplvl_ctr_mtx;
-  let res = !toplvl_ctr in
-  Mutex.unlock toplvl_ctr_mtx;
-  res
+type reset_kind = Planned | Unexpected
 
+type coqtop = {
+  (* non quoted command-line arguments of coqtop *)
+  sup_args : string list;
+  (* called whenever coqtop dies *)
+  mutable reset_handler : reset_kind -> task;
+  (* actual coqtop process and its status *)
+  mutable handle : handle;
+  mutable status : status;
+}
 
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
@@ -218,72 +314,165 @@ let open_process_pid prog args =
   assert (pid <> 0);
   Unix.close ide2top_r;
   Unix.close top2ide_w;
-  let oc = Unix.out_channel_of_descr ide2top_w in
-  let ic = Unix.in_channel_of_descr top2ide_r in
-  set_binary_mode_out oc true;
-  set_binary_mode_in ic true;
-  (pid,ic,oc)
+  (pid,top2ide_r,Unix.out_channel_of_descr ide2top_w)
+
+exception TubeError
+exception AnswerWithoutRequest
+
+let install_input_watch handle respawner =
+  let io_chan = Glib.Io.channel_of_descr handle.cout in
+  let all_conds = [`ERR; `HUP; `IN; `NVAL; `PRI] in (* all except `OUT *)
+  let rec check_errors = function
+    | [] -> ()
+    | (`IN | `PRI) :: conds -> check_errors conds
+    | e :: _ -> raise TubeError
+  in
+  let unsafe_handle_input conds =
+    check_errors conds;
+    let s = io_read_all io_chan in
+    if s = "" then raise TubeError;
+    match handle.waiting_for with
+      |None -> raise AnswerWithoutRequest
+      |Some ccb ->
+	try
+	  let p = Xml_parser.make () in
+	  let xml = Xml_parser.parse p (Xml_parser.SString s) in
+	  prerr_endline "Handling coqtop answer";
+	  handle.waiting_for <- None;
+	  with_ccb ccb { bind_ccb = fun (c,f) -> f (Ide_intf.to_answer xml c) }
+	with Xml_parser.Error (Xml_parser.Empty, _) -> () (* end of s *)
+  in
+  let print_exception = function
+    | Xml_parser.Error e -> Xml_parser.error e
+    | Ide_intf.Marshal_error -> "Protocol violation"
+    | e -> Printexc.to_string e
+  in
+  let handle_input conds =
+    if not handle.alive then false (* coqtop already terminated *)
+    else
+      try unsafe_handle_input conds; true
+      with e ->
+	prerr_endline ("Coqtop reader failed, resetting: "^print_exception e);
+	respawner ();
+	false
+  in
+  ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)
+
+(** This launches a fresh handle from its command line arguments. *)
+let spawn_handle args =
+  let prog = coqtop_path () in
+  let args = Array.of_list (prog :: "-ideslave" :: args) in
+  let (pid, in_fd, oc) = open_process_pid prog args in
+  {
+    pid = pid;
+    cin = oc;
+    cout = in_fd;
+    alive = true;
+    waiting_for = None;
+  }
+
+(** This clears any potentially remaining open garbage. *)
+let clear_handle h =
+  if h.alive then begin
+    (* invalidate the old handle *)
+    h.alive <- false;
+    ignore_error close_out h.cin;
+    ignore_error Unix.close h.cout;
+    (* we monitor the death of the old process *)
+    zombies := (h.pid,0) :: !zombies
+  end
+
+let rec respawn_coqtop ?(why=Unexpected) coqtop =
+  clear_handle coqtop.handle;
+  ignore_error (fun () -> coqtop.handle <- spawn_handle coqtop.sup_args) ();
+  (* Normally, the handle is now a fresh one.
+     If not, there isn't much we can do ... *)
+  assert (coqtop.handle.alive = true);
+  coqtop.status <- New;
+  install_input_watch coqtop.handle (fun () -> respawn_coqtop coqtop);
+  coqtop.reset_handler why coqtop.handle (fun () -> coqtop.status <- Ready)
 
 let spawn_coqtop sup_args =
-  Mutex.lock toplvl_ctr_mtx;
-  try
-    let prog = coqtop_path () in
-    let args = Array.of_list (prog :: "-ideslave" :: sup_args) in
-    let (pid,ic,oc) = open_process_pid prog args in
-    incr toplvl_ctr;
-    Mutex.unlock toplvl_ctr_mtx;
-    { pid = pid; cin = oc; cout = ic ; sup_args = sup_args }
-  with e ->
-    Mutex.unlock toplvl_ctr_mtx;
-    raise e
+  let ct =
+  {
+    handle = spawn_handle sup_args;
+    sup_args = sup_args;
+    reset_handler = (fun _ _ k -> k ());
+    status = New;
+  }
+  in
+  install_input_watch ct.handle (fun () -> respawn_coqtop ct);
+  ct
 
-let respawn_coqtop coqtop = spawn_coqtop coqtop.sup_args
+let set_reset_handler coqtop hook = coqtop.reset_handler <- hook
 
-let interrupter = ref (fun pid -> Unix.kill pid Sys.sigint)
-let killer = ref (fun pid -> Unix.kill pid Sys.sigkill)
+let is_computing coqtop = (coqtop.status = Busy)
+
+(* For closing a coqtop, we don't try to send it a Quit call anymore,
+   but rather close its channels:
+    - a listening coqtop will handle this just as a Quit call
+    - a busy coqtop will anyway have to be killed *)
+
+let close_coqtop coqtop =
+  coqtop.status <- Closed;
+  clear_handle coqtop.handle
+
+let reset_coqtop coqtop = respawn_coqtop ~why:Planned coqtop
 
 let break_coqtop coqtop =
-  try !interrupter coqtop.pid
+  try !interrupter coqtop.handle.pid
   with _ -> prerr_endline "Error while sending Ctrl-C"
 
-let kill_coqtop coqtop =
-  let pid = coqtop.pid in
-  begin
-    try !killer pid
-    with _ -> prerr_endline "Kill -9 failed. Process already terminated ?"
-  end;
+let process_task coqtop task =
+  assert (coqtop.status = Ready || coqtop.status = New);
+  coqtop.status <- Busy;
   try
-    ignore (Unix.waitpid [] pid);
-    Mutex.lock toplvl_ctr_mtx; decr toplvl_ctr; Mutex.unlock toplvl_ctr_mtx
-  with _ -> prerr_endline "Error while waiting for child"
+    task coqtop.handle (fun () -> coqtop.status <- Ready)
+  with e ->
+    prerr_endline ("Coqtop writer failed, resetting: " ^ Printexc.to_string e);
+    if coqtop.status <> Closed then respawn_coqtop coqtop
+
+let try_grab coqtop task abort =
+  match coqtop.status with
+    |Closed -> ()
+    |Busy|New -> abort ()
+    |Ready -> process_task coqtop task
+
+let init_coqtop coqtop task =
+  assert (coqtop.status = New);
+  process_task coqtop task
 
 (** * Calls to coqtop *)
 
 (** Cf [Ide_intf] for more details *)
 
-let p = Xml_parser.make ()
-let () = Xml_parser.check_eof p false
+type 'a atask = handle -> ('a Interface.value -> unit) -> unit
 
-let eval_call coqtop (c:'a Ide_intf.call) =
-  Xml_utils.print_xml coqtop.cin (Ide_intf.of_call c);
-  flush coqtop.cin;
-  let xml = Xml_parser.parse p (Xml_parser.SChannel coqtop.cout) in
-  (Ide_intf.to_answer xml c : 'a Interface.value)
+let eval_call call handle k =
+  (** Send messages to coqtop and prepare the decoding of the answer *)
+  prerr_endline ("Start eval_call " ^ Ide_intf.pr_call call);
+  assert (handle.waiting_for = None);
+  handle.waiting_for <- Some (mk_ccb (call,k));
+  Xml_utils.print_xml handle.cin (Ide_intf.of_call call);
+  flush handle.cin;
+  prerr_endline "End eval_call"
 
-let interp coqtop ?(raw=false) ?(verbose=true) s =
-  eval_call coqtop (Ide_intf.interp (raw,verbose,s))
-let rewind coqtop i = eval_call coqtop (Ide_intf.rewind i)
-let inloadpath coqtop s = eval_call coqtop (Ide_intf.inloadpath s)
-let mkcases coqtop s = eval_call coqtop (Ide_intf.mkcases s)
-let status coqtop = eval_call coqtop Ide_intf.status
-let hints coqtop = eval_call coqtop Ide_intf.hints
+let interp ?(raw=false) ?(verbose=true) s =
+  eval_call (Ide_intf.interp (raw,verbose,s))
+let rewind i = eval_call (Ide_intf.rewind i)
+let inloadpath s = eval_call (Ide_intf.inloadpath s)
+let mkcases s = eval_call (Ide_intf.mkcases s)
+let status = eval_call Ide_intf.status
+let hints = eval_call Ide_intf.hints
 
 module PrintOpt =
 struct
   type t = string list
+
+  let width = ["Printing"; "Width"]
   let implicit = ["Printing"; "Implicit"]
   let coercions = ["Printing"; "Coercions"]
-  let raw_matching = ["Printing"; "Matching"; "Synth"]
+  let raw_matching = ["Printing"; "Matching"]
   let notations = ["Printing"; "Notations"]
   let all_basic = ["Printing"; "All"]
   let existential = ["Printing"; "Existential"; "Instances"]
@@ -291,25 +480,26 @@ struct
 
   let state_hack = Hashtbl.create 11
   let _ = List.iter (fun opt -> Hashtbl.add state_hack opt false)
-            [ implicit; coercions; raw_matching; notations; all_basic; existential; universes ]
+            [ implicit; coercions; raw_matching; notations;
+	      all_basic; existential; universes ]
 
-  let set coqtop options =
-    let () = List.iter (fun (name, v) -> Hashtbl.replace state_hack name v) options in
-    let options = List.map (fun (name, v) -> (name, Interface.BoolValue v)) options in
-    match eval_call coqtop (Ide_intf.set_options options) with
-    | Interface.Good () -> ()
-    | _ -> raise (Failure "Cannot set options.")
+  let set opts h k =
+    List.iter (fun (name, v) -> Hashtbl.replace state_hack name v) opts;
+    let opts = List.map (fun (n, v) -> (n, Interface.BoolValue v)) opts in
+    eval_call (Ide_intf.set_options opts) h
+      (function
+	| Interface.Good () -> k ()
+	| _ -> failwith "Cannot set options. Resetting coqtop")
 
-  let enforce_hack coqtop =
-    let elements = Hashtbl.fold (fun opt v acc -> (opt, v) :: acc) state_hack [] in
-    set coqtop elements
+  let enforce_hack h k =
+    let elements = Hashtbl.fold (fun opt v acc -> (opt, v) :: acc) state_hack []
+    in
+    set elements h k
 
 end
 
-let goals coqtop =
-  let () = PrintOpt.enforce_hack coqtop in
-  eval_call coqtop Ide_intf.goals
+let goals h k =
+  PrintOpt.enforce_hack h (fun () -> eval_call Ide_intf.goals h k)
 
-let evars coqtop =
-  let () = PrintOpt.enforce_hack coqtop in
-  eval_call coqtop Ide_intf.evars
+let evars h k =
+  PrintOpt.enforce_hack h (fun () -> eval_call Ide_intf.evars h k)

@@ -315,7 +315,7 @@ plugins/micromega/csdpcert$(EXE): $(CSDPCERTCMO:.cmo=$(BESTOBJ))
 # target to build CoqIde
 coqide:: coqide-files coqide-binaries states
 
-COQIDEFLAGS=-thread $(COQIDEINCLUDES)
+COQIDEFLAGS=$(COQIDEINCLUDES)
 
 .SUFFIXES:.vo
 
@@ -329,13 +329,13 @@ coqide-files: $(IDEFILES)
 
 $(COQIDEOPT): $(LINKIDEOPT) | $(COQTOPOPT)
 	$(SHOW)'OCAMLOPT -o $@'
-	$(HIDE)$(OCAMLOPT) $(COQIDEFLAGS) $(OPTFLAGS) -o $@ unix.cmxa threads.cmxa \
-		lablgtk.cmxa $(IDEOPTFLAGS) gtkThread.cmx str.cmxa $(LINKIDEOPT)
+	$(HIDE)$(OCAMLOPT) $(COQIDEFLAGS) $(OPTFLAGS) -o $@ unix.cmxa \
+		lablgtk.cmxa $(IDEOPTFLAGS) str.cmxa $(LINKIDEOPT)
 	$(STRIP) $@
 
 $(COQIDEBYTE): $(LINKIDE) | $(COQTOPBYTE)
 	$(SHOW)'OCAMLC -o $@'
-	$(HIDE)$(OCAMLC) $(COQIDEFLAGS) $(BYTEFLAGS) -o $@ unix.cma threads.cma lablgtk.cma gtkThread.cmo\
+	$(HIDE)$(OCAMLC) $(COQIDEFLAGS) $(BYTEFLAGS) -o $@ unix.cma lablgtk.cma \
 		str.cma $(COQRUNBYTEFLAGS) $(LINKIDE)
 
 $(COQIDE):

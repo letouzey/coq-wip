@@ -23,6 +23,10 @@ val main : string list -> unit
     @return [false] if you're allowed to quit. *)
 val forbid_quit_to_save : unit -> bool
 
+(** Terminate coqide after closing all coqtops and waiting
+    for their death *)
+val close_and_quit : unit -> unit
+
 (** Function to load of a file. *)
 val do_load : string -> unit
 
