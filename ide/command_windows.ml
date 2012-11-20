@@ -109,17 +109,16 @@ object(self)
 	if String.get com (String.length com - 1) = '.'
 	then com ^ " " else com ^ " " ^ entry#text ^" . "
       in
-      try
-        result#buffer#set_text
-          (match Coq.interp !coqtop ~raw:true phrase with
-             | Interface.Fail (l,str) ->
-                 ("Error while interpreting "^phrase^":\n"^str)
-             | Interface.Good results ->
-                 ("Result for command " ^ phrase ^ ":\n" ^ results))
-      with e ->
-	let s = Printexc.to_string e in
-	assert (Glib.Utf8.validate s);
-	result#buffer#set_text s
+      let process h k =
+	Coq.interp ~raw:true phrase h (function
+          |Interface.Fail (l,str) ->
+	    result#buffer#set_text
+	      ("Error while interpreting "^phrase^":\n"^str)
+	  |Interface.Good res ->
+	    result#buffer#set_text
+	      ("Result for command " ^ phrase ^ ":\n" ^ res))
+      in
+      Coq.try_grab coqtop process ignore
     in
     ignore (combo#entry#connect#activate ~callback:(on_activate callback));
     ignore (ok_b#connect#clicked ~callback:(on_activate callback));

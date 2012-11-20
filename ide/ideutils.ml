@@ -15,9 +15,12 @@ exception Forbidden
 
 let status = GMisc.statusbar ()
 
-let push_info,pop_info =
+let push_info,pop_info,clear_info =
   let status_context = status#new_context ~name:"Messages" in
-    (fun s -> ignore (status_context#push s)),status_context#pop
+  let size = ref 0 in
+  (fun s -> incr size; ignore (status_context#push s)),
+  (fun () -> decr size; status_context#pop ()),
+  (fun () -> for i = 1 to !size do status_context#pop () done; size := 0)
 
 let flash_info =
   let flash_context = status#new_context ~name:"Flash" in
@@ -218,35 +221,6 @@ let find_tag_stop (tag :GText.tag) (it:GText.iter) =
 let find_tag_limits (tag :GText.tag) (it:GText.iter) =
  (find_tag_start tag it , find_tag_stop tag it)
 
-(* explanations: Win32 threads won't work if events are produced
-   in a thread different from the thread of the Gtk loop. In this
-   case we must use GtkThread.async to push a callback in the
-   main thread. Beware that the synchronus version may produce
-   deadlocks. *)
-let async =
-  if Sys.os_type = "Win32" then GtkThread.async else (fun x -> x)
-let sync =
-  if Sys.os_type = "Win32" then GtkThread.sync else (fun x -> x)
-
-let mutex text f =
-  let m = Mutex.create() in
-  fun x ->
-    if Mutex.try_lock m
-    then
-      (try
-        prerr_endline ("Got lock on "^text);
-        f x;
-        Mutex.unlock m;
-        prerr_endline ("Released lock on "^text)
-      with e ->
-        Mutex.unlock m;
-        prerr_endline ("Released lock on "^text^" (on error)");
-        raise e)
-    else
-      prerr_endline
-        ("Discarded call for "^text^": computations ongoing")
-
-
 let stock_to_widget ?(size=`DIALOG) s =
   let img = GMisc.image ()
   in img#set_stock s;
@@ -282,35 +256,56 @@ let rec print_list print fmt = function
 
 let requote cmd = if Sys.os_type = "Win32" then "\""^cmd^"\"" else cmd
 
-(* TODO: allow to report output as soon as it comes (user-fiendlier
-   for long commands like make...) *)
-let run_command f c =
-  let c = requote c in
-  let result = Buffer.create 127 in
-  let cin,cout,cerr = Unix.open_process_full c (Unix.environment ()) in
-  let buff = String.make 127 ' ' in
-  let buffe = String.make 127 ' ' in
-  let n = ref 0 in
-  let ne = ref 0 in
-  while n:= input cin buff 0 127 ; ne := input cerr buffe 0 127 ; !n+ !ne <> 0
-  do
-    let r = try_convert (String.sub buff 0 !n) in
-    f r;
-    Buffer.add_string result r;
-    let r = try_convert (String.sub buffe 0 !ne) in
-    f r;
-    Buffer.add_string result r
-  done;
-  (Unix.close_process_full (cin,cout,cerr),  Buffer.contents result)
+let absolute_filename f = Minilib.correct_path f (Sys.getcwd ())
 
-let browse f url =
+let maxread = 1024
+
+(* In a mono-thread coqide, we can use the same buffer for many [io_read_all] *)
+
+let read_string = String.make maxread ' '
+let read_buffer = Buffer.create maxread
+
+let io_read_all chan =
+  Buffer.clear read_buffer;
+  let rec loop () =
+    let len = Glib.Io.read ~buf:read_string ~pos:0 ~len:maxread chan in
+    Buffer.add_substring read_buffer read_string 0 len;
+    if len < maxread then Buffer.contents read_buffer
+    else loop ()
+  in loop ()
+
+let run_command display finally cmd =
+  let cin = Unix.open_process_in cmd in
+  let io_chan = Glib.Io.channel_of_descr (Unix.descr_of_in_channel cin) in
+  let all_conds = [`ERR; `HUP; `IN; `NVAL; `PRI] in (* all except `OUT *)
+  let rec has_errors = function
+    | [] -> false
+    | (`IN | `PRI) :: conds -> has_errors conds
+    | e :: _ -> true
+  in
+  let handle_end () = finally (Unix.close_process_in cin); false
+  in
+  let handle_input conds =
+    if has_errors conds then handle_end ()
+    else
+      let s = io_read_all io_chan in
+      if s = "" then handle_end ()
+      else (display (try_convert s); true)
+  in
+  ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)
+
+
+let browse prerr url =
   let com = Minilib.subst_command_placeholder !current.cmd_browse url in
-  let _ = Unix.open_process_out com in ()
-(* This beautiful message will wait for twt ...
-  if s = 127 then
-    f ("Could not execute\n\""^com^
-       "\"\ncheck your preferences for setting a valid browser command\n")
-*)
+  let finally = function
+    | Unix.WEXITED 127 ->
+      prerr
+	("Could not execute:\n"^com^"\n"^
+	 "check your preferences for setting a valid browser command\n")
+    | _ -> ()
+  in
+  run_command (fun _ -> ()) finally com
+
 let doc_url () =
   if !current.doc_url = use_default_doc_url || !current.doc_url = "" then
     let addr = List.fold_left Filename.concat (Coq_config.docdir) ["html";"refman";"index.html"] in
@@ -350,8 +345,8 @@ let url_for_keyword =
       end;
       Hashtbl.find ht : string -> string)
 
-let browse_keyword f text =
-  try let u = Lazy.force url_for_keyword text in browse f (doc_url() ^ u)
-  with Not_found -> f ("No documentation found for \""^text^"\".\n")
-
-let absolute_filename f = Minilib.correct_path f (Sys.getcwd ())
+let browse_keyword prerr text =
+  try
+    let u = Lazy.force url_for_keyword text in
+    browse prerr (doc_url() ^ u)
+  with Not_found -> prerr ("No documentation found for \""^text^"\".\n")
