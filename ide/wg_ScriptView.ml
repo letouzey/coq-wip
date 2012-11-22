@@ -42,7 +42,7 @@ end
 
 module Proposals = Set.Make(StringOrd)
 
-let get_completion (buffer : GText.buffer) coqtop w k =
+let get_completion (buffer : GText.buffer) coqtop w handle_res =
   let rec get_aux accu (iter : GText.iter) =
     match iter#forward_search w with
     | None -> accu
@@ -57,7 +57,7 @@ let get_completion (buffer : GText.buffer) coqtop w k =
   in
   let get_semantic accu =
     let flags = [Interface.Name_Pattern ("^" ^ w), true] in
-    let query h finally =
+    let query h k =
       Coq.search flags h
 	(function
 	  | Interface.Good l ->
@@ -69,9 +69,8 @@ let get_completion (buffer : GText.buffer) coqtop w k =
               in
               last accu elt.Interface.coq_object_qualid
 	    in
-	    finally ();
-	    k (List.fold_left fold accu l)
-	  | _ -> finally (); k accu)
+	    handle_res (List.fold_left fold accu l) k
+	  | _ -> handle_res accu k)
     in
     Coq.try_grab coqtop query ignore;
   in
@@ -180,14 +179,14 @@ object (self)
       if String.length w >= auto_complete_length then begin
         Minilib.log ("Completion of prefix: '" ^ w ^ "'");
         let (off, prefix, proposals) = last_completion in
-	let handle_proposals isnew new_proposals =
+	let handle_proposals isnew new_proposals k =
 	  if isnew then last_completion <- (start#offset, w, new_proposals);
           let prop =
             try Some (Proposals.choose new_proposals)
             with Not_found -> None
           in
           match prop with
-            | None -> ()
+            | None -> k ()
             | Some proposal ->
               let suffix =
 		let len1 = String.length proposal in
@@ -199,12 +198,14 @@ object (self)
               ignore (self#buffer#insert_interactive suffix);
               let ins = self#buffer#get_iter (`OFFSET offset) in
               let sel = self#buffer#get_iter `INSERT in
-              self#buffer#select_range sel ins
+              self#buffer#select_range sel ins;
+	      k ()
 	in
         (* check whether we have the last request in cache *)
         if (start#offset = off) && (0 <= is_substring prefix w) then
           handle_proposals false
 	    (Proposals.filter (fun p -> 0 < is_substring w p) proposals)
+	    (fun () -> ())
         else
 	  get_completion self#buffer ct w (handle_proposals true)
       end

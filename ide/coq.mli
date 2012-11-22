@@ -48,7 +48,8 @@ type handle
   Any exception occuring within the task will trigger a coqtop reset.
 *)
 
-type task = handle -> (unit->unit) -> unit
+type void
+type task = handle -> (unit->void) -> void
 
 (** Check if coqtop is computing, i.e. already has a current task *)
 val is_computing : coqtop -> bool
@@ -110,7 +111,7 @@ val try_grab : coqtop -> task -> (unit -> unit) -> unit
   when this answer is available.
   Except for interp, we use the default logger for any call. *)
 
-type 'a atask = handle -> ('a Interface.value -> unit) -> unit
+type 'a atask = handle -> ('a Interface.value -> void) -> void
 
 val interp : ?logger:Ideutils.logger -> ?raw:bool -> ?verbose:bool ->
   string -> string atask

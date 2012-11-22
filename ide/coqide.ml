@@ -1585,7 +1585,6 @@ let match_template _ =
   let display_match k = function
     |Interface.Fail _ -> (flash_info "Not an inductive type"; k ())
     |Interface.Good cases | Interface.Unsafe cases ->
-      k ();
       let print_branch c l =
 	Format.fprintf c " | @[<hov 1>%a@]=> _@\n"
 	  (print_list (fun c s -> Format.fprintf c "%s@ " s)) l
@@ -1598,14 +1597,15 @@ let match_template _ =
       Minilib.log s;
       let {script = view } = session_notebook#current_term in
       ignore (view#buffer#delete_selection ());
-      let m = view#buffer#create_mark
-        (view#buffer#get_iter `INSERT)
+      let m = view#buffer#create_mark (view#buffer#get_iter `INSERT)
       in
-      if view#buffer#insert_interactive s then
+      if view#buffer#insert_interactive s then begin
         let i = view#buffer#get_iter (`MARK m) in
         let _ = i#nocopy#forward_chars 9 in
         view#buffer#place_cursor ~where:i;
         view#buffer#move_mark ~where:(i#backward_chars 3) `SEL_BOUND
+      end;
+      k ()
   in
   Coq.try_grab coqtop (fun h k -> Coq.mkcases w h (display_match k)) ignore
 
