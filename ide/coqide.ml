@@ -531,7 +531,7 @@ object(self)
     match search text with
       | None -> ()
       | Some(start, _) ->
-        (b#place_cursor start;
+        (b#place_cursor ~where:start;
          self#recenter_insert)
 
   method show_goals h k =
@@ -688,7 +688,7 @@ object(self)
   method process_next_phrase h k =
     let until len start stop = 1 <= len in
     self#process_until until true h
-      (fun () -> input_buffer#place_cursor self#get_start_of_input; k())
+      (fun () -> input_buffer#place_cursor ~where:self#get_start_of_input; k())
 
   method private process_until_iter iter h k =
     let until len start stop =
@@ -761,7 +761,7 @@ object(self)
     let until len _ _ _ = 1 <= len in
     self#backtrack_until until h
       (fun () ->
-	input_buffer#place_cursor self#get_start_of_input;
+	input_buffer#place_cursor ~where:self#get_start_of_input;
 	self#show_goals h k)
 
   method go_to_insert h k =
@@ -820,7 +820,6 @@ object(self)
 
   method handle_reset_initial why h k =
     if why = Coq.Unexpected then warning "Coqtop died badly. Resetting.";
-    let start = input_buffer#start_iter in
     (* clear the stack *)
     while not (Stack.is_empty cmd_stack) do
       let phrase = Stack.pop cmd_stack in
@@ -828,10 +827,12 @@ object(self)
       input_buffer#delete_mark phrase.stop
     done;
     (* reset the buffer *)
+    let start = input_buffer#start_iter in
+    let stop = input_buffer#end_iter in
     input_buffer#move_mark ~where:start (`NAME "start_of_input");
-    input_buffer#remove_tag Tags.Script.processed start input_buffer#end_iter;
-    input_buffer#remove_tag Tags.Script.unjustified start input_buffer#end_iter;
-    input_buffer#remove_tag Tags.Script.to_process start input_buffer#end_iter;
+    input_buffer#remove_tag Tags.Script.processed ~start ~stop;
+    input_buffer#remove_tag Tags.Script.unjustified ~start ~stop;
+    input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
     tag_on_insert (input_buffer :> GText.buffer);
     (* clear the views *)
     message_view#clear ();
@@ -914,7 +915,7 @@ object(self)
   let _ = input_buffer#connect#begin_user_action
     ~callback:(fun () ->
       let here = input_buffer#get_iter_at_mark `INSERT in
-      input_buffer#move_mark (`NAME "prev_insert") here)
+      input_buffer#move_mark (`NAME "prev_insert") ~where:here)
   in
   let _ = input_buffer#connect#end_user_action
     ~callback:(fun () ->
@@ -1504,7 +1505,7 @@ let coq_icon () =
 
 let about _ =
   let dialog = GWindow.about_dialog () in
-  let _ = dialog#connect#response (fun _ -> dialog#destroy ()) in
+  let _ = dialog#connect#response ~callback:(fun _ -> dialog#destroy ()) in
   let _ =
     try dialog#set_logo (GdkPixbuf.from_file (coq_icon ()))
     with _ -> ()
@@ -1672,7 +1673,7 @@ let main files =
   let emit_to_focus sgn =
     let focussed_widget = GtkWindow.Window.get_focus w#as_window in
     let obj = Gobject.unsafe_cast focussed_widget in
-    try GtkSignal.emit_unit obj sgn
+    try GtkSignal.emit_unit obj ~sgn
     with _ -> ()
   in
 
@@ -2015,6 +2016,7 @@ let main files =
 
   (* Reset on tab switch *)
   ignore (session_notebook#connect#switch_page
+    ~callback:
     (fun _ -> if current.reset_on_tab_switch then force_reset_initial ()));
   (* The vertical Separator between Scripts and Goals *)
   vbox#pack ~expand:true session_notebook#coerce;

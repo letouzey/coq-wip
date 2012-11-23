@@ -324,8 +324,10 @@ object (self)
     (* Install auto-completion *)
     ignore (self#buffer#connect#after#end_user_action ~callback:self#may_auto_complete);
     (* HACK: Redirect the undo/redo signals of the underlying GtkSourceView *)
-    ignore (self#connect#undo (fun _ -> ignore (self#undo ()); GtkSignal.stop_emit()));
-    ignore (self#connect#redo (fun _ -> ignore (self#redo ()); GtkSignal.stop_emit()));
+    ignore (self#connect#undo
+	      ~callback:(fun _ -> ignore (self#undo ()); GtkSignal.stop_emit()));
+    ignore (self#connect#redo
+	      ~callback:(fun _ -> ignore (self#redo ()); GtkSignal.stop_emit()));
     (* HACK: Redirect the move_line signal of the underlying GtkSourceView *)
     let move_line_marshal = GtkSignal.marshal2
       Gobject.Data.boolean Gobject.Data.int "move_line_marshal"
@@ -344,9 +346,11 @@ object (self)
       (* do we forward the signal? *)
       let proceed =
         if not b && i = 1 then
-          iter#editable true && iter#forward_line#editable true
+          iter#editable ~default:true &&
+	  iter#forward_line#editable ~default:true
         else if not b && i = -1 then
-          iter#editable true && iter#backward_line#editable true
+          iter#editable ~default:true &&
+	  iter#backward_line#editable ~default:true
         else false
       in
       if not proceed then GtkSignal.stop_emit ()
@@ -360,11 +364,13 @@ let script_view ct ?(source_buffer:GSourceView2.source_buffer option)  ?draw_spa
   GtkSourceView2.SourceView.make_params [] ~cont:(
     GtkText.View.make_params ~cont:(
       GContainer.pack_container ~create:
-	(fun pl -> let w = match source_buffer with
-	  | None -> GtkSourceView2.SourceView.new_ ()
-	  | Some buf -> GtkSourceView2.SourceView.new_with_buffer
-            (Gobject.try_cast buf#as_buffer "GtkSourceBuffer") in
-          let w = Gobject.unsafe_cast w in
-		   Gobject.set_params (Gobject.try_cast w "GtkSourceView") pl;
-		   Gaux.may (GtkSourceView2.SourceView.set_draw_spaces w) draw_spaces;
-		   ((new script_view w ct) : script_view))))
+	(fun pl ->
+	  let w = match source_buffer with
+	    | None -> GtkSourceView2.SourceView.new_ ()
+	    | Some buf -> GtkSourceView2.SourceView.new_with_buffer
+              (Gobject.try_cast buf#as_buffer "GtkSourceBuffer")
+	  in
+	  let w = Gobject.unsafe_cast w in
+	  Gobject.set_params (Gobject.try_cast w "GtkSourceView") pl;
+	  Gaux.may ~f:(GtkSourceView2.SourceView.set_draw_spaces w) draw_spaces;
+	  ((new script_view w ct) : script_view))))
