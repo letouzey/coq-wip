@@ -333,10 +333,14 @@ let install_input_watch handle respawner =
     | (`IN | `PRI) :: conds -> check_errors conds
     | e :: _ -> raise TubeError
   in
+  let last = ref "" in
   let unsafe_handle_input conds =
     check_errors conds;
     let s = io_read_all io_chan in
     if s = "" then raise TubeError;
+    (* It seems that coqtop answers may arrive in pieces,
+       let's glue them together *)
+    let s = !last ^ s in
     match handle.waiting_for with
       |None -> raise AnswerWithoutRequest
       |Some ccb ->
@@ -344,10 +348,11 @@ let install_input_watch handle respawner =
 	  let p = Xml_parser.make () in
 	  let xml = Xml_parser.parse p (Xml_parser.SString s) in
 	  prerr_endline "Handling coqtop answer";
+	  last := "";
 	  handle.waiting_for <- None;
 	  with_ccb ccb
 	    { bind_ccb = fun (c,f) -> ignore (f (Ide_intf.to_answer xml c)) }
-	with Xml_parser.Error (Xml_parser.Empty, _) -> () (* end of s *)
+	with Xml_parser.Error _ -> last := s (* incomplete answer *)
   in
   let print_exception = function
     | Xml_parser.Error e -> Xml_parser.error e
