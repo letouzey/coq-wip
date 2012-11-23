@@ -113,10 +113,12 @@ object(self)
 	Coq.interp ~raw:true phrase h (function
           |Interface.Fail (l,str) ->
 	    result#buffer#set_text
-	      ("Error while interpreting "^phrase^":\n"^str)
+	      ("Error while interpreting "^phrase^":\n"^str);
+	    k ()
 	  |Interface.Good res ->
 	    result#buffer#set_text
-	      ("Result for command " ^ phrase ^ ":\n" ^ res))
+	      ("Result for command " ^ phrase ^ ":\n" ^ res);
+	    k ())
       in
       Coq.try_grab coqtop process ignore
     in

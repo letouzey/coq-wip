@@ -42,7 +42,8 @@ type handle
   Any exception occuring within the task will trigger a coqtop reset.
 *)
 
-type task = handle -> (unit->unit) -> unit
+type void
+type task = handle -> (unit->void) -> void
 
 (** * Starting / signaling / ending a real coqtop sub-process *)
 
@@ -88,7 +89,7 @@ val init_coqtop : coqtop -> task -> unit
   but the inner callback will be executed later to handle the call answer
   when this answer is available. *)
 
-type 'a atask = handle -> ('a Interface.value -> unit) -> unit
+type 'a atask = handle -> ('a Interface.value -> void) -> void
 
 val interp :
   ?raw:bool -> ?verbose:bool -> string -> string atask

@@ -160,12 +160,18 @@ let check_connection args =
 let ignore_error f arg =
   try ignore (f arg) with _ -> ()
 
+(** An abstract copy of unit.
+    This will help ensuring that we do not forget to finally call
+    continuations when building tasks in other modules. *)
+
+type void = Void
+
 (** ccb : existential type for a (call + callback) type.
 
     Reference: http://alan.petitepomme.net/cwn/2004.01.13.html
     To rewrite someday with GADT. *)
 
-type 'a poly_ccb = 'a Ide_intf.call * ('a Interface.value-> unit)
+type 'a poly_ccb = 'a Ide_intf.call * ('a Interface.value -> void)
 type 't scoped_ccb = { bind_ccb : 'a. 'a poly_ccb -> 't }
 type ccb = { open_ccb : 't. 't scoped_ccb -> 't }
 
@@ -259,7 +265,7 @@ type handle = {
 
 type status = New | Ready | Busy | Closed
 
-type task = handle -> (unit -> unit) -> unit
+type task = handle -> (unit -> void) -> void
 
 type reset_kind = Planned | Unexpected
 
@@ -339,7 +345,8 @@ let install_input_watch handle respawner =
 	  let xml = Xml_parser.parse p (Xml_parser.SString s) in
 	  prerr_endline "Handling coqtop answer";
 	  handle.waiting_for <- None;
-	  with_ccb ccb { bind_ccb = fun (c,f) -> f (Ide_intf.to_answer xml c) }
+	  with_ccb ccb
+	    { bind_ccb = fun (c,f) -> ignore (f (Ide_intf.to_answer xml c)) }
 	with Xml_parser.Error (Xml_parser.Empty, _) -> () (* end of s *)
   in
   let print_exception = function
@@ -382,6 +389,9 @@ let clear_handle h =
     zombies := (h.pid,0) :: !zombies
   end
 
+let mkready coqtop =
+  fun () -> coqtop.status <- Ready; Void
+
 let rec respawn_coqtop ?(why=Unexpected) coqtop =
   clear_handle coqtop.handle;
   ignore_error (fun () -> coqtop.handle <- spawn_handle coqtop.sup_args) ();
@@ -390,7 +400,7 @@ let rec respawn_coqtop ?(why=Unexpected) coqtop =
   assert (coqtop.handle.alive = true);
   coqtop.status <- New;
   install_input_watch coqtop.handle (fun () -> respawn_coqtop coqtop);
-  coqtop.reset_handler why coqtop.handle (fun () -> coqtop.status <- Ready)
+  ignore (coqtop.reset_handler why coqtop.handle (mkready coqtop))
 
 let spawn_coqtop sup_args =
   let ct =
@@ -427,7 +437,7 @@ let process_task coqtop task =
   assert (coqtop.status = Ready || coqtop.status = New);
   coqtop.status <- Busy;
   try
-    task coqtop.handle (fun () -> coqtop.status <- Ready)
+    ignore (task coqtop.handle (mkready coqtop))
   with e ->
     prerr_endline ("Coqtop writer failed, resetting: " ^ Printexc.to_string e);
     if coqtop.status <> Closed then respawn_coqtop coqtop
@@ -446,7 +456,7 @@ let init_coqtop coqtop task =
 
 (** Cf [Ide_intf] for more details *)
 
-type 'a atask = handle -> ('a Interface.value -> unit) -> unit
+type 'a atask = handle -> ('a Interface.value -> void) -> void
 
 let eval_call call handle k =
   (** Send messages to coqtop and prepare the decoding of the answer *)
@@ -455,7 +465,8 @@ let eval_call call handle k =
   handle.waiting_for <- Some (mk_ccb (call,k));
   Xml_utils.print_xml handle.cin (Ide_intf.of_call call);
   flush handle.cin;
-  prerr_endline "End eval_call"
+  prerr_endline "End eval_call";
+  Void
 
 let interp ?(raw=false) ?(verbose=true) s =
   eval_call (Ide_intf.interp (raw,verbose,s))
