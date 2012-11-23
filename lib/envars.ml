@@ -104,9 +104,9 @@ let path_to_list p =
   let sep = if Sys.os_type = "Win32" then ';' else ':' in
     Util.String.split sep p
 
-let xdg_data_home warning =
+let xdg_data_home warn =
   coqify
-    (getenv_else "XDG_DATA_HOME" (fun () -> (home warning) / ".local/share"))
+    (getenv_else "XDG_DATA_HOME" (fun () -> (home ~warn) / ".local/share"))
 
 let xdg_config_home warn =
   coqify
