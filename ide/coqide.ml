@@ -55,8 +55,6 @@ object
   method activate : unit -> unit
   method active_keypress_handler : GdkEvent.Key.t -> bool
   method clear_message : unit
-  method find_phrase_starting_at :
-    GText.iter -> (GText.iter * GText.iter) option
   method get_insert : GText.iter
   method recenter_insert : unit
   method get_start_of_input : GText.iter
@@ -69,12 +67,10 @@ object
   method help_for_keyword : unit -> unit
 
   (* Methods interacting with coqtop *)
-  method backtrack_to : GText.iter -> Coq.task
   method go_to_insert : Coq.task
   method insert_command : string -> string -> Coq.task
   method tactic_wizard : string list -> Coq.task
   method process_next_phrase : bool -> Coq.task
-  method process_until_iter_or_error : GText.iter -> Coq.task
   method process_until_end_or_error : Coq.task
   method handle_reset_initial : Coq.reset_kind -> Coq.task
   method raw_coq_query : string -> Coq.task
@@ -684,7 +680,7 @@ object(self)
   val last_array = [|"";""|]
   method get_start_of_input =  input_buffer#get_iter_at_mark (`NAME "start_of_input")
 
-  method get_insert = get_insert input_buffer
+  method get_insert = input_buffer#get_iter_at_mark `INSERT
 
   method recenter_insert =
     input_view#scroll_to_mark
@@ -724,29 +720,23 @@ object(self)
 
 
   method go_to_next_occ_of_cur_word =
-    let cv = session_notebook#current_term in
-    let av = cv.analyzed_view in
-    let b = (cv.script)#buffer in
-    let start = find_word_start (av#get_insert) in
+    let start = find_word_start (self#get_insert) in
     let stop = find_word_end start in
-    let text = b#get_text ~start ~stop () in
+    let text = input_buffer#get_text ~start ~stop () in
     match stop#forward_search text with
       | None -> ()
       | Some(start, _) ->
-        (b#place_cursor start;
+        (input_buffer#place_cursor start;
          self#recenter_insert)
 
   method go_to_prev_occ_of_cur_word =
-    let cv = session_notebook#current_term in
-    let av = cv.analyzed_view in
-    let b = (cv.script)#buffer in
-    let start = find_word_start (av#get_insert) in
+    let start = find_word_start (self#get_insert) in
     let stop = find_word_end start in
-    let text = b#get_text ~start ~stop () in
+    let text = input_buffer#get_text ~start ~stop () in
     match start#backward_search text with
       | None -> ()
       | Some(start, _) ->
-        (b#place_cursor start;
+        (input_buffer#place_cursor start;
          self#recenter_insert)
 
   val mutable full_goal_done = true
@@ -830,9 +820,10 @@ object(self)
       |Interface.Fail (_, err) -> display_error err; k ()
       |Interface.Good msg -> self#insert_message msg; k ())
 
-  method find_phrase_starting_at (start:GText.iter) =
+  method private find_next_phrase =
     try
-      let start = grab_sentence_start start self#get_start_of_input in
+      let i = self#get_start_of_input in
+      let start = grab_sentence_start i i in
       let stop = grab_sentence_stop start in
       (* Is this phrase non-empty and complete ? *)
       if stop#compare start > 0 && is_sentence_end stop#backward_char
@@ -872,7 +863,7 @@ object(self)
         push_info "Coq is computing";
         input_view#set_editable false;
       end;
-      match self#find_phrase_starting_at self#get_start_of_input with
+      match self#find_next_phrase with
         | None ->
           if do_highlight then begin
             input_view#set_editable true;
@@ -930,9 +921,8 @@ object(self)
     =
     let mark_processed safe =
       let stop = self#get_start_of_input in
-      if stop#starts_line then
-        input_buffer#insert ~iter:stop insertphrase
-      else input_buffer#insert ~iter:stop ("\n"^insertphrase);
+      let nl = if stop#starts_line then "" else "\n" in
+      input_buffer#insert ~iter:stop (nl^insertphrase);
       tag_on_insert input_buffer;
       let start = self#get_start_of_input in
       input_buffer#move_mark ~where:stop (`NAME "start_of_input");
@@ -953,32 +943,32 @@ object(self)
 	  self#insert_message ("Unsuccessfully tried: "^coqphrase);
 	  k false)
 
-  method process_until_iter_or_error stop h k =
-    let stop' = `OFFSET stop#offset in
+  method private process_until_dest_or_error h k =
+    let stop_mark = `NAME "destination" in
+    let stop = input_buffer#get_iter_at_mark stop_mark in
     let start = self#get_start_of_input#copy in
-    let start' = `OFFSET start#offset in
+    let start_mark = `OFFSET start#offset in
     input_buffer#apply_tag Tags.Script.to_process ~start ~stop;
     input_view#set_editable false;
     push_info "Coq is computing";
     let get_current () =
       if !current.stop_before then
-        match self#find_phrase_starting_at self#get_start_of_input with
+        match self#find_next_phrase with
           | None -> self#get_start_of_input
           | Some (_, stop2) -> stop2
-      else begin
-        self#get_start_of_input
-      end
+      else self#get_start_of_input
     in
     let unlock () =
       (* Start and stop might be invalid if an eol was added at eof *)
-      let start = input_buffer#get_iter start' in
-      let stop =  input_buffer#get_iter stop' in
+      let start = input_buffer#get_iter start_mark in
+      let stop =  input_buffer#get_iter stop_mark in
       input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
       input_view#set_editable true
     in
     let rec loop () =
       self#process_one_phrase false false false h
 	(fun success ->
+	  let stop = input_buffer#get_iter_at_mark stop_mark in
 	  if success && stop#compare (get_current ()) >=0 then
 	    loop ()
 	  else
@@ -987,7 +977,8 @@ object(self)
     loop ()
 
   method process_until_end_or_error h k =
-    self#process_until_iter_or_error input_buffer#end_iter h k
+    input_buffer#move_mark ~where:input_buffer#end_iter (`NAME "destination");
+    self#process_until_dest_or_error h k
 
   method handle_reset_initial why h k =
     if why = Coq.Unexpected then warning "Coqtop died badly. Resetting.";
@@ -1046,10 +1037,11 @@ object(self)
 	   "CoqIDE and coqtop may be out of sync, you may want to use Restart.");
 	k None)
 
-  (* backtrack Coq to the phrase preceding iterator [i] *)
-  method backtrack_to i h k =
+  (* backtrack Coq to the phrase preceding the destination mark *)
+  method private backtrack_to h k =
     prerr_endline "Backtracking_to iter starts now.";
     full_goal_done <- false;
+    let i = input_buffer#get_iter_at_mark (`NAME "destination") in
     (* pop Coq commands until we reach iterator [i] *)
     let rec n_step n =
       if Stack.is_empty cmd_stack then n else
@@ -1065,13 +1057,14 @@ object(self)
     in
     self#do_backtrack (n_step 0) h (fun _ ->
       (* We may have backtracked too much: let's replay *)
-      self#process_until_iter_or_error i h (fun () -> pop_info (); k()))
+      self#process_until_dest_or_error h (fun () -> pop_info (); k()))
 
   method go_to_insert h k =
     let point = self#get_insert in
+    input_buffer#move_mark ~where:point (`NAME "destination");
     if point#compare self#get_start_of_input>=0
-    then self#process_until_iter_or_error point h k
-    else self#backtrack_to point h k
+    then self#process_until_dest_or_error h k
+    else self#backtrack_to h k
 
   method undo_last_step h k =
     let k () = pop_info (); k () in
@@ -1374,7 +1367,7 @@ let create_session file =
   let _ =
     script#buffer#create_mark ~name:"prev_insert" script#buffer#start_iter in
   let _ =
-    proof#buffer#create_mark ~name:"end_of_conclusion" proof#buffer#start_iter in
+    script#buffer#create_mark ~name:"destination" script#buffer#start_iter in
   let _ =
     GtkBase.Widget.add_events proof#as_widget [`ENTER_NOTIFY;`POINTER_MOTION] in
   let _ = legacy_av#activate () in

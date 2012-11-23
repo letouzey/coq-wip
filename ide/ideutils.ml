@@ -37,8 +37,6 @@ let debug = ref (false)
 let prerr_endline s =
   if !debug then try prerr_endline s;flush stderr with _ -> ()
 
-let get_insert input_buffer = input_buffer#get_iter_at_mark `INSERT
-
 let is_char_start c = let code = Char.code c in code < 0x80 || code >= 0xc0
 
 let byte_offset_to_char_offset s byte_offset =
