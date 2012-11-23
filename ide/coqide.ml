@@ -855,36 +855,13 @@ object(self)
       end else false
     else false
 
-  method private process_one_phrase verbosely display_goals do_highlight h k =
-    let get_next_phrase () =
-      self#clear_message;
-      prerr_endline "process_one_phrase starting now";
-      if do_highlight then begin
-        push_info "Coq is computing";
-        input_view#set_editable false;
-      end;
-      match self#find_next_phrase with
-        | None ->
-          if do_highlight then begin
-            input_view#set_editable true;
-            pop_info ();
-          end;
-          None
-        | Some(start,stop) ->
-          prerr_endline "process_one_phrase : to_process highlight";
-          if do_highlight then begin
-            input_buffer#apply_tag Tags.Script.to_process ~start ~stop;
-            prerr_endline "process_one_phrase : to_process applied";
-          end;
-          prerr_endline "process_one_phrase : getting phrase";
-          Some((start,stop),start#get_slice ~stop)
+  method private process_one_phrase verbosely do_highlight h k =
+    let tag_tp = Tags.Script.to_process in
+    let tag_process (start,stop) =
+      if do_highlight then input_buffer#apply_tag tag_tp ~start ~stop
     in
-    let remove_tag (start,stop) =
-      if do_highlight then begin
-        input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
-        input_view#set_editable true;
-        pop_info ();
-      end
+    let untag_process (start,stop) =
+      if do_highlight then input_buffer#remove_tag tag_tp ~start ~stop
     in
     let mark_processed safe (start,stop) =
       let b = input_buffer in
@@ -898,23 +875,38 @@ object(self)
       let ide_payload = { start = `MARK (b#create_mark start);
                           stop = `MARK (b#create_mark stop); } in
       Stack.push ide_payload cmd_stack;
-      remove_tag (start,stop);
-      if display_goals then self#show_goals h (fun () -> k true)
-      else k true
+      untag_process (start,stop)
     in
-    match get_next_phrase () with
-      | None -> k false
-      | Some ((_,stop) as loc,phrase) ->
-	  if stop#backward_char#has_tag Tags.Script.comment
-	  then mark_processed Safe loc
-          else
-	    self#send_to_coq verbosely phrase true true true h
-	      (function
-		| Some safe -> mark_processed safe loc
-		| None -> remove_tag loc; k false)
+    prerr_endline "process_one_phrase starting now";
+    self#clear_message;
+    match self#find_next_phrase with
+      |None -> k false
+      |Some ((start,stop) as loc) ->
+	tag_process (start,stop);
+	if stop#backward_char#has_tag Tags.Script.comment
+	then (mark_processed Safe loc; k true)
+        else begin
+	  prerr_endline "process_one_phrase : getting phrase";
+	  let phrase = start#get_slice ~stop in
+	  prerr_endline "process_one_phrase : processing phrase";
+	  self#send_to_coq verbosely phrase true true true h
+	    (function
+	      | Some safe -> mark_processed safe loc; k true
+	      | None -> untag_process loc; k false)
+	end
+
+  method private lock_buffer =
+    push_info "Coq is computing";
+    input_view#set_editable false
+
+  method private unlock_buffer =
+    pop_info ();
+    input_view#set_editable true
 
   method process_next_phrase verbosely h k =
-    self#process_one_phrase verbosely true true h (fun b -> k ())
+    self#lock_buffer;
+    self#process_one_phrase verbosely true h
+      (fun b -> self#unlock_buffer; self#show_goals h k)
 
   method private insert_this_phrase_on_success
     show_msg coqphrase insertphrase h k
@@ -944,13 +936,12 @@ object(self)
 	  k false)
 
   method private process_until_dest_or_error h k =
+    self#lock_buffer;
     let stop_mark = `NAME "destination" in
     let stop = input_buffer#get_iter_at_mark stop_mark in
     let start = self#get_start_of_input#copy in
     let start_mark = `OFFSET start#offset in
     input_buffer#apply_tag Tags.Script.to_process ~start ~stop;
-    input_view#set_editable false;
-    push_info "Coq is computing";
     let get_current () =
       if !current.stop_before then
         match self#find_next_phrase with
@@ -958,21 +949,20 @@ object(self)
           | Some (_, stop2) -> stop2
       else self#get_start_of_input
     in
-    let unlock () =
+    let finish () =
       (* Start and stop might be invalid if an eol was added at eof *)
       let start = input_buffer#get_iter start_mark in
       let stop =  input_buffer#get_iter stop_mark in
       input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
-      input_view#set_editable true
+      self#unlock_buffer;
+      self#show_goals h k
     in
     let rec loop () =
-      self#process_one_phrase false false false h
+      self#process_one_phrase false false h
 	(fun success ->
 	  let stop = input_buffer#get_iter_at_mark stop_mark in
-	  if success && stop#compare (get_current ()) >=0 then
-	    loop ()
-	  else
-	    (pop_info (); unlock (); self#show_goals h k))
+	  if success && stop#compare (get_current ()) >=0 then loop ()
+	  else finish ())
     in
     loop ()
 
