@@ -726,7 +726,7 @@ object(self)
     match stop#forward_search text with
       | None -> ()
       | Some(start, _) ->
-        (input_buffer#place_cursor start;
+        (input_buffer#place_cursor ~where:start;
          self#recenter_insert)
 
   method go_to_prev_occ_of_cur_word =
@@ -736,7 +736,7 @@ object(self)
     match start#backward_search text with
       | None -> ()
       | Some(start, _) ->
-        (input_buffer#place_cursor start;
+        (input_buffer#place_cursor ~where:start;
          self#recenter_insert)
 
   val mutable full_goal_done = true
@@ -981,9 +981,10 @@ object(self)
     done;
     (* reset the buffer *)
     input_buffer#move_mark ~where:start (`NAME "start_of_input");
-    input_buffer#remove_tag Tags.Script.processed start input_buffer#end_iter;
-    input_buffer#remove_tag Tags.Script.unjustified start input_buffer#end_iter;
-    input_buffer#remove_tag Tags.Script.to_process start input_buffer#end_iter;
+    let stop = input_buffer#end_iter in
+    input_buffer#remove_tag Tags.Script.processed ~start ~stop;
+    input_buffer#remove_tag Tags.Script.unjustified ~start ~stop;
+    input_buffer#remove_tag Tags.Script.to_process ~start ~stop;
     force_retag input_buffer;
     (* clear the views *)
     self#clear_message;
@@ -1965,11 +1966,11 @@ let main files =
     find_entry#misc#grab_focus ();
     search_backward := save_dir
   in
-  let _ = find_again_button#connect#clicked find_again in
-  let _ = close_find_button#connect#clicked close_find in
-  let _ = replace_find_button#connect#clicked do_replace_find in
-  let _ = find_backwards_check#connect#clicked click_on_backward in
-  let _ = find_entry#connect#changed do_find in
+  let _ = find_again_button#connect#clicked ~callback:find_again in
+  let _ = close_find_button#connect#clicked ~callback:close_find in
+  let _ = replace_find_button#connect#clicked ~callback:do_replace_find in
+  let _ = find_backwards_check#connect#clicked ~callback:click_on_backward in
+  let _ = find_entry#connect#changed ~callback:do_find in
   let _ = find_entry#event#connect#key_press ~callback:key_find in
   let _ = find_w#event#connect#delete ~callback:(fun _ -> find_w#misc#hide(); true) in
   (*
