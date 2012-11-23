@@ -122,12 +122,12 @@ let build_session s =
     ~packing:session_tab#pack () in
   let _ =
     s.script#buffer#connect#modified_changed
-      ~callback:(fun () -> if s.script#buffer#modified
+      ~callback:(protect (fun () -> if s.script#buffer#modified
         then img#set_stock `SAVE
-        else img#set_stock `YES) in
+        else img#set_stock `YES)) in
   let _ =
     eval_paned#misc#connect#size_allocate
-      ~callback:
+      ~callback:(protect
       (let old_paned_width = ref 2 in
        let old_paned_height = ref 2 in
        (fun {Gtk.width=paned_width;Gtk.height=paned_height} ->
@@ -136,7 +136,7 @@ let build_session s =
 	   state_paned#set_position (state_paned#position * paned_height / !old_paned_height);
 	   old_paned_width := paned_width;
 	   old_paned_height := paned_height;
-	 )))
+	 ))))
   in
   session_paned#pack2 ~shrink:false ~resize:false (s.command#frame#coerce);
   script_scroll#add s.script#coerce;
@@ -1132,7 +1132,7 @@ object(self)
 
   method activate () =
     act_id <- Some
-      (input_view#event#connect#key_press ~callback:self#active_keypress_handler);
+      (input_view#event#connect#key_press ~callback:(protect self#active_keypress_handler));
     prerr_endline "CONNECTED active : ";
     print_id (match act_id with Some x -> x | None -> assert false);
     Coq.init_coqtop mycoqtop self#activate_coqtop
@@ -1140,7 +1140,7 @@ object(self)
   method private electric_paren tag =
     let oparen_code = Glib.Utf8.to_unichar "("  ~pos:(ref 0) in
     let cparen_code = Glib.Utf8.to_unichar ")"  ~pos:(ref 0) in
-    ignore (input_buffer#connect#insert_text ~callback:
+    ignore (input_buffer#connect#insert_text ~callback:(protect
               (fun it x ->
                 input_buffer#remove_tag
                   ~start:input_buffer#start_iter
@@ -1166,7 +1166,7 @@ object(self)
                           input_buffer#apply_tag tag ~start:hit ~stop:hit#forward_char
                         end
                       else ()
-                    | _ -> ())
+                    | _ -> ()))
   )
 
   method help_for_keyword () =
@@ -1204,19 +1204,19 @@ object(self)
 
   initializer
     ignore (message_buffer#connect#insert_text
-              ~callback:(fun it s -> ignore
+              ~callback:(protect (fun it s -> ignore
                 (message_view#scroll_to_mark
                    ~use_align:false
                    ~within_margin:0.49
-                   `INSERT)));
+                   `INSERT))));
     ignore (input_buffer#connect#insert_text
-              ~callback:(fun it s ->
+              ~callback:(protect (fun it s ->
                 if (it#compare self#get_start_of_input)<0
                 then GtkSignal.stop_emit ();
                 if String.length s > 1 then
-                  (prerr_endline "insert_text: Placing cursor";input_buffer#place_cursor ~where:it)));
+                  (prerr_endline "insert_text: Placing cursor";input_buffer#place_cursor ~where:it))));
     ignore (input_buffer#connect#after#apply_tag
-              ~callback:(fun tag ~start ~stop ->
+              ~callback:(protect (fun tag ~start ~stop ->
                 if (start#compare self#get_start_of_input)>=0
                 then
                   begin
@@ -1229,10 +1229,10 @@ object(self)
                       ~start
                       ~stop
                   end
-              )
+              ))
     );
     ignore (input_buffer#connect#after#insert_text
-              ~callback:(fun it s ->
+              ~callback:(protect (fun it s ->
                 if auto_complete_on &&
                   String.length s = 1 && s <> " " && s <> "\n"
                 then
@@ -1244,28 +1244,28 @@ object(self)
                   in
                   if has_completed then
                     input_buffer#move_mark `SEL_BOUND ~where:(input_buffer#get_iter `SEL_BOUND)#forward_char;
-              )
+              ))
     );
     ignore (input_buffer#connect#begin_user_action
-	      ~callback:(fun () ->
+	      ~callback:(protect (fun () ->
                 let where = self#get_insert in
                 input_buffer#move_mark (`NAME "prev_insert") ~where;
                 let start = self#get_start_of_input in
                 let stop = input_buffer#end_iter in
-                input_buffer#remove_tag Tags.Script.error ~start ~stop)
+                input_buffer#remove_tag Tags.Script.error ~start ~stop))
     );
     ignore (input_buffer#connect#end_user_action
-              ~callback:(fun () ->
+              ~callback:(protect (fun () ->
                 last_modification_time <- Unix.time ();
                 tag_on_insert input_buffer
-              )
+              ))
     );
     ignore (input_buffer#add_selection_clipboard cb);
     ignore (proof_buffer#add_selection_clipboard cb);
     ignore (message_buffer#add_selection_clipboard cb);
     self#electric_paren Tags.Script.paren;
     ignore (input_buffer#connect#after#mark_set
-              ~callback:(fun it (m:Gtk.text_mark) ->
+              ~callback:(protect (fun it (m:Gtk.text_mark) ->
                 !set_location
                   (Printf.sprintf
                      "Line: %5d Char: %3d" (self#get_insert#line + 1)
@@ -1278,15 +1278,15 @@ object(self)
                       Tags.Script.paren;
                   | Some s ->
                     prerr_endline (s^" moved")
-                  | None -> () )
+                  | None -> () ))
     );
     ignore (input_buffer#connect#insert_text
-              ~callback:(fun it s ->
+              ~callback:(protect (fun it s ->
                 prerr_endline "Should recenter ?";
                 if String.contains s '\n' then begin
                   prerr_endline "Should recenter : yes";
                   self#recenter_insert
-                end));
+                end)));
 end
 
 (** [last_make_buf] contains the output of the last make compilation.
@@ -1363,7 +1363,7 @@ let create_session file =
     GtkBase.Widget.add_events proof#as_widget [`ENTER_NOTIFY;`POINTER_MOTION] in
   let _ = legacy_av#activate () in
   let _ =
-    proof#event#connect#motion_notify ~callback:
+    proof#event#connect#motion_notify ~callback:(protect
       (fun e ->
         let win = match proof#get_window `WIDGET with
           | None -> assert false
@@ -1376,7 +1376,7 @@ let create_session file =
           (fun t ->
             ignore (GtkText.Tag.event t#as_tag proof#as_widget e it#as_iter))
           tags;
-        false) in
+        false)) in
   script#misc#set_name "ScriptWindow";
   script#buffer#place_cursor ~where:(script#buffer#start_iter);
   proof#misc#set_can_focus true;
@@ -1552,8 +1552,8 @@ let do_print session =
 	let finally st = flash_info (cmd ^ pr_exit_status st) in
         run_command av#insert_message finally cmd
       in
-      ignore (print_cancel_button#connect#clicked ~callback:print_window#destroy) ;
-      ignore (print_button#connect#clicked ~callback:callback_print);
+      ignore (print_cancel_button#connect#clicked ~callback:(protect print_window#destroy)) ;
+      ignore (print_button#connect#clicked ~callback:(protect callback_print));
       print_window#misc#show ()
     end
 
@@ -1966,13 +1966,13 @@ let main files =
     find_entry#misc#grab_focus ();
     search_backward := save_dir
   in
-  let _ = find_again_button#connect#clicked ~callback:find_again in
-  let _ = close_find_button#connect#clicked ~callback:close_find in
-  let _ = replace_find_button#connect#clicked ~callback:do_replace_find in
-  let _ = find_backwards_check#connect#clicked ~callback:click_on_backward in
-  let _ = find_entry#connect#changed ~callback:do_find in
-  let _ = find_entry#event#connect#key_press ~callback:key_find in
-  let _ = find_w#event#connect#delete ~callback:(fun _ -> find_w#misc#hide(); true) in
+  let _ = find_again_button#connect#clicked ~callback:(protect find_again) in
+  let _ = close_find_button#connect#clicked ~callback:(protect close_find) in
+  let _ = replace_find_button#connect#clicked ~callback:(protect do_replace_find) in
+  let _ = find_backwards_check#connect#clicked ~callback:(protect click_on_backward) in
+  let _ = find_entry#connect#changed ~callback:(protect do_find) in
+  let _ = find_entry#event#connect#key_press ~callback:(protect key_find) in
+  let _ = find_w#event#connect#delete ~callback:(protect (fun _ -> find_w#misc#hide(); true)) in
   (*
     let search_if = edit_f#add_item "Search _forward"
     ~key:GdkKeysyms._greater
@@ -2003,9 +2003,9 @@ let main files =
       revert_timer := Some
 	(GMain.Timeout.add ~ms:!current.global_auto_revert_delay
 	   ~callback:
-	   (fun () ->
+	   (protect (fun () ->
 	     List.iter revert_f session_notebook#pages;
-	     true))
+	     true)))
   in reset_revert_timer (); (* to enable statup preferences timer *)
   (* XXX *)
   let auto_save_f {analyzed_view = av} =
@@ -2020,9 +2020,9 @@ let main files =
       auto_save_timer := Some
 	(GMain.Timeout.add ~ms:!current.auto_save_delay
 	   ~callback:
-	   (fun () ->
+	   (protect (fun () ->
 	     List.iter auto_save_f session_notebook#pages;
-	     true))
+	     true)))
   in reset_auto_save_timer (); (* to enable statup preferences timer *)
 (* end Preferences *)
 
@@ -2203,8 +2203,8 @@ let main files =
 	else text ^" "
       in
       GAction.add_action (menu_name^" "^(no_under text)) ~label:text
-	~callback:(fun _ -> let {script = view } = session_notebook#current_term in
-			    ignore (view#buffer#insert_interactive text')) act_grp
+	~callback:(protect (fun _ -> let {script = view } = session_notebook#current_term in
+			    ignore (view#buffer#insert_interactive text'))) act_grp
     in
     List.iter (function
       | [] -> ()
@@ -2216,8 +2216,8 @@ let main files =
   in
   let tactic_shortcut s sc = GAction.add_action s ~label:("_"^s)
     ~accel:(!current.modifier_for_tactics^sc)
-    ~callback:(fun _ -> send_task_to_coq
-      (fun a -> a#insert_command ("progress "^s^".") (s^"."))) in
+    ~callback:(protect (fun _ -> send_task_to_coq
+      (fun a -> a#insert_command ("progress "^s^".") (s^".")))) in
   let query_callback command _ =
     let word = get_current_word () in
     if not (word = "") then
@@ -2227,19 +2227,19 @@ let main files =
       Coq.try_grab term.toplvl (term.analyzed_view#raw_coq_query query) ignore
   in
   let query_shortcut s accel =
-    GAction.add_action s ~label:("_"^s) ?accel ~callback:(query_callback s)
+    GAction.add_action s ~label:("_"^s) ?accel ~callback:(protect (query_callback s))
   in
   let add_complex_template (name, label, text, offset, len, key) =
     (* Templates/Lemma *)
-    let callback _ =
+    let callback = protect (fun _ ->
       let {script = view } = session_notebook#current_term in
       if view#buffer#insert_interactive text then begin
 	let iter = view#buffer#get_iter_at_mark `INSERT in
 	ignore (iter#nocopy#backward_chars offset);
 	view#buffer#move_mark `INSERT ~where:iter;
 	ignore (iter#nocopy#backward_chars len);
-	view#buffer#move_mark `SEL_BOUND ~where:iter;
-      end in
+	view#buffer#move_mark `SEL_BOUND ~where:iter
+      end) in
       match key with
 	|Some ac -> GAction.add_action name ~label ~callback ~accel:(!current.modifier_for_templates^ac)
 	|None -> GAction.add_action name ~label ~callback ?accel:None
@@ -2260,145 +2260,145 @@ let main files =
     in
     nv#misc#modify_font !current.text_font;
     (* If the buffer in the main window is closed, destroy this detached view *)
-    ignore (trm.script#connect#destroy ~callback:w#destroy)
+    ignore (trm.script#connect#destroy ~callback:(protect w#destroy))
   in
     GAction.add_actions file_actions [
       GAction.add_action "File" ~label:"_File";
-      GAction.add_action "New" ~callback:new_f ~stock:`NEW;
-      GAction.add_action "Open" ~callback:load_f ~stock:`OPEN;
-      GAction.add_action "Save" ~callback:save_f ~stock:`SAVE ~tooltip:"Save current buffer";
-      GAction.add_action "Save as" ~label:"S_ave as" ~callback:saveas_f ~stock:`SAVE_AS;
-      GAction.add_action "Save all" ~label:"Sa_ve all" ~callback:(fun _ -> saveall_f ());
-      GAction.add_action "Revert all buffers" ~label:"_Revert all buffers" ~callback:(fun _ -> List.iter revert_f session_notebook#pages) ~stock:`REVERT_TO_SAVED;
-      GAction.add_action "Close buffer" ~label:"_Close buffer" ~callback:(fun _ -> remove_current_view_page ()) ~stock:`CLOSE ~tooltip:"Close current buffer";
-      GAction.add_action "Print..." ~label:"_Print..." ~callback:(fun _ -> do_print session_notebook#current_term) ~stock:`PRINT ~accel:"<Ctrl>p";
+      GAction.add_action "New" ~callback:(protect new_f) ~stock:`NEW;
+      GAction.add_action "Open" ~callback:(protect load_f) ~stock:`OPEN;
+      GAction.add_action "Save" ~callback:(protect save_f) ~stock:`SAVE ~tooltip:"Save current buffer";
+      GAction.add_action "Save as" ~label:"S_ave as" ~callback:(protect saveas_f) ~stock:`SAVE_AS;
+      GAction.add_action "Save all" ~label:"Sa_ve all" ~callback:(protect (fun _ -> saveall_f ()));
+      GAction.add_action "Revert all buffers" ~label:"_Revert all buffers" ~callback:(protect (fun _ -> List.iter revert_f session_notebook#pages)) ~stock:`REVERT_TO_SAVED;
+      GAction.add_action "Close buffer" ~label:"_Close buffer" ~callback:(protect (fun _ -> remove_current_view_page ())) ~stock:`CLOSE ~tooltip:"Close current buffer";
+      GAction.add_action "Print..." ~label:"_Print..." ~callback:(protect (fun _ -> do_print session_notebook#current_term)) ~stock:`PRINT ~accel:"<Ctrl>p";
       GAction.add_action "Rehighlight" ~label:"Reh_ighlight" ~accel:"<Ctrl>l"
-	~callback:(fun _ -> force_retag
+	~callback:(protect (fun _ -> force_retag
                      session_notebook#current_term.script#buffer;
-		     session_notebook#current_term.analyzed_view#recenter_insert)
+		     session_notebook#current_term.analyzed_view#recenter_insert))
 	~stock:`REFRESH;
-      GAction.add_action "Quit" ~callback:quit_f ~stock:`QUIT;
+      GAction.add_action "Quit" ~callback:(protect quit_f) ~stock:`QUIT;
     ];
     GAction.add_actions export_actions [
       GAction.add_action "Export to" ~label:"E_xport to";
-      GAction.add_action "Html" ~label:"_Html" ~callback:(export_f "html");
-      GAction.add_action "Latex" ~label:"_LaTeX" ~callback:(export_f "latex");
-      GAction.add_action "Dvi" ~label:"_Dvi" ~callback:(export_f "dvi");
-      GAction.add_action "Pdf" ~label:"_Pdf" ~callback:(export_f "pdf");
-      GAction.add_action "Ps" ~label:"_Ps" ~callback:(export_f "ps");
+      GAction.add_action "Html" ~label:"_Html" ~callback:(protect (export_f "html"));
+      GAction.add_action "Latex" ~label:"_LaTeX" ~callback:(protect (export_f "latex"));
+      GAction.add_action "Dvi" ~label:"_Dvi" ~callback:(protect (export_f "dvi"));
+      GAction.add_action "Pdf" ~label:"_Pdf" ~callback:(protect (export_f "pdf"));
+      GAction.add_action "Ps" ~label:"_Ps" ~callback:(protect (export_f "ps"));
     ];
     GAction.add_actions edit_actions [
       GAction.add_action "Edit" ~label:"_Edit";
       GAction.add_action "Undo" ~accel:"<Ctrl>u"
-	~callback:(fun _ ->
+	~callback:(protect (fun _ ->
 	  let sess = session_notebook#current_term in
 	  ignore (sess.analyzed_view#without_auto_complete
-		    (fun () -> session_notebook#current_term.script#undo) ()))
+		    (fun () -> session_notebook#current_term.script#undo) ())))
 	~stock:`UNDO;
       GAction.add_action "Clear Undo Stack" ~label:"_Clear Undo Stack"
-	~callback:(fun _ -> ignore session_notebook#current_term.script#clear_undo);
-      GAction.add_action "Cut" ~callback:(fun _ -> GtkSignal.emit_unit
+	~callback:(protect (fun _ -> ignore session_notebook#current_term.script#clear_undo));
+      GAction.add_action "Cut" ~callback:(protect (fun _ -> GtkSignal.emit_unit
 					    (get_active_view_for_cp ())
 					    ~sgn:GtkText.View.S.cut_clipboard
-					 ) ~stock:`CUT;
-      GAction.add_action "Copy" ~callback:(fun _ -> GtkSignal.emit_unit
-             (get_active_view_for_cp ())
+					 )) ~stock:`CUT;
+      GAction.add_action "Copy" ~callback:(protect (fun _ -> GtkSignal.emit_unit
+             (get_active_view_for_cp ()))
              ~sgn:GtkText.View.S.copy_clipboard) ~stock:`COPY;
-      GAction.add_action "Paste" ~callback:(fun _ ->
+      GAction.add_action "Paste" ~callback:(protect (fun _ ->
              try GtkSignal.emit_unit
                    session_notebook#current_term.script#as_view
                    ~sgn:GtkText.View.S.paste_clipboard
-             with _ -> prerr_endline "EMIT PASTE FAILED") ~stock:`PASTE;
-      GAction.add_action "Find in buffer" ~label:"_Find in buffer" ~callback:(fun _ -> find_f ~backward:false ()) ~stock:`FIND;
-      GAction.add_action "Find backwards" ~label:"Find _backwards" ~callback:(fun _ -> find_f ~backward:true ()) ~accel:"<Ctrl>b";
-      GAction.add_action "Complete Word" ~label:"Complete Word" ~callback:(fun _ ->
+             with _ -> prerr_endline "EMIT PASTE FAILED")) ~stock:`PASTE;
+      GAction.add_action "Find in buffer" ~label:"_Find in buffer" ~callback:(protect (fun _ -> find_f ~backward:false ())) ~stock:`FIND;
+      GAction.add_action "Find backwards" ~label:"Find _backwards" ~callback:(protect (fun _ -> find_f ~backward:true ())) ~accel:"<Ctrl>b";
+      GAction.add_action "Complete Word" ~label:"Complete Word" ~callback:(protect (fun _ ->
 	     ignore (
 	       let av = session_notebook#current_term.analyzed_view in
 	       av#complete_at_offset (av#get_insert)#offset
-	     )) ~accel:"<Ctrl>slash";
-      GAction.add_action "External editor" ~label:"External editor" ~callback:(fun _ ->
+	     ))) ~accel:"<Ctrl>slash";
+      GAction.add_action "External editor" ~label:"External editor" ~callback:(protect (fun _ ->
 	let av = session_notebook#current_term.analyzed_view in
 	match av#filename with
 	  | None -> warning "Call to external editor available only on named files"
 	  | Some f ->
 	    save_f ();
 	    let com = Minilib.subst_command_placeholder !current.cmd_editor (Filename.quote f) in
-	    run_command (fun _ -> ()) (fun _ -> av#revert) com)
+	    run_command (fun _ -> ()) (fun _ -> av#revert) com))
 	~stock:`EDIT;
-      GAction.add_action "Preferences" ~callback:(fun _ ->
+      GAction.add_action "Preferences" ~callback:(protect (fun _ ->
 	begin
 	  try configure ~apply:update_notebook_pos ()
 	  with _ -> flash_info "Cannot save preferences"
 	end;
-	reset_revert_timer ()) ~accel:"<Ctrl>," ~stock:`PREFERENCES;
+	reset_revert_timer ())) ~accel:"<Ctrl>," ~stock:`PREFERENCES;
       (* GAction.add_action "Save preferences" ~label:"_Save preferences" ~callback:(fun _ -> save_pref ()); *) ];
     GAction.add_actions view_actions [
       GAction.add_action "View" ~label:"_View";
       GAction.add_action "Previous tab" ~label:"_Previous tab" ~accel:("<ALT>Left") ~stock:`GO_BACK
-        ~callback:(fun _ -> session_notebook#previous_page ());
+        ~callback:(protect (fun _ -> session_notebook#previous_page ()));
       GAction.add_action "Next tab" ~label:"_Next tab" ~accel:("<ALT>Right") ~stock:`GO_FORWARD
-        ~callback:(fun _ -> session_notebook#next_page ());
+        ~callback:(protect (fun _ -> session_notebook#next_page ()));
       GAction.add_toggle_action "Show Toolbar" ~label:"Show _Toolbar"
         ~active:(!current.show_toolbar) ~callback:
-        (fun _ -> !current.show_toolbar <- not !current.show_toolbar;
-           !refresh_toolbar_hook ());
+        (protect (fun _ -> !current.show_toolbar <- not !current.show_toolbar;
+           !refresh_toolbar_hook ()));
       GAction.add_toggle_action "Show Query Pane" ~label:"Show _Query Pane"
-        ~callback:(fun _ -> let ccw = session_notebook#current_term.command in
+        ~callback:(protect (fun _ -> let ccw = session_notebook#current_term.command in
                      if ccw#frame#misc#visible
                      then ccw#frame#misc#hide ()
-                     else ccw#frame#misc#show ())
+                     else ccw#frame#misc#show ()))
         ~accel:"Escape";
     ];
     List.iter
       (fun (opts,name,label,key,dflt) ->
          GAction.add_toggle_action name ~active:dflt ~label
            ~accel:(!current.modifier_for_display^key)
-          ~callback:(fun v ->
+          ~callback:(protect (fun v ->
 	    send_task_to_coq
 	      (fun a h k -> setopts opts v#get_active h
-		(fun () -> a#show_goals h k)))
+		(fun () -> a#show_goals h k))))
 	   view_actions)
       print_items;
     GAction.add_actions navigation_actions [
       GAction.add_action "Navigation" ~label:"_Navigation";
       GAction.add_action "Forward" ~label:"_Forward" ~stock:`GO_DOWN
-	~callback:(fun _ -> send_task_to_coq (fun a -> a#process_next_phrase true))
+	~callback:(protect (fun _ -> send_task_to_coq (fun a -> a#process_next_phrase true)))
 	~tooltip:"Forward one command" ~accel:(!current.modifier_for_navigation^"Down");
       GAction.add_action "Backward" ~label:"_Backward" ~stock:`GO_UP
-	~callback:(fun _ -> send_task_to_coq (fun a -> a#undo_last_step))
+	~callback:(protect (fun _ -> send_task_to_coq (fun a -> a#undo_last_step)))
 	~tooltip:"Backward one command" ~accel:(!current.modifier_for_navigation^"Up");
       GAction.add_action "Go to" ~label:"_Go to" ~stock:`JUMP_TO
-	~callback:(fun _ -> send_task_to_coq (fun a -> a#go_to_insert))
+	~callback:(protect (fun _ -> send_task_to_coq (fun a -> a#go_to_insert)))
 	~tooltip:"Go to cursor" ~accel:(!current.modifier_for_navigation^"Right");
       GAction.add_action "Start" ~label:"_Start" ~stock:`GOTO_TOP
-	~callback:(fun _ -> force_reset_initial ())
+	~callback:(protect (fun _ -> force_reset_initial ()))
 	~tooltip:"Restart coq" ~accel:(!current.modifier_for_navigation^"Home");
       GAction.add_action "End" ~label:"_End" ~stock:`GOTO_BOTTOM
-	~callback:(fun _ -> send_task_to_coq (fun a -> a#process_until_end_or_error))
+	~callback:(protect (fun _ -> send_task_to_coq (fun a -> a#process_until_end_or_error)))
 	~tooltip:"Go to end" ~accel:(!current.modifier_for_navigation^"End");
       GAction.add_action "Interrupt" ~label:"_Interrupt" ~stock:`STOP
-	~callback:(fun _ -> break ()) ~tooltip:"Interrupt computations"
+	~callback:(protect (fun _ -> break ())) ~tooltip:"Interrupt computations"
 	~accel:(!current.modifier_for_navigation^"Break");
       GAction.add_action "Hide" ~label:"_Hide" ~stock:`MISSING_IMAGE
-	~callback:(fun _ -> let sess = session_notebook#current_term in
+	~callback:(protect (fun _ -> let sess = session_notebook#current_term in
 		     toggle_proof_visibility sess.script#buffer
-		       sess.analyzed_view#get_insert) ~tooltip:"Hide proof"
+		       sess.analyzed_view#get_insert)) ~tooltip:"Hide proof"
 	~accel:(!current.modifier_for_navigation^"h");
       GAction.add_action "Previous" ~label:"_Previous" ~stock:`GO_BACK
-	~callback:(fun _ -> let sess = session_notebook#current_term in
-			    sess.analyzed_view#go_to_prev_occ_of_cur_word)
+	~callback:(protect (fun _ -> let sess = session_notebook#current_term in
+			    sess.analyzed_view#go_to_prev_occ_of_cur_word))
 	~tooltip:"Previous occurence" ~accel:(!current.modifier_for_navigation^"less");
       GAction.add_action "Next" ~label:"_Next" ~stock:`GO_FORWARD
-	~callback:(fun _ -> let sess = session_notebook#current_term in
-			    sess.analyzed_view#go_to_next_occ_of_cur_word)
+	~callback:(protect (fun _ -> let sess = session_notebook#current_term in
+			    sess.analyzed_view#go_to_next_occ_of_cur_word))
 	~tooltip:"Next occurence" ~accel:(!current.modifier_for_navigation^"greater");
     ];
     GAction.add_actions tactics_actions [
       GAction.add_action "Try Tactics" ~label:"_Try Tactics";
       GAction.add_action "Wizard" ~tooltip:"Proof Wizard" ~label:"<Proof Wizard>"
 	~stock:`DIALOG_INFO
-	~callback:(fun _ -> send_task_to_coq
-	  (fun a -> a#tactic_wizard !current.automatic_tactics))
+	~callback:(protect (fun _ -> send_task_to_coq
+	  (fun a -> a#tactic_wizard !current.automatic_tactics)))
 	~accel:(!current.modifier_for_tactics^"dollar");
       tactic_shortcut "auto" "a";
       tactic_shortcut "auto with *" "asterisk";
@@ -2431,7 +2431,7 @@ let main files =
       add_complex_template ("Scheme", "_Scheme __",
 			    "Scheme new_scheme := Induction for _ Sort _\
 \nwith _ := Induction for _ Sort _.\n",61,10, Some "S");
-      GAction.add_action "match" ~label:"match ..." ~callback:match_callback
+      GAction.add_action "match" ~label:"match ..." ~callback:(protect match_callback)
 	~accel:(!current.modifier_for_templates^"C");
     ];
     add_gen_actions "Template" templates_actions Coq_commands.commands;
@@ -2446,29 +2446,29 @@ let main files =
     ];
     GAction.add_actions compile_actions [
       GAction.add_action "Compile" ~label:"_Compile";
-      GAction.add_action "Compile buffer" ~label:"_Compile buffer" ~callback:compile_f;
-      GAction.add_action "Make" ~label:"_Make" ~callback:make_f ~accel:"F6";
-      GAction.add_action "Next error" ~label:"_Next error" ~callback:next_error
+      GAction.add_action "Compile buffer" ~label:"_Compile buffer" ~callback:(protect compile_f);
+      GAction.add_action "Make" ~label:"_Make" ~callback:(protect make_f) ~accel:"F6";
+      GAction.add_action "Next error" ~label:"_Next error" ~callback:(protect next_error)
 	~accel:"F7";
-      GAction.add_action "Make makefile" ~label:"Make makefile" ~callback:coq_makefile_f;
+      GAction.add_action "Make makefile" ~label:"Make makefile" ~callback:(protect coq_makefile_f);
     ];
     GAction.add_actions windows_actions [
       GAction.add_action "Windows" ~label:"_Windows";
-      GAction.add_action "Detach View" ~label:"Detach _View" ~callback:detach_view
+      GAction.add_action "Detach View" ~label:"Detach _View" ~callback:(protect detach_view)
     ];
     GAction.add_actions help_actions [
       GAction.add_action "Help" ~label:"_Help";
       GAction.add_action "Browse Coq Manual" ~label:"Browse Coq _Manual"
-	~callback:(fun _ ->
+	~callback:(protect (fun _ ->
 		     let av = session_notebook#current_term.analyzed_view in
-		       browse av#insert_message (doc_url ()));
+		       browse av#insert_message (doc_url ())));
       GAction.add_action "Browse Coq Library" ~label:"Browse Coq _Library"
-	~callback:(fun _ ->
+	~callback:(protect (fun _ ->
 		     let av = session_notebook#current_term.analyzed_view in
-		       browse av#insert_message !current.library_url);
+		       browse av#insert_message !current.library_url));
       GAction.add_action "Help for keyword" ~label:"Help for _keyword"
-	~callback:(fun _ -> let av = session_notebook#current_term.analyzed_view in
-		     av#help_for_keyword ()) ~stock:`HELP;
+	~callback:(protect (fun _ -> let av = session_notebook#current_term.analyzed_view in
+		     av#help_for_keyword ())) ~stock:`HELP;
       GAction.add_action "About Coq" ~label:"_About" ~stock:`ABOUT;
     ];
     Coqide_ui.init ();
@@ -2493,7 +2493,7 @@ let main files =
     let toolbar = new GObj.widget tbar in
     vbox#pack toolbar;
 
-    ignore (w#event#connect#delete ~callback:(fun _ -> quit_f (); true));
+    ignore (w#event#connect#delete ~callback:(protect (fun _ -> quit_f (); true)));
 
   (* The vertical Separator between Scripts and Goals *)
   vbox#pack ~expand:true session_notebook#coerce;
@@ -2539,9 +2539,9 @@ let main files =
     search_lbl#misc#hide ();
     search_input#misc#hide ()
   in
-  ignore (search_input#entry#connect#activate ~callback:end_search);
+  ignore (search_input#entry#connect#activate ~callback:(protect end_search));
   ignore (search_input#entry#event#connect#key_press
-	    ~callback:(fun k -> let kv = GdkEvent.Key.keyval k in
+	    ~callback:(protect (fun k -> let kv = GdkEvent.Key.keyval k in
 				if
 				  kv = GdkKeysyms._Right
 				  || kv = GdkKeysyms._Up
@@ -2549,9 +2549,9 @@ let main files =
 				      || (kv = GdkKeysyms._g
 					 && (List.mem `CONTROL (GdkEvent.Key.state k)))
 				then end_search ();
-				false));
+				false)));
   ignore (search_input#entry#event#connect#focus_out
-	    ~callback:(fun _ -> end_search_focus_out (); false));
+	    ~callback:(protect (fun _ -> end_search_focus_out (); false)));
   to_do_on_page_switch :=
     (fun i ->
       start_of_search := None;
@@ -2624,7 +2624,7 @@ let main files =
   in
   ignore (search_input#entry#event#connect#key_release
 	    ~callback:
-	    (fun ev ->
+	    (protect (fun ev ->
 	      if GdkEvent.Key.keyval ev = GdkKeysyms._Escape then begin
 		let v = session_notebook#current_term.script in
 		(match !start_of_search with
@@ -2643,8 +2643,8 @@ let main files =
 		v#coerce#misc#grab_focus ();
 	      end;
 	      false
-	    ));
-  ignore (search_input#entry#connect#changed ~callback:search_f);
+	    )));
+  ignore (search_input#entry#connect#changed ~callback:(protect search_f));
   push_info "Ready";
   (* Location display *)
   let l = GMisc.label
@@ -2656,10 +2656,10 @@ let main files =
   lower_hbox#pack pbar#coerce;
   pbar#set_text "CoqIde started";
   let _ = Glib.Timeout.add ~ms:300
-    ~callback:(fun () ->
+    ~callback:(protect (fun () ->
       if Coq.is_computing session_notebook#current_term.toplvl
       then pbar#pulse ();
-      true)
+      true))
   in
 
   (* Initializing hooks *)
@@ -2758,8 +2758,8 @@ let main files =
   (* Remove default pango menu for textviews *)
   w#show ();
   ignore ((help_actions#get_action "About Coq")#connect#activate
-	    ~callback:(fun _ -> let prf_v = session_notebook#current_term.proof_view in
-                                 prf_v#buffer#set_text ""; about prf_v#buffer));
+	    ~callback:(protect (fun _ -> let prf_v = session_notebook#current_term.proof_view in
+                                 prf_v#buffer#set_text ""; about prf_v#buffer)));
   (*
 
   *)
@@ -2771,10 +2771,10 @@ let main files =
 (* End of color configuration *)
   ignore(nb#connect#switch_page
 	   ~callback:
-	   (fun i ->
+	   (protect (fun i ->
 	     prerr_endline ("switch_page: starts " ^ string_of_int i);
 	     List.iter (function f -> f i) !to_do_on_page_switch;
-	     prerr_endline "switch_page: success")
+	     prerr_endline "switch_page: success"))
   );
   if List.length files >=1 then
     begin
@@ -2810,7 +2810,7 @@ let check_for_geoproof_input () =
         cb_Dr#set_text "Ack";
         true
   in
-  ignore (GMain.Timeout.add ~ms:100 ~callback:handler)
+  ignore (GMain.Timeout.add ~ms:100 ~callback:(protect handler))
 
 (** By default, the coqtop we try to launch is exactly the current coqide
     full name, with the last occurrence of "coqide" replaced by "coqtop".

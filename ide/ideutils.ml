@@ -37,6 +37,16 @@ let debug = ref (false)
 let prerr_endline s =
   if !debug then try prerr_endline s;flush stderr with _ -> ()
 
+let _ = Printexc.record_backtrace true
+
+let protect f x =
+  try f x
+  with e ->
+    prerr_endline
+      ("Exception in callback: " ^ Printexc.to_string e ^ "\n" ^
+       Printexc.get_backtrace ());
+    Obj.magic 0
+
 let is_char_start c = let code = Char.code c in code < 0x80 || code >= 0xc0
 
 let byte_offset_to_char_offset s byte_offset =

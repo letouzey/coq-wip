@@ -80,3 +80,7 @@ val requote : string -> string
 (** subprocess interaction via Glib.Io *)
 
 val io_read_all : Glib.Io.channel -> string
+
+(** protect callbacks against wild exceptions *)
+
+val protect : ('a -> 'b) -> ('a -> 'b)

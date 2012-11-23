@@ -242,7 +242,7 @@ let check_zombies () =
   countdown := (match !countdown with None -> None | Some n -> Some (n-1));
   true
 
-let _ = Glib.Timeout.add ~ms:300 ~callback:check_zombies
+let _ = Glib.Timeout.add ~ms:300 ~callback:(protect check_zombies)
 
 (** * The structure describing a coqtop sub-process *)
 
@@ -363,7 +363,8 @@ let install_input_watch handle respawner =
 	respawner ();
 	false
   in
-  ignore (Glib.Io.add_watch ~cond:all_conds ~callback:handle_input io_chan)
+  ignore (Glib.Io.add_watch
+	    ~cond:all_conds ~callback:(protect handle_input) io_chan)
 
 (** This launches a fresh handle from its command line arguments. *)
 let spawn_handle args =
