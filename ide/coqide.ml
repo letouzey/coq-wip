@@ -370,53 +370,30 @@ let with_file handler name ~f =
   with Sys_error s -> handler s
 
 (* For find_phrase_starting_at *)
+
 exception Stop of int
-
-let tag_of_sort = function
-  | Coq_lex.Comment -> Tags.Script.comment
-  | Coq_lex.Keyword -> Tags.Script.kwd
-  | Coq_lex.Declaration -> Tags.Script.decl
-  | Coq_lex.ProofDeclaration -> Tags.Script.proof_decl
-  | Coq_lex.Qed -> Tags.Script.qed
-  | Coq_lex.String -> failwith "No tag"
-
-let apply_tag (buffer:GText.buffer) orig off_conv from upto sort =
-  try
-    let tag = tag_of_sort sort in
-    let start = orig#forward_chars (off_conv from) in
-    let stop = orig#forward_chars (off_conv upto) in
-    buffer#apply_tag ~start ~stop tag
-  with _ -> ()
-
-let remove_tags (buffer:GText.buffer) from upto =
-  List.iter (buffer#remove_tag ~start:from ~stop:upto)
-    [ Tags.Script.comment; Tags.Script.kwd; Tags.Script.decl;
-      Tags.Script.proof_decl; Tags.Script.qed ]
 
 (** Cut a part of the buffer in sentences and tag them.
     Invariant: either this slice ends the buffer, or it ends with ".".
     May raise [Coq_lex.Unterminated] when the zone ends with
     an unterminated sentence. *)
 
-let split_slice_lax (buffer:GText.buffer) from upto =
-  remove_tags buffer from upto;
-  buffer#remove_tag ~start:from ~stop:upto Tags.Script.sentence;
-  let slice = buffer#get_text ~start:from ~stop:upto () in
-  let rec split_substring str =
-    let off_conv = byte_offset_to_char_offset str in
-    let slice_len = String.length str in
-    let end_off = Coq_lex.delimit_sentence (apply_tag buffer from off_conv) str
-    in
-    let start = from#forward_chars (off_conv end_off) in
-    let stop = start#forward_char in
-    buffer#apply_tag ~start ~stop Tags.Script.sentence;
-    let next = end_off + 1 in
-    if next < slice_len then begin
-      ignore (from#nocopy#forward_chars (off_conv next));
-      split_substring (String.sub str next (slice_len - next))
-    end
+let split_slice_lax (buffer:GText.buffer) start stop =
+  let slice = buffer#get_text ~start ~stop ()
   in
-  split_substring slice
+  let mkiter =
+    (* caveat : partial application with effects *)
+    let convert = incremental_byte_offset_to_char_offset slice in
+    fun off -> start#forward_chars (convert off)
+  in
+  let apply_tag start stop tag =
+    buffer#apply_tag ~start ~stop tag
+  in
+  let () = List.iter (buffer#remove_tag ~start ~stop)
+    [ Tags.Script.comment; Tags.Script.kwd; Tags.Script.decl;
+      Tags.Script.proof_decl; Tags.Script.qed; Tags.Script.sentence ]
+  in
+  Coq_lex.delimit_sentences apply_tag mkiter slice
 
 (** Searching forward and backward a position fulfilling some condition *)
 

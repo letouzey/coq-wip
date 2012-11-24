@@ -9,7 +9,22 @@
 val doc_url : unit -> string
 val browse : (string -> unit) -> string -> unit
 val browse_keyword : (string -> unit) -> string -> unit
+
+(** For a string buffer that may contain utf8 chars,
+    we convert a byte offset into a char offset
+    by only counting char-starting bytes.
+    Normally the string buffer starts with a char-starting byte
+    (buffer produced by a [#get_text]) *)
+
 val byte_offset_to_char_offset : string -> int -> int
+
+(** For multiple offset conversions in a long buffer,
+    we proceed incrementally by storing last known positions.
+    Offsets should be asked in increasing order
+    and correspond to char-starting byte. *)
+
+val incremental_byte_offset_to_char_offset : string -> int -> int
+
 val debug : bool ref
 val disconnect_revert_timer : unit -> unit
 val disconnect_auto_save_timer : unit -> unit

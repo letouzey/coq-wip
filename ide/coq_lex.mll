@@ -9,14 +9,6 @@
 {
   open Lexing
 
-  type token =
-    | Comment
-    | Keyword
-    | Declaration
-    | ProofDeclaration
-    | Qed
-    | String
-
   (* Without this table, the automaton would be too big and
      ocamllex would fail *)
 
@@ -27,7 +19,7 @@
 	"Proof" ; "Print";"Save" ; "Restart";
 	"End" ; "Section"; "Chapter"; "Transparent"; "Opaque"; "Comments" ]
     in
-    let one_word_declarations =
+    let one_word_decls =
       [ (* Definitions *)
 	"Definition" ; "Let" ; "Example" ; "SubClass" ;
         "Fixpoint" ; "CoFixpoint" ; "Scheme" ; "Function" ;
@@ -40,7 +32,7 @@
 	"Ltac" ; "Instance"; "Include"; "Context"; "Class" ;
 	 "Arguments" ]
     in
-    let proof_declarations =
+    let proof_decls =
       [ "Theorem" ; "Lemma" ; " Fact" ; "Remark" ; "Corollary" ;
         "Proposition" ; "Property" ]
     in
@@ -54,16 +46,19 @@
     in
     let h = Hashtbl.create 97 in (* for vernac *)
     let h' = Hashtbl.create 97 in (* for constr *)
-    List.iter (fun s -> Hashtbl.add h s Keyword) one_word_commands;
-    List.iter (fun s -> Hashtbl.add h s Declaration) one_word_declarations;
-    List.iter (fun s -> Hashtbl.add h s ProofDeclaration) proof_declarations;
-    List.iter (fun s -> Hashtbl.add h s Qed) proof_ends;
-    List.iter (fun s -> Hashtbl.add h' s Keyword) constr_keywords;
+    List.iter (fun s -> Hashtbl.add h s Tags.Script.kwd) one_word_commands;
+    List.iter (fun s -> Hashtbl.add h s Tags.Script.decl) one_word_decls;
+    List.iter (fun s -> Hashtbl.add h s Tags.Script.proof_decl) proof_decls;
+    List.iter (fun s -> Hashtbl.add h s Tags.Script.qed) proof_ends;
+    List.iter (fun s -> Hashtbl.add h' s Tags.Script.kwd) constr_keywords;
     (fun initial id -> Hashtbl.find (if initial then h else h') id)
 
   exception Unterminated
 
-  let here f lexbuf = f (Lexing.lexeme_start lexbuf) (Lexing.lexeme_end lexbuf)
+  let here f mkiter lexbuf =
+    let start_it = mkiter (Lexing.lexeme_start lexbuf) in
+    let stop_it = mkiter (Lexing.lexeme_end lexbuf) in
+    f start_it stop_it
 
 }
 
@@ -114,82 +109,97 @@ let multiword_command =
 
 rule coq_string = parse
   | "\"\"" { coq_string lexbuf }
-  | "\"" { Lexing.lexeme_end lexbuf }
-  | eof { Lexing.lexeme_end lexbuf }
+  | "\"" { () }
+  | eof { () }
   | _ { coq_string lexbuf }
 
 and comment = parse
   | "(*" { ignore (comment lexbuf); comment lexbuf }
-  | "\"" { ignore (coq_string lexbuf); comment lexbuf }
-  | "*)" { (true, Lexing.lexeme_start lexbuf + 2) }
+  | "\"" { coq_string lexbuf; comment lexbuf }
+  | "*)" { (true, Lexing.lexeme_end lexbuf) }
   | eof { (false, Lexing.lexeme_end lexbuf) }
   | _ { comment lexbuf }
 
-and sentence initial stamp = parse
+(** NB : [mkiter] should be called on increasing offsets *)
+
+and sentence initial stamp mkiter = parse
   | "(*" {
       let comm_start = Lexing.lexeme_start lexbuf in
       let trully_terminated,comm_end = comment lexbuf in
-      stamp comm_start comm_end Comment;
+      let start = mkiter comm_start in
+      let stop = mkiter comm_end in
+      stamp start stop Tags.Script.comment;
       if not trully_terminated then raise Unterminated;
       (* A comment alone is a sentence.
 	 A comment in a sentence doesn't terminate the sentence.
-         Note: comm_end is the first position _after_ the comment,
-	 as required when tagging a zone, hence the -1 to locate the
-	 ")" terminating the comment.
-      *)
-      if initial then comm_end - 1 else sentence false stamp lexbuf
+         Note: stop is the first position _after_ the comment,
+	 as required when tagging a zone. *)
+      if initial then begin
+	stamp stop#backward_char stop Tags.Script.sentence;
+	sentence true stamp mkiter lexbuf
+      end else begin
+	sentence false stamp mkiter lexbuf
+      end
     }
   | "\"" {
-      let str_start = Lexing.lexeme_start lexbuf in
-      let str_end = coq_string lexbuf in
-      stamp str_start str_end String;
-      sentence false stamp lexbuf
+      coq_string lexbuf;
+      sentence false stamp mkiter lexbuf
     }
   | multiword_declaration {
-      if initial then here stamp lexbuf Declaration;
-      sentence false stamp lexbuf
+      if initial then here stamp mkiter lexbuf Tags.Script.decl;
+      sentence false stamp mkiter lexbuf
     }
   | multiword_command {
-      if initial then here stamp lexbuf Keyword;
-      sentence false stamp lexbuf
+      if initial then here stamp mkiter lexbuf Tags.Script.kwd;
+      sentence false stamp mkiter lexbuf
     }
   | ident as id {
-      (try here stamp lexbuf (tag_of_ident initial id) with Not_found -> ());
-      sentence false stamp lexbuf }
+      (try here stamp mkiter lexbuf (tag_of_ident initial id)
+       with Not_found -> ());
+      sentence false stamp mkiter lexbuf }
   | ".." {
       (* We must have a particular rule for parsing "..", where no dot
 	 is a terminator, even if we have a blank afterwards
 	 (cf. for instance the syntax for recursive notation).
 	 This rule and the following one also allow to treat the "..."
 	 special case, where the third dot is a terminator. *)
-      sentence false stamp lexbuf
+      sentence false stamp mkiter lexbuf
     }
-  | dot_sep { Lexing.lexeme_start lexbuf } (* The usual "." terminator *)
+  | dot_sep {
+      (* the usual "." terminator *)
+      let start = mkiter (Lexing.lexeme_start lexbuf) in
+      stamp start start#forward_char Tags.Script.sentence;
+      sentence true stamp mkiter lexbuf
+    }
   | undotted_sep {
       (* Separators like { or } and bullets * - + are only active
 	 at the start of a sentence *)
-      if initial then Lexing.lexeme_start lexbuf
-      else sentence false stamp lexbuf
+      if initial then begin
+	let start = mkiter (Lexing.lexeme_start lexbuf) in
+	stamp start start#forward_char Tags.Script.sentence;
+	sentence true stamp mkiter lexbuf
+      end else sentence false stamp mkiter lexbuf
     }
   | space+ {
        (* Parsing spaces is the only situation preserving initiality *)
-       sentence initial stamp lexbuf
+       sentence initial stamp mkiter lexbuf
     }
   | _ {
       (* Any other characters *)
-      sentence false stamp lexbuf
+      sentence false stamp mkiter lexbuf
     }
-  | eof { raise Unterminated }
+  | eof { if initial then () else raise Unterminated }
 
 {
 
-  (** Parse a sentence in string [slice], tagging relevant parts with
-      function [stamp], and returning the position of the first
-      sentence delimitor (either "." or "{" or "}" or the end of a comment).
-      It will raise [Unterminated] when no end of sentence is found.
+  (** Parse sentences in string [slice], tagging relevant parts with
+      function [stamp], in particular the sentence delimitors
+      (either "." or "{" or "}" or the end of a comment).
+      It will raise [Unterminated] when eof is encountered
+      in the middle of a sentence.
   *)
 
-  let delimit_sentence stamp slice =
-    sentence true stamp (Lexing.from_string slice)
+  let delimit_sentences stamp mkiter slice =
+    sentence true stamp mkiter (Lexing.from_string slice)
 
 }
