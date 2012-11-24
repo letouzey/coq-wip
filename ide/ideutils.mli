@@ -18,8 +18,6 @@ val find_tag_limits : GText.tag -> GText.iter -> GText.iter * GText.iter
 val find_tag_start : GText.tag -> GText.iter -> GText.iter
 val find_tag_stop : GText.tag -> GText.iter -> GText.iter
 
-val is_char_start : char -> bool
-
 val my_stat : string -> Unix.stats option
 
 (** debug printing *)
