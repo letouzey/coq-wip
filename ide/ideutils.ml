@@ -78,10 +78,10 @@ let incremental_byte_offset_to_char_offset s =
   in
   fun byte_offset ->
     assert (!bytes <= byte_offset);
-    while !bytes < byte_offset do
-      incr bytes;
-      if !bytes >= len || is_char_start s.[!bytes] then incr chars;
+    for i = !bytes + 1 to byte_offset do
+      if i >= len || is_char_start s.[i] then incr chars
     done;
+    bytes := byte_offset;
     !chars
 
 let print_id id =
