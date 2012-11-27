@@ -10,6 +10,38 @@ open Preferences
 open Gtk_parsing
 open Ideutils
 
+(** Note concerning GtkTextBuffer
+
+    Be careful with gtk calls on text buffers, since many are non-atomic :
+    they emit a gtk signal and the handlers for this signal are run
+    immediately, before returning to the current function.
+    Here's a partial list of these signals and the methods that
+    trigger them (cf. documentation of GtkTextBuffer, signal section)
+
+      begin_user_action : #begin_user_action, #insert_interactive,
+        #insert_range_interactive, #delete_interactive, #delete_selection
+      end_user_action : #end_user_action, #insert_interactive,
+        #insert_range_interactive, #delete_interactive, #delete_selection
+
+      insert_text : #insert (and variants)
+      delete_range : #delete (and variants)
+
+      apply_tag : #apply_tag, (and some #insert)
+      remove_tag : #remove_tag
+
+      mark_deleted : #delete_mark
+      mark_set : #create_mark, #move_mark
+
+      changed : ... (whenever a buffer has changed)
+      modified_changed : #set_modified (and whenever the modified bit flips)
+
+   Caveat : when the buffer is modified, all iterators on it become
+   invalid and shouldn't be used (nasty errors otherwise). There are
+   some special cases : boundaries given to #insert and #delete are
+   revalidated by the default signal handler.
+*)
+
+
 type ide_info = {
   start : GText.mark;
   stop : GText.mark;
@@ -916,7 +948,7 @@ object(self)
     self#lock_buffer;
     let stop_mark = `NAME "destination" in
     let stop = input_buffer#get_iter_at_mark stop_mark in
-    let start = self#get_start_of_input#copy in
+    let start = self#get_start_of_input in
     let start_mark = `OFFSET start#offset in
     input_buffer#apply_tag Tags.Script.to_process ~start ~stop;
     let get_current () =
@@ -1188,26 +1220,21 @@ object(self)
                    `INSERT))));
     ignore (input_buffer#connect#insert_text
               ~callback:(protect (fun it s ->
+                (* If a #insert happens in the locked zone, we discard it.
+                   Other solution: always use #insert_interactive and similar *)
                 if (it#compare self#get_start_of_input)<0
                 then GtkSignal.stop_emit ();
-                if String.length s > 1 then
-                  (prerr_endline "insert_text: Placing cursor";input_buffer#place_cursor ~where:it))));
-    ignore (input_buffer#connect#after#apply_tag
-              ~callback:(protect (fun tag ~start ~stop ->
-                if (start#compare self#get_start_of_input)>=0
-                then
-                  begin
-                    input_buffer#remove_tag
-                      Tags.Script.processed
-                      ~start
-                      ~stop;
-                    input_buffer#remove_tag
-                      Tags.Script.unjustified
-                      ~start
-                      ~stop
-                  end
-              ))
-    );
+                if String.length s > 1 then begin
+                  prerr_endline "insert_text: Placing cursor";
+                  input_buffer#place_cursor ~where:it
+                end)));
+    ignore (input_buffer#connect#insert_text
+              ~callback:(protect (fun it s ->
+                prerr_endline "Should recenter ?";
+                if String.contains s '\n' then begin
+                  prerr_endline "Should recenter : yes";
+                  self#recenter_insert
+                end)));
     ignore (input_buffer#connect#after#insert_text
               ~callback:(protect (fun it s ->
                 if auto_complete_on &&
@@ -1249,6 +1276,7 @@ object(self)
                      (self#get_insert#line_offset + 1));
                 match GtkText.Mark.get_name m  with
                   | Some "insert" ->
+                    (* stop displaying the electric paren *)
                     input_buffer#remove_tag
                       ~start:input_buffer#start_iter
                       ~stop:input_buffer#end_iter
@@ -1256,14 +1284,7 @@ object(self)
                   | Some s ->
                     prerr_endline (s^" moved")
                   | None -> () ))
-    );
-    ignore (input_buffer#connect#insert_text
-              ~callback:(protect (fun it s ->
-                prerr_endline "Should recenter ?";
-                if String.contains s '\n' then begin
-                  prerr_endline "Should recenter : yes";
-                  self#recenter_insert
-                end)));
+    )
 end
 
 (** [last_make_buf] contains the output of the last make compilation.
@@ -2043,17 +2064,15 @@ let main files =
             (print_list print_branch) cases;
           let s = Buffer.contents b in
           prerr_endline s;
-          let {script = view } = session_notebook#current_term in
-          ignore (view#buffer#delete_selection ());
-          let m = view#buffer#create_mark
-            (view#buffer#get_iter `INSERT)
-          in
-          if view#buffer#insert_interactive s then begin
-            let i = view#buffer#get_iter (`MARK m) in
+          let b = session_notebook#current_term.script#buffer in
+          ignore (b#delete_selection ());
+          let m = b#create_mark (b#get_iter `INSERT) in
+          if b#insert_interactive s then begin
+            let i = b#get_iter (`MARK m) in
             let _ = i#nocopy#forward_chars 9 in
-            view#buffer#place_cursor ~where:i;
-            view#buffer#move_mark ~where:(i#backward_chars 3)
-              `SEL_BOUND
+            b#place_cursor ~where:i;
+            b#move_mark ~where:(i#backward_chars 3) `SEL_BOUND;
+            b#delete_mark (`MARK m)
 	  end;
 	  k ()
     in
@@ -2209,13 +2228,13 @@ let main files =
   let add_complex_template (name, label, text, offset, len, key) =
     (* Templates/Lemma *)
     let callback = protect (fun _ ->
-      let {script = view } = session_notebook#current_term in
-      if view#buffer#insert_interactive text then begin
-	let iter = view#buffer#get_iter_at_mark `INSERT in
+      let b = session_notebook#current_term.script#buffer in
+      if b#insert_interactive text then begin
+	let iter = b#get_iter_at_mark `INSERT in
 	ignore (iter#nocopy#backward_chars offset);
-	view#buffer#move_mark `INSERT ~where:iter;
+	b#move_mark `INSERT ~where:iter;
 	ignore (iter#nocopy#backward_chars len);
-	view#buffer#move_mark `SEL_BOUND ~where:iter
+	b#move_mark `SEL_BOUND ~where:iter
       end) in
       match key with
 	|Some ac -> GAction.add_action name ~label ~callback ~accel:(!current.modifier_for_templates^ac)
