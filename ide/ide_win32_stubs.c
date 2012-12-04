@@ -4,7 +4,7 @@
 #include <caml/memory.h>
 #include <windows.h>
 
-/* Win32 emulation of kill -9 */
+/* Win32 emulation of kill */
 
 /* The pid returned by Unix.create_process is actually a pseudo-pid,
    made via a cast of the obtained HANDLE, (cf. win32unix/createprocess.c
@@ -13,12 +13,39 @@
    The 0 is the exit code we want for the terminated process.
 */
 
+/* First, a brutal kill based on TerminateProcess. This is close to a
+   unix kill -9 (SIGKILL). To avoid if possible (cf. reference below). */
+
 CAMLprim value win32_kill(value pseudopid) {
   CAMLparam1(pseudopid);
   TerminateProcess((HANDLE)(Long_val(pseudopid)), 0);
   CAMLreturn(Val_unit);
 }
 
+/* Second, a nicer kill function, that creates a thread in the remote
+   process and run ExitProcess there. This looks a bit more like
+   a kill -15 (SIGTERM), except that it cannot be catched by the target.
+
+   Source:
+    http://www.drdobbs.com/a-safer-alternative-to-terminateprocess/184416547
+*/
+
+CAMLprim value win32_safe_kill(value pseudopid) {
+  CAMLparam1(pseudopid);
+  HANDLE h = (HANDLE)(Long_val(pseudopid));
+  HANDLE hbis = INVALID_HANDLE_VALUE;
+  HINSTANCE hKernel = GetModuleHandle("Kernel32");
+  FARPROC pfnExitProc = GetProcAddress(hKernel, "ExitProcess");
+
+  DuplicateHandle(GetCurrentProcess(), h,
+                  GetCurrentProcess(), &hbis,
+                  PROCESS_ALL_ACCESS, FALSE, 0);
+
+  CreateRemoteThread(hbis, NULL, 0, (LPTHREAD_START_ROUTINE)pfnExitProc,
+                     (PVOID)0, 0, NULL);
+
+  CAMLreturn(Val_unit);
+}
 
 /* Win32 emulation of a kill -2 (SIGINT) */
 

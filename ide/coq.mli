@@ -59,6 +59,7 @@ val set_reset_handler : coqtop -> (reset_kind -> task) -> unit
 (** In win32, we'll use a different kill function than Unix.kill *)
 
 val killer : (int -> unit) ref
+val soft_killer : (int -> unit) ref
 val interrupter : (int -> unit) ref
 
 (** [final_countdown] triggers an exit of coqide after
