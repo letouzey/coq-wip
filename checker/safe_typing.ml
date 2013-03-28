@@ -167,10 +167,6 @@ end = struct
 
 end
 
-open Validate
-let val_deps = val_list (val_tuple ~name:"dep"[|val_dp;no_val|])
-let val_vo = val_tuple ~name:"vo" [|val_dp;val_module;val_deps;val_opt val_eng|]
-
 (* This function should append a certificate to the .vo file.
    The digest must be part of the certicate to rule out attackers
    that could change the .vo file between the time it was read and
@@ -181,7 +177,7 @@ let stamp_library file digest = ()
 (* When the module is checked, digests do not need to match, but a
    warning is issued in case of mismatch *)
 let import file (dp,mb,depends,engmt as vo) digest =
-  Validate.apply !Flags.debug val_vo vo;
+  Validate.validate !Flags.debug Values.v_compiled_lib vo;
   Flags.if_verbose ppnl (str "*** vo structure validated ***"); pp_flush ();
   let env = !genv in
   check_imports msg_warning dp env depends;
@@ -194,7 +190,7 @@ let import file (dp,mb,depends,engmt as vo) digest =
 
 (* When the module is admitted, digests *must* match *)
 let unsafe_import file (dp,mb,depends,engmt as vo) digest =
-  if !Flags.debug then ignore vo; (*Validate.apply !Flags.debug val_vo vo;*)
+  if !Flags.debug then ignore vo; (*Validate.validate !Flags.debug Values.v_vo vo;*)
   let env = !genv in
   check_imports (errorlabstrm"unsafe_import") dp env depends;
   check_engagement env engmt;

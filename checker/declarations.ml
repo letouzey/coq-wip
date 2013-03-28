@@ -1,7 +1,7 @@
 open Util
 open Names
 open Term
-open Validate
+open Values
 
 (* Bytecode *)
 type values
@@ -14,22 +14,16 @@ type action
 type retroknowledge
 
 type engagement = ImpredicativeSet
-let val_eng = val_enum "eng" 1
 
 
 type polymorphic_arity = {
   poly_param_levels : Univ.universe option list;
   poly_level : Univ.universe;
 }
-let val_pol_arity =
-  val_tuple ~name:"polyorphic_arity"[|val_list(val_opt val_univ);val_univ|]
 
 type constant_type =
   | NonPolymorphicType of constr
   | PolymorphicArity of rel_context * polymorphic_arity
-
-let val_cst_type =
-  val_sum "constant_type" 0 [|[|val_constr|];[|val_rctxt;val_pol_arity|]|]
 
 (** Substitutions, code imported from kernel/mod_subst *)
 
@@ -87,22 +81,6 @@ type 'a subst_fun = substitution -> 'a -> 'a
 let empty_subst = Umap.empty
 
 let is_empty_subst = Umap.is_empty
-
-let val_delta_hint =
-  val_sum "delta_hint" 0
-    [|[|val_int; val_opt val_constr|];[|val_kn|]|]
-
-let val_res =
-  val_tuple ~name:"delta_resolver"
-    [|val_map ~name:"delta_resolver" val_mp val_mp;
-      val_map ~name:"delta_resolver" val_kn val_delta_hint|]
-
-let val_mp_res = val_tuple [|val_mp;val_res|]
-
-let val_subst =
-  val_tuple ~name:"substitution"
-    [|val_map ~name:"substitution" val_mp val_mp_res;
-      val_map ~name:"substitution" val_uid val_mp_res|]
 
 let add_mbid mbid mp = Umap.add_mbi mbid (mp,empty_delta_resolver)
 let add_mp mp1 mp2 = Umap.add_mp mp1 (mp2,empty_delta_resolver)
@@ -337,11 +315,6 @@ type 'a lazy_subst =
 
 type 'a substituted = 'a lazy_subst ref
 
-let val_substituted val_a =
-  val_ref
-    (val_sum "constr_substituted" 0
-      [|[|val_a|];[|val_list val_subst;val_a|]|])
-
 let from_val a = ref (LSval a)
  
 let rec replace_mp_in_mp mpfrom mpto mp =
@@ -485,8 +458,6 @@ let force_constr = force subst_mps
 
 type constr_substituted = constr substituted
 
-let val_cstr_subst = val_substituted val_constr
-
 let subst_constr_subst = subst_substituted
 
 (** Beware! In .vo files, lazy_constr are stored as integers
@@ -500,7 +471,6 @@ type lazy_constr = constr_substituted
 let subst_lazy_constr = subst_substituted
 let force_lazy_constr = force_constr
 let lazy_constr_from_val c = c
-let val_lazy_constr = val_cstr_subst
 
 (** Inlining level of parameters at functor applications.
     This is ignored by the checker. *)
@@ -514,10 +484,6 @@ type constant_def =
   | Undef of inline
   | Def of constr_substituted
   | OpaqueDef of lazy_constr
-
-let val_cst_def =
-  val_sum "constant_def" 0
-    [|[|val_opt val_int|]; [|val_cstr_subst|]; [|val_lazy_constr|]|]
 
 let subst_constant_def sub = function
   | Undef inl -> Undef inl
@@ -546,15 +512,6 @@ let is_opaque cb = match cb.const_body with
   | OpaqueDef _ -> true
   | Def _ | Undef _ -> false
 
-let val_cb = val_tuple ~name:"constant_body"
-  [|val_nctxt;
-    val_cst_def;
-    val_cst_type;
-    no_val;
-    val_cstrs;
-    no_val;
-    val_bool|]
-
 let subst_rel_declaration sub (id,copt,t as x) =
   let copt' = Option.smartmap (subst_mps sub) copt in
   let t' = subst_mps sub t in
@@ -566,8 +523,6 @@ type recarg =
   | Norec
   | Mrec of inductive
   | Imbr of inductive
-let val_recarg = val_sum "recarg" 1 (* Norec *)
-  [|[|val_ind|] (* Mrec *);[|val_ind|] (* Imbr *)|]
 
 let subst_recarg sub r = match r with
   | Norec  -> r
@@ -575,12 +530,6 @@ let subst_recarg sub r = match r with
       if kn==kn' then r else Imbr (kn',i)
 
 type wf_paths = recarg Rtree.t
-let val_wfp = val_rec_sum "wf_paths" 0
-  (fun val_wfp ->
-    [|[|val_int;val_int|]; (* Rtree.Param *)
-      [|val_recarg;val_array val_wfp|]; (* Rtree.Node *)
-      [|val_int;val_array val_wfp|] (* Rtree.Rec *)
-    |])
 
 let mk_norec = Rtree.mk_node Norec [||]
 
@@ -608,14 +557,10 @@ type monomorphic_inductive_arity = {
   mind_user_arity : constr;
   mind_sort : sorts;
 }
-let val_mono_ind_arity =
-  val_tuple ~name:"monomorphic_inductive_arity"[|val_constr;val_sort|]
 
 type inductive_arity =
 | Monomorphic of monomorphic_inductive_arity
 | Polymorphic of polymorphic_arity
-let val_ind_arity = val_sum "inductive_arity" 0
-  [|[|val_mono_ind_arity|];[|val_pol_arity|]|]
 
 type one_inductive_body = {
 
@@ -669,11 +614,6 @@ type one_inductive_body = {
     mind_reloc_tbl :  reloc_table;
   }
 
-let val_one_ind = val_tuple ~name:"one_inductive_body"
-  [|val_id;val_rctxt;val_ind_arity;val_array val_id;val_array val_constr;
-    val_int;val_int;val_list val_sortfam;val_array val_constr;val_array val_int;
-    val_wfp;val_int;val_int;no_val|]
-
 
 type mutual_inductive_body = {
 
@@ -708,10 +648,6 @@ type mutual_inductive_body = {
     mind_native_name : native_name ref;
 
   }
-let val_ind_pack = val_tuple ~name:"mutual_inductive_body"
-  [|val_array val_one_ind;val_bool;val_bool;val_int;val_nctxt;
-    val_int; val_int; val_rctxt;val_cstrs;no_val|]
-
 
 let subst_arity sub = function
 | NonPolymorphicType s -> NonPolymorphicType (subst_mps sub s)
@@ -801,30 +737,6 @@ and module_type_body =
       typ_expr_alg : struct_expr_body option ;
       typ_constraints : Univ.constraints;
       typ_delta :delta_resolver}
-
-(* the validation functions: *)
-let rec val_sfb o = val_sum "struct_field_body" 0
-  [|[|val_cb|];       (* SFBconst *)
-    [|val_ind_pack|]; (* SFBmind *)
-    [|val_module|];   (* SFBmodule *)
-    [|val_modtype|]   (* SFBmodtype *)
-  |] o
-and val_sb o = val_list (val_tuple ~name:"label*sfb"[|val_id;val_sfb|]) o
-and val_seb o = val_sum "struct_expr_body" 0
-  [|[|val_mp|];                      (* SEBident *)
-    [|val_uid;val_modtype;val_seb|]; (* SEBfunctor *)
-    [|val_seb;val_seb;val_cstrs|];   (* SEBapply *)
-    [|val_sb|];              (* SEBstruct *)
-    [|val_seb;val_with|]             (* SEBwith *)
-  |] o
-and val_with o = val_sum "with_declaration_body" 0
-  [|[|val_list val_id;val_mp|];
-    [|val_list val_id;val_cb|]|] o
-and val_module o = val_tuple ~name:"module_body"
-  [|val_mp;val_opt val_seb;val_seb;
-    val_opt val_seb;val_cstrs;val_res;no_val|] o
-and val_modtype o = val_tuple ~name:"module_type_body"
-  [|val_mp;val_seb;val_opt val_seb;val_cstrs;val_res|] o
 
 
 let rec subst_with_body sub = function
