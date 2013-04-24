@@ -9,6 +9,7 @@
 open Errors
 open Util
 open Cic
+open Names
 open Term
 open Univ
 open Closure
@@ -195,9 +196,23 @@ let in_whnf (t,stk) =
     | (FFlex _ | FProd _ | FEvar _ | FInd _ | FAtom _ | FRel _) -> true
     | FLOCKED -> assert false
 
+
+let strategies = ref (MPmap.empty : int MPmap.t)
+let use_strategies = ref false
+
+let get_strategy c =
+  try MPmap.find (modpath (canonical_con c)) !strategies
+  with Not_found -> 0
+
+let set_strategy mp i =
+  let action = if i == 0 then MPmap.remove mp else MPmap.add mp i in
+  strategies := action !strategies;
+  use_strategies := not (MPmap.is_empty !strategies)
+
 let oracle_order fl1 fl2 =
   match fl1,fl2 with
-      ConstKey c1, ConstKey c2 -> (*height c1 > height c2*)false
+    | ConstKey c1, ConstKey c2 ->
+      !use_strategies && (get_strategy c1 < get_strategy c2)
     | _, ConstKey _ -> true
     | _ -> false
 
