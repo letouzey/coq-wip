@@ -233,6 +233,7 @@ and check_module_type env mty =
 
 							 
 and check_module env mp mb =
+  let env = Environ.add_constraints mb.mod_constraints env in
   match mb.mod_expr, mb.mod_type with
     | None,mtb -> 
 	let (_:struct_expr_body) =
