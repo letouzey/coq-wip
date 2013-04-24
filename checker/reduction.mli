@@ -48,3 +48,10 @@ val dest_prod       : env -> constr -> rel_context * constr
 val dest_prod_assum : env -> constr -> rel_context * constr
 
 val dest_arity : env -> constr -> arity
+
+(** Priority for the expansion of constant in the conversion test.
+    For now, we allow to tweak the expansion of all constants
+    in a module at once : the higher the integer, the more we'll
+    delay the expansion. Default priority is 0. *)
+
+val set_strategy : Names.module_path -> int -> unit

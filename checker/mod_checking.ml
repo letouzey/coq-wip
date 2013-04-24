@@ -138,6 +138,10 @@ let lookup_module mp env =
   with Not_found ->
     failwith ("Unknown module: "^string_of_mp mp)
 
+let rec get_functor_params = function
+  | SEBapply(f,SEBident mp,_) -> mp :: get_functor_params f
+  | _ -> []
+
 let rec check_with env mtb with_decl mp=
   match with_decl with
     | With_definition_body (idl,c) ->
@@ -238,6 +242,13 @@ and check_module env mp mb =
 	  check_modtype env mtb mb.mod_mp mb.mod_delta in ()
     | Some mexpr, _ ->
 	let sign = check_modexpr env mexpr mb.mod_mp mb.mod_delta in
+        (* Heuristic: if mexpr is a functor application, we lower
+           the priority of expansion for constants in the functor params.
+           This may avoid costly computations when type-checking
+           the expansed [mod_type], cf compcert's Integers. *)
+        let params = get_functor_params mexpr in
+        let () = List.iter (fun mp -> Reduction.set_strategy mp 100) params
+        in
 	let (_:struct_expr_body) =
 	  check_modtype env mb.mod_type mb.mod_mp mb.mod_delta in
 	let mtb1 =
@@ -254,7 +265,9 @@ and check_module env mp mb =
 	   typ_delta = mb.mod_delta;}
 	in
 	let env = add_module (module_body_of_type mp mtb1) env in
-	check_subtypes env mtb1 mtb2
+        let () = check_subtypes env mtb1 mtb2 in
+        let () = List.iter (fun mp -> Reduction.set_strategy mp 0) params
+        in ()
 
 and check_structure_field env mp lab res = function
   | SFBconst cb ->
