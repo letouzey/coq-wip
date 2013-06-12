@@ -377,7 +377,7 @@ and mp_renaming =
 let ref_renaming_fun (k,r) =
   let mp = modpath_of_r r in
   let l = mp_renaming mp in
-  let l = if lang () <> Ocaml && not (modular ()) then [""] else l in
+  let l = if not (lang_caml ()) && not (modular ()) then [""] else l in
   let s =
     let idg = safe_basename_of_global r in
     if l = [""] (* this happens only at toplevel of the monolithic case *)
@@ -575,7 +575,7 @@ let pp_global k r =
     match lang () with
       | Scheme -> unquote s (* no modular Scheme extraction... *)
       | Haskell -> if modular () then pp_haskell_gen k mp rls else s
-      | Ocaml -> pp_ocaml_gen k mp rls (Some l)
+      | Ocaml | Fsharp -> pp_ocaml_gen k mp rls (Some l)
 
 (* The next function is used only in Ocaml extraction...*)
 
@@ -601,7 +601,7 @@ let ind_ascii = mk_ind "Coq.Strings.Ascii" "ascii"
 let check_extract_ascii () =
   try
     let char_type = match lang () with
-      | Ocaml -> "char"
+      | Ocaml | Fsharp -> "char"
       | Haskell -> "Char"
       | _ -> raise Not_found
     in

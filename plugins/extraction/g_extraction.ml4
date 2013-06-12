@@ -39,12 +39,14 @@ END
 
 let pr_language = function
   | Ocaml -> str "Ocaml"
+  | Fsharp -> str "Fsharp"
   | Haskell -> str "Haskell"
   | Scheme -> str "Scheme"
 
 VERNAC ARGUMENT EXTEND language
 PRINTED BY pr_language
 | [ "Ocaml" ] -> [ Ocaml ]
+| [ "Fsharp" ] -> [ Fsharp ]
 | [ "Haskell" ] -> [ Haskell ]
 | [ "Scheme" ] -> [ Scheme ]
 END

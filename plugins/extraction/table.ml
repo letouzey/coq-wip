@@ -558,11 +558,14 @@ let _ = declare_string_option
 
 (*s Extraction Lang *)
 
-type lang = Ocaml | Haskell | Scheme
+type lang = Ocaml | Fsharp | Haskell | Scheme
 
 let lang_ref = Summary.ref Ocaml ~name:"ExtrLang"
 
 let lang () = !lang_ref
+
+let lang_caml () =
+  match !lang_ref with Ocaml | Fsharp -> true | _ -> false
 
 let extr_lang : lang -> obj =
   declare_object
