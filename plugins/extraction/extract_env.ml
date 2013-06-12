@@ -326,7 +326,7 @@ let rec extract_sfb env mp all = function
 
 and extract_seb env mp all = function
   | (SEBident _ | SEBapply _) as seb when lang () <> Ocaml ->
-      (* in Haskell/Scheme, we expand everything *)
+      (* in Fsharp/Haskell/Scheme, we expand everything *)
       extract_seb env mp all (expand_seb env mp seb)
   | SEBident mp ->
       if is_modfile mp && not (modular ()) then error_MPfile_as_mod mp false;
@@ -376,7 +376,7 @@ let mono_environment refs mpl =
 (**************************************)
 
 let descr () = match lang () with
-  | Ocaml -> Ocaml.ocaml_descr
+  | Ocaml | Fsharp -> Ocaml.ocaml_descr
   | Haskell -> Haskell.haskell_descr
   | Scheme -> Scheme.scheme_descr
 

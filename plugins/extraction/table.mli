@@ -133,8 +133,10 @@ val optims :  unit -> opt_flag
 
 (*s Target language. *)
 
-type lang = Ocaml | Haskell | Scheme
+type lang = Ocaml | Fsharp | Haskell | Scheme
 val lang : unit -> lang
+
+val lang_caml : unit -> bool (* true for Ocaml and Fsharp *)
 
 (*s Extraction modes: modular or monolithic, library or minimal ?
 
@@ -175,6 +177,7 @@ val find_custom_match : ml_branch array -> string
 (*s Extraction commands. *)
 
 val extraction_language : lang -> unit
+
 val extraction_inline : bool -> reference list -> unit
 val print_extraction_inline : unit -> unit
 val reset_extraction_inline : unit -> unit

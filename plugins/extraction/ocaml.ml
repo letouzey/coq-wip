@@ -130,8 +130,12 @@ let rec pp_type par vl t =
     | Tglob (r,l) ->
 	pp_tuple_light pp_rec l ++ spc () ++ pp_global Type r
     | Tarr (t1,t2) ->
+        (* In Fsharp, to avoid issues with partial applications,
+           we try to explictly right-parenthese arrows:
+           a->(b->c) instead of a->b->c *)
+        let rpar = (lang () = Fsharp) in
 	pp_par par
-	  (pp_rec true t1 ++ spc () ++ str "->" ++ spc () ++ pp_rec false t2)
+	  (pp_rec true t1 ++ spc () ++ str "->" ++ spc () ++ pp_rec rpar t2)
     | Tdummy _ -> str "__"
     | Tunknown -> str "__"
   in
@@ -195,7 +199,10 @@ let rec pp_expr par env args =
 	pp_fix par env' i (Array.of_list (List.rev ids'),defs) args
     | MLexn s ->
 	(* An [MLexn] may be applied, but I don't really care. *)
-	pp_par par (str "assert false" ++ spc () ++ str ("(* "^s^" *)"))
+        if lang () = Fsharp then
+          pp_par par (str ("failwith \""^s^"\""))
+        else
+	  pp_par par (str "assert false" ++ spc () ++ str ("(* "^s^" *)"))
     | MLdummy ->
 	str "__" (* An [MLdummy] may be applied, but I don't really care. *)
     | MLmagic a ->
@@ -252,7 +259,8 @@ let rec pp_expr par env args =
 	   (* Second, can this match be printed as a let-in ? *)
 	   if Array.length pv = 1 then
 	     let s1,s2 = pp_one_pat env pv.(0) in
-	     hv 0 (apply2 (pp_letin s1 head s2))
+             let parpat = (lang () = Fsharp) in
+	     hv 0 (apply2 (pp_letin (pp_par parpat s1) head s2))
 	   else
 	     (* Third, can this match be printed as [if ... then ... else] ? *)
 	     (try apply2 (pp_ifthenelse env head pv)
@@ -375,6 +383,16 @@ and pp_fix par env i (ids,bl) args =
 	  fnl () ++
 	  hov 2 (str "in " ++ pp_apply (pr_id ids.(i)) false args)))
 
+let pp_basic_function env t =
+  str " =" ++ fnl () ++ str "  " ++
+  hov 2 (pp_expr false env [] t)
+
+let pp_function env t =
+  if lang () = Fsharp then
+    str " =" ++ fnl () ++ str "  " ++ hov 2 (pp_expr false env [] t)
+  else
+    pp_function env t
+
 let pp_val e typ =
   hov 4 (str "(** val " ++ e ++ str " :" ++ spc () ++ pp_type false [] typ ++
   str " **)")  ++ fnl2 ()
@@ -398,10 +416,14 @@ let pp_Dfix (rv,c,t) =
 	  if is_custom rv.(i) then str " = " ++ str (find_custom rv.(i))
 	  else pp_function (empty_env ()) c.(i)
 	in
+        let kwd = if init then "let rec " else "and " in
 	(if init then mt () else fnl2 ()) ++
-	pp_val names.(i) t.(i) ++
-	str (if init then "let rec " else "and ") ++ names.(i) ++ def ++
-	pp false (i+1)
+        (if lang () = Fsharp then
+            str kwd ++ names.(i) ++ str " : " ++
+            hov 2 (pp_type false [] t.(i)) ++ def
+         else
+	    pp_val names.(i) t.(i) ++ str kwd ++ names.(i) ++ def)
+        ++ pp false (i+1)
   in pp true 0
 
 (*s Pretty-printing of inductive types declaration. *)
@@ -539,7 +561,12 @@ let pp_decl = function
 	in
 	let name = pp_global Term r in
 	let postdef = if is_projection r then name else mt () in
-	pp_val name t ++ hov 0 (str "let " ++ name ++ def ++ postdef)
+        if lang () = Fsharp then
+          hov 0
+            (str "let " ++ name ++ str " : " ++
+             hov 2 (pp_type false [] t) ++ def)
+        else
+	  pp_val name t ++ hov 0 (str "let " ++ name ++ def ++ postdef)
     | Dfix (rv,defs,typs) ->
 	pp_Dfix (rv,defs,typs)
 

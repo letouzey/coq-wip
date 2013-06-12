@@ -534,11 +534,14 @@ let _ = declare_int_option
 
 (*s Extraction Lang *)
 
-type lang = Ocaml | Haskell | Scheme
+type lang = Ocaml | Fsharp | Haskell | Scheme
 
 let lang_ref = ref Ocaml
 
 let lang () = !lang_ref
+
+let lang_caml () =
+  match !lang_ref with Ocaml | Fsharp -> true | _ -> false
 
 let extr_lang : lang -> obj =
   declare_object
