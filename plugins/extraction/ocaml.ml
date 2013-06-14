@@ -190,6 +190,8 @@ let rec pp_expr par env args =
 	hv 0 (apply2 (pp_letin pp_id pp_a1 pp_a2))
     | MLglob r ->
 	(try
+           if lang () = Fsharp then
+             failwith "No projection syntax for F# (issues with t.M.f)";
 	   let args = list_skipn (projection_arity r) args in
 	   let record = List.hd args in
 	   pp_apply (record ++ str "." ++ pp_global Term r) par (List.tl args)
@@ -383,10 +385,6 @@ and pp_fix par env i (ids,bl) args =
 	  fnl () ++
 	  hov 2 (str "in " ++ pp_apply (pr_id ids.(i)) false args)))
 
-let pp_basic_function env t =
-  str " =" ++ fnl () ++ str "  " ++
-  hov 2 (pp_expr false env [] t)
-
 let pp_function env t =
   if lang () = Fsharp then
     str " =" ++ fnl () ++ str "  " ++ hov 2 (pp_expr false env [] t)
@@ -555,8 +553,9 @@ let pp_decl = function
 	let def =
 	  if is_custom r then str (" = " ^ find_custom r)
 	  else if is_projection r then
-	    (prvect str (Array.make (projection_arity r) " _")) ++
-	    str " x = x."
+            let args = prvect str (Array.make (projection_arity r) " _") in
+            if lang () = Fsharp then str " = fun" ++ args ++ str " x -> x."
+            else args ++ str " x = x."
 	  else pp_function (empty_env ()) a
 	in
 	let name = pp_global Term r in
@@ -564,7 +563,7 @@ let pp_decl = function
         if lang () = Fsharp then
           hov 0
             (str "let " ++ name ++ str " : " ++
-             hov 2 (pp_type false [] t) ++ def)
+             hov 2 (pp_type false [] t) ++ def ++ postdef)
         else
 	  pp_val name t ++ hov 0 (str "let " ++ name ++ def ++ postdef)
     | Dfix (rv,defs,typs) ->
