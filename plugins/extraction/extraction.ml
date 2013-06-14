@@ -674,7 +674,7 @@ and extract_cst_app env mle mlt kn args =
   (* The ml arguments, already expunged from known logical ones *)
   let mla = make_mlargs env mle s args metas in
   let mla =
-    if magic1 || not (lang_caml ()) then mla
+    if magic1 || lang () <> Ocaml then mla
     else
       try
         (* for better optimisations later, we discard dependent args
