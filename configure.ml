@@ -9,8 +9,6 @@
 #load "unix.cma"
 open Printf
 
-let _ = Array.iter (fun s -> print_string s; print_newline ()) Sys.argv;;
-
 let coq_version = "trunk"
 let vo_magic = "08511"
 let state_magic = "58511"
@@ -68,6 +66,16 @@ let string_split c s =
 let starts_with s1 s2 =
   let l1 = String.length s1 and l2 = String.length s2 in
   l2 <= l1 && s2 = String.sub s1 0 l2
+
+(** Turn a version string such as "4.01.0+rc2" into the list
+    ["4";"01";"1"], stopping at the first non-digit or "." *)
+
+let numeric_prefix_list s =
+  let isnum c = (c = '.' || (c >= '0' && c <= '9')) in
+  let max = String.length s in
+  let i = ref 0 in
+  while !i < max && isnum s.[!i] do incr i done;
+  string_split '.' (String.sub s 0 !i)
 
 (** Combined existence and directory tests *)
 
@@ -430,15 +438,9 @@ let caml_version = run (Filename.quote camlc ^ " -version")
 let camllib = run (Filename.quote camlc ^ " -where")
 let camlp4compat = "-loc loc"
 
-(** Turn a [caml_version] string such as "4.01.0+rc2" into the list
-    ["4";"01";"1"] *)
+(** Caml version as a list of string, e.g. ["4";"00";"1"] *)
 
-let caml_version_list =
-  let isnum c = (c = '.' || (c >= '0' && c <= '9')) in
-  let max = String.length caml_version in
-  let i = ref 0 in
-  while !i < max && isnum caml_version.[!i] do incr i done;
-  string_split '.' (String.sub caml_version 0 !i)
+let caml_version_list = numeric_prefix_list caml_version
 
 (** Same, with integers in the version list *)
 
@@ -477,84 +479,80 @@ let camltag = match caml_version_list with
 
 let camlp4bin = camlbin
 
-let camlp4 = ref true
-let camlp4mod = ref ""
+type camlpX = Camlp4 | Camlp5
 
-(* TODO: camlp5dir should rather be the *binary* location *)
+(* TODO: camlp5dir should rather be the *binary* location, just as camldir *)
+(* TODO: remove the late attempts at finding gramlib.cma *)
+
+exception NoCamlp5
+
+let check_camlp5 testcma = match !Prefs.camlp5dir with
+  | Some dir ->
+    if Sys.file_exists (dir^"/"^ testcma) then dir
+    else
+      let msg =
+        sprintf "Cannot find camlp5 libraries in '%s' (%s not found)."
+          dir testcma
+      in die msg
+  | None ->
+    let dir = run ~fatal:false "camlp5 -where" in
+    if dir <> "" then dir
+    else if Sys.file_exists (camllib^"/camlp5/"^ testcma) then
+      camllib^"/camlp5"
+    else if Sys.file_exists (camllib^"/site-lib/camlp5/"^ testcma) then
+      camllib^"/site-lib/camlp5"
+    else
+      let () = printf "No Camlp5 installation found." in
+      let () = printf "Looking for Camlp4 instead...\n" in
+      raise NoCamlp5
+
+let check_camlp5_version () =
+  let s = camlexec.p4 in
+  (* translate 4 into 5 in the binary name *)
+  for i = 0 to String.length s - 1 do
+    if s.[i] = '4' then s.[i] <- '5'
+  done;
+  try
+    (* TODO Quotes ? *)
+    let ver = List.nth (string_split ' ' (run (camlexec.p4^" -v 2>&1"))) 2 in
+    match string_split '.' ver with
+    | major::minor::_ when (int major, int minor) >= (5,1) ->
+      printf "You have Camlp5 %s. Good!\n" ver
+    | _ -> failwith "bad version"
+  with _ -> die "Error: unsupported Camlp5 (version < 5.01 or unrecognized).\n"
+
+let config_camlpX () =
+  try
+    if not !Prefs.usecamlp5 then raise NoCamlp5;
+    let lib = "gramlib" in
+    let dir = check_camlp5 (lib^".cma") in
+    let () = check_camlp5_version () in
+    Camlp5, dir, lib
+  with NoCamlp5 ->
+    (* We now try to use Camlp4, either by explicit choice or
+       by lack of proper Camlp5 installation *)
+    let lib = "camlp4lib" in
+    let dir = camllib^"/camlp4" in
+    if not (Sys.file_exists (dir^"/"^lib^".cma")) then
+      die "No Camlp4 installation found.\n";
+    let () = camlexec.p4 <- camlexec.p4 ^ "rf" in
+    ignore (run camlexec.p4);
+    Camlp4, dir, lib
+
+let camlp4, fullcamlp4lib, camlp4mod = config_camlpX ()
+
+let shorten_camllib s =
+  if starts_with s (camllib^"/") then
+    let l = String.length camllib + 1 in
+    "+" ^ String.sub s l (String.length s - l)
+  else s
+
+let camlp4lib = shorten_camllib fullcamlp4lib
+
+
+(** Do we have a native compiler: test of ocamlopt and its version *)
 
 (*
-let camlp4lib, fullcamlp4lib =
-  if !Prefs.usecamlp5 then begin
-    camlp4 := false;
-    camlp4mod := "gramlib";
-    let testcma = !camlp4mod^".cma" in
-    match !Prefs.camlp5dir with
-    | Some dir ->
-      if Sys.file_exists (dir^"/"^ testcma) then
-        dir, dir
-      else
-        let msg =
-          sprintf "Cannot find camlp5 libraries in '%s' (%s not found)."
-            dir testcma
-        in die msg
-    | None ->
-      let dir = run ~fatal:false "camlp5 -where" in
-      if dir <> "" then
-        dir, dir
-      else if Sys.file_exists (camllib^"/camlp5/"^ testcma) then
-        "+camlp5", (camllib^"/camlp5")
-      else if Sys.file_exists (camllib^"/site-lib/camlp5/"^ testcma) then
-        "+site-lib/camlp5", (camllib^"site-lib/camlp5")
-      else
-        begin
-	  printf "No Camlp5 installation found. Looking for Camlp4 instead...\n";
-          camlp4 := true;
-
-        end
-  end
-
-
-(* If we're going to use Camlp5, let's check its version *)
-
-let _ =
-  if !camlp4 = "camlp5" then begin
-
-  end
-    camlp4oexec=`printf "$camlp4oexec" | tr 4 5`
-    case `"$camlp4oexec" -v 2>&1` in
-        *"version 4.0"*|*5.00* )
-            printf "Camlp5 version < 5.01 not supported."
-            printf "Configuration script failed!"
-            exit 1;;
-    esac
-esac
-
-(** We might now try to use Camlp4, either by explicit choice or
-    by lack of proper Camlp5 installation *)
-
-case $usecamlp5 in
-  no)
-    CAMLP4=camlp4
-    CAMLP4MOD=camlp4lib
-    CAMLP4LIB=+camlp4
-    FULLCAMLP4LIB=${CAMLLIB}/camlp4
-
-    if [ ! -f "${FULLCAMLP4LIB}/${CAMLP4MOD}.cma" ]; then
-        printf "No Camlp4 installation found."
-        printf "Configuration script failed!"
-        exit 1
-    fi
-
-    camlp4oexec=${camlp4oexec}rf
-    if [ "`"$camlp4oexec" 2>&1`" != "" ]; then
-        printf "Error: $camlp4oexec not found or not executable."
-        printf "Configuration script failed!"
-        exit 1
-    fi
-esac
-
-# do we have a native compiler: test of ocamlopt and its version
-
 if [ "$best_compiler" = "opt" ] ; then
   if test -e "$nativecamlc" || test -e "`which $nativecamlc`"; then
       CAMLOPTVERSION=`"$nativecamlc" -v | sed -n -e 's|.*version* *\(.*\)$|\1|p' `
@@ -901,10 +899,10 @@ let print_summary () =
   printf "  Coq VM bytecode link flags        : $COQRUNBYTEFLAGS\n";
   printf "  Coq tools bytecode link flags     : $COQTOOLSBYTEFLAGS\n";
   printf "  OS dependent libraries            : $OSDEPLIBS\n";
-  printf "  Objective-Caml/Camlp4 version     : $CAMLVERSION\n";
-  printf "  Objective-Caml/Camlp4 binaries in : $CAMLBIN\n";
-  printf "  Objective-Caml library in         : $CAMLLIB\n";
-  printf "  Camlp4 library in                 : $CAMLP4LIB\n";
+  printf "  Objective-Caml/Camlp4 version     : %s\n" caml_version;
+  printf "  Objective-Caml/Camlp4 binaries in : %s\n" camlbin;
+  printf "  Objective-Caml library in         : %s\n" camllib;
+  printf "  Camlp4 library in                 : %s\n" camlp4lib;
 (*
 if test "$best_compiler" = opt ; then
 printf "  Native dynamic link support       : $HASNATDYNLINK"
