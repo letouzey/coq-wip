@@ -10,8 +10,8 @@
 open Printf
 
 let coq_version = "trunk"
-let vo_magic = "08511"
-let state_magic = "58511"
+let vo_magic = 08511
+let state_magic = 58511
 
 (** * Utility functions *)
 
@@ -105,10 +105,9 @@ let which ?(path=global_path) prog =
       if is_executable file then file else search path
   in search path
 
-(* TODO: useless ?
 let program_in_path prog =
   try let _ = which prog in true with Not_found -> false
-*)
+
 
 (** * Date *)
 
@@ -472,14 +471,12 @@ let camltag = match caml_version_list with
   | _ -> assert false
 
 
-(** * Camlp4 / Camlp5 configuration *)
+(** * CamlpX configuration *)
 
 (** We assume that camlp(4|5) binaries are at the same place as ocaml ones
     (this should become configurable some day). *)
 
 let camlp4bin = camlbin
-
-type camlpX = Camlp4 | Camlp5
 
 (* TODO: camlp5dir should rather be the *binary* location, just as camldir *)
 (* TODO: remove the late attempts at finding gramlib.cma *)
@@ -527,7 +524,7 @@ let config_camlpX () =
     let lib = "gramlib" in
     let dir = check_camlp5 (lib^".cma") in
     let () = check_camlp5_version () in
-    Camlp5, dir, lib
+    "camlp5", dir, lib
   with NoCamlp5 ->
     (* We now try to use Camlp4, either by explicit choice or
        by lack of proper Camlp5 installation *)
@@ -537,7 +534,7 @@ let config_camlpX () =
       die "No Camlp4 installation found.\n";
     let () = camlexec.p4 <- camlexec.p4 ^ "rf" in
     ignore (run camlexec.p4);
-    Camlp4, dir, lib
+    "camlp4", dir, lib
 
 let camlp4, fullcamlp4lib, camlp4mod = config_camlpX ()
 
@@ -550,65 +547,62 @@ let shorten_camllib s =
 let camlp4lib = shorten_camllib fullcamlp4lib
 
 
-(** Do we have a native compiler: test of ocamlopt and its version *)
+(** * Native compiler *)
 
-(*
-if [ "$best_compiler" = "opt" ] ; then
-  if test -e "$nativecamlc" || test -e "`which $nativecamlc`"; then
-      CAMLOPTVERSION=`"$nativecamlc" -v | sed -n -e 's|.*version* *\(.*\)$|\1|p' `
-      if [ ! -f "${FULLCAMLP4LIB}/${CAMLP4MOD}.cmxa" ]; then
-          best_compiler=byte
-          printf "Cannot find native-code $CAMLP4,"
-          printf "only the bytecode version of Coq will be available."
-      elif [ ! -f "$CAMLLIB"/dynlink.cmxa ]; then
-          best_compiler=byte
-          printf "Cannot find native-code dynlink library,"
-          printf "only the bytecode version of Coq will be available."
-          printf "For building a native-code Coq, you may try to first"
-          printf "compile and install a dummy dynlink.cmxa (see dev/dynlink.ml)"
-          printf "and then run ./configure -natdynlink no"
-      else
-          if [ "$CAMLOPTVERSION" != "$CAMLVERSION" ] ; then
-              printf "Native and bytecode compilers do not have the same version!"
-          fi
-          printf "You have native-code compilation. Good!"
-      fi
-  else
-      best_compiler=byte
-      printf "You have only bytecode compilation."
-  fi
-fi
+let msg_byteonly () =
+  printf "Only the bytecode version of Coq will be available.\n"
 
-# Native dynlink
-if [ "$natdynlink" = "yes" -a -f "$CAMLLIB"/dynlink.cmxa ]; then
-    HASNATDYNLINK=true
-else
-    HASNATDYNLINK=false
-fi
+let msg_no_ocamlopt () =
+  printf "Cannot find the OCaml native-code compiler.\n"; msg_byteonly ()
 
-case $HASNATDYNLINK,$ARCH,`uname -r`,$CAMLVERSION in
-    true,Darwin,9.*,3.11.* )  # ocaml 3.11.0 dynlink on MacOS 10.5 is buggy
-        NATDYNLINKFLAG=os5fixme;;
-    #Possibly a problem on 10.6.0/10.6.1/10.6.2
-    #May just be a 32 vs 64 problem for all 10.6.*
-    true,Darwin,10.0.*,3.11.* ) # Possibly a problem on 10.6.0
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.1.*,3.11.* ) # Possibly a problem on 10.6.1
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.2.*,3.11.* ) # Possibly a problem on 10.6.2
-        NATDYNLINKFLAG=os5fixme;;
-    true,Darwin,10.*,3.11.* )
-        if [ `getconf LONG_BIT` = "32" ]; then
-            # Still a problem for x86_32
-            NATDYNLINKFLAG=os5fixme
-        else
-            # Not a problem for x86_64
-            NATDYNLINKFLAG=$HASNATDYNLINK
-        fi;;
-    * )
-        NATDYNLINKFLAG=$HASNATDYNLINK;;
-esac
-*)
+let msg_no_camlp4_cmxa () =
+  printf "Cannot find the native-code library of %s.\n" camlp4; msg_byteonly ()
+
+let msg_no_dynlink_cmxa () =
+  printf "Cannot find native-code dynlink library.\n"; msg_byteonly ();
+  printf "For building a native-code Coq, you may try to first\n";
+  printf "compile and install a dummy dynlink.cmxa (see dev/dynlink.ml)\n";
+  printf "and then run ./configure -natdynlink no\n"
+
+let check_native () =
+  if !Prefs.byteonly then raise Not_found;
+  if not (is_executable camlexec.opt || program_in_path camlexec.opt) then
+    (msg_no_ocamlopt (); raise Not_found);
+  if not (Sys.file_exists (fullcamlp4lib^"/"^camlp4mod^".cmxa")) then
+    (msg_no_camlp4_cmxa (); raise Not_found);
+  if not (Sys.file_exists (camllib^"/dynlink.cmxa")) then
+    (msg_no_dynlink_cmxa (); raise Not_found);
+  let version = run (camlexec.opt^" -version") in
+  if version <> caml_version then
+    printf
+      "Warning: Native and bytecode compilers do not have the same version!\n";
+  printf "You have native-code compilation. Good!\n"
+
+let best_compiler =
+  try check_native (); "opt" with Not_found -> "byte"
+
+
+(** * Native dynlink *)
+
+let hasnatdynlink = !Prefs.natdynlink && best_compiler = "opt"
+
+(** OCaml 3.11.0 dynlink is buggy on MacOS 10.5, and possibly
+    also on 10.6.(0|1|2) for x86_64 and 10.6.x on x86_32 *)
+
+let needs_MacOS_fix () =
+  match hasnatdynlink, arch, caml_version_nums with
+  | true, "Darwin", 3::11::_ ->
+    (match string_split '.' (run "uname -r") with
+    | "9"::_ -> true
+    | "10"::("0"|"1"|"2")::_ -> true
+    | "10"::_ when Sys.word_size = 32 -> true
+    | _ -> false)
+  | _ -> false
+
+let natdynlinkflag =
+  if needs_MacOS_fix () then "os5fixme" else
+    if hasnatdynlink then "true" else "false"
+
 
 (** * OS dependent libraries *)
 
@@ -718,39 +712,35 @@ case $COQIDE in
 esac
 
 [ x$lablgtkosxdir = x ] || LABLGTKINCLUDES="$LABLGTKINCLUDES -I $lablgtkosxdir"
+*)
 
-# strip command
+(** * strip command *)
 
-case $ARCH in
-    Darwin) if [ "$HASNATDYNLINK" = "true" ]
-        then
-          STRIPCOMMAND="true"
-        else
-          STRIPCOMMAND="strip"
-        fi;;
-    * )
-    if [ "$coq_profile_flag" = "-p" ] || [ "$coq_debug_flag" = "-g" ]
-    then
-        STRIPCOMMAND="true"
-    else
-        STRIPCOMMAND="strip"
-    fi
-esac
+let strip =
+  if arch = "Darwin" then
+    if hasnatdynlink then "true" else "strip"
+  else
+    if !Prefs.profile || !Prefs.debug then "true" else "strip"
 
-### Test if documentation can be compiled (latex, hevea)
 
-if test "$with_doc" = "all"
-then
-    for cmd in "latex" "hevea" ; do
-        if test ! -x "`which $cmd`"
-        then
-            printf "$cmd was not found; documentation will not be available"
-            with_doc=no
-            break
-        fi
-    done
-fi
+(** * Documentation : do we have latex, hevea, ... *)
 
+let check_doc () =
+  let err s =
+    printf "%s was not found; documentation will not be available\n" s;
+    raise Not_found
+  in
+  try
+    if not !Prefs.withdoc then raise Not_found;
+    if not (program_in_path "latex") then err "latex";
+    if not (program_in_path "hevea") then err "hevea";
+    true
+  with Not_found -> false
+
+let withdoc = check_doc ()
+
+
+(*
 ###########################################
 # bindir, libdir, mandir, docdir, etc.
 
@@ -903,10 +893,9 @@ let print_summary () =
   printf "  Objective-Caml/Camlp4 binaries in : %s\n" camlbin;
   printf "  Objective-Caml library in         : %s\n" camllib;
   printf "  Camlp4 library in                 : %s\n" camlp4lib;
+  if best_compiler = "opt" then
+    printf "  Native dynamic link support       : %B\n" hasnatdynlink;
 (*
-if test "$best_compiler" = opt ; then
-printf "  Native dynamic link support       : $HASNATDYNLINK"
-fi
 if test "$COQIDE" != "no"; then
 printf "  Lablgtk2 library in               : $LABLGTKLIB"
 fi
@@ -915,7 +904,7 @@ printf "  Mac OS integration is on"
 fi
 *)
   printf "  Documentation                     : %s\n"
-    (if !Prefs.withdoc then "All" else "None");
+    (if withdoc then "All" else "None");
   printf "  CoqIde                            : $COQIDE\n";
   printf "  Web browser                       : %s\n" browser;
   printf "  Coq web site                      : %s\n" !Prefs.coqwebsite;
@@ -940,6 +929,7 @@ fi
 
 let _ = print_summary ()
 
+
 (** * Building the dev/ocamldebug-coq file *)
 
 let ocamldebug_coq = "dev/ocamldebug-coq"
@@ -962,8 +952,6 @@ fi
 # Creation of configuration files
 ##############################################
 
-mlconfig_file=config/coq_config.ml
-mymlconfig_file=myocamlbuild_config.ml
 config_file=config/Makefile
 config_template=config/Makefile.template
 
@@ -1026,74 +1014,81 @@ case $datadir_spec in
     yes) DATADIR_OPTION="Some \"$DATADIR\"";;
     * ) DATADIR_OPTION="None";;
 esac
+*)
 
-#####################################################
-# Building the config/coq_config.ml file
-#####################################################
+(** * Building the config/coq_config.ml file *)
 
-rm -f "$mlconfig_file" "$mymlconfig_file"
-cat << END_OF_COQ_CONFIG > $mlconfig_file
-(* DO NOT EDIT THIS FILE: automatically generated by ../configure *)
+let mlconf = "config/coq_config.ml"
+let mymlconf = "myocamlbuild_config.ml"
 
-let local = $local
-let coqrunbyteflags = "$COQRUNBYTEFLAGS"
-let coqlib = $LIBDIR_OPTION
-let configdir = $CONFIGDIR_OPTION
-let datadir = $DATADIR_OPTION
-let docdir = "$DOCDIR"
-let ocaml = "$ocamlexec"
-let ocamlc = "$bytecamlc"
-let ocamlopt = "$nativecamlc"
-let ocamlmklib = "$ocamlmklibexec"
-let ocamldep = "$ocamldepexec"
-let ocamldoc = "$ocamldocexec"
-let ocamlyacc = "$ocamlyaccexec"
-let ocamllex = "$ocamllexexec"
-let camlbin = "$CAMLBIN"
-let camllib = "$CAMLLIB"
-let camlp4 = "$CAMLP4"
-let camlp4o = "$camlp4oexec"
-let camlp4bin = "$CAMLP4BIN"
-let camlp4lib = "$CAMLP4LIB"
-let camlp4compat = "$CAMLP4COMPAT"
-let coqideincl = "$LABLGTKINCLUDES"
-let cflags = "$cflags"
-let best = "$best_compiler"
-let arch = "$ARCH"
-let arch_is_win32 = $ARCH_WIN32
-let has_coqide = "$COQIDE"
-let gtk_platform = \`$IDEARCHDEF
-let has_natdynlink = $HASNATDYNLINK
-let natdynlinkflag = "$NATDYNLINKFLAG"
-let osdeplibs = "$OSDEPLIBS"
-let version = "$VERSION"
-let caml_version = "$CAMLVERSION"
-let date = "$DATE"
-let compile_date = "$COMPILEDATE"
-let vo_magic_number = $VOMAGIC
-let state_magic_number = $STATEMAGIC
-let exec_extension = "$EXE"
-let with_geoproof = ref $with_geoproof
-let browser = "$BROWSER"
-let wwwcoq = "$WWWCOQ"
-let wwwrefman = wwwcoq ^ "distrib/" ^ version ^ "/refman/"
-let wwwstdlib = wwwcoq ^ "distrib/" ^ version ^ "/stdlib/"
-let localwwwrefman = "file:/" ^ docdir ^ "html/refman"
-let no_native_compiler = $no_native_compiler
+let write_mlconf () =
+  Sys.remove mlconf;
+  let o = open_out mlconf in
+  fprintf o "(* DO NOT EDIT THIS FILE: ";
+  fprintf o "automatically generated by ../configure *)\n";
+  fprintf o "let local = %B\n" !Prefs.local;
+(*  fprintf o "let coqrunbyteflags = $COQRUNBYTEFLAGS\n";
+  fprintf o "let coqlib = $LIBDIR_OPTION\n";
+  fprintf o "let configdir = $CONFIGDIR_OPTION\n";
+  fprintf o "let datadir = $DATADIR_OPTION\n";
+  fprintf o "let docdir = "$DOCDIR"\n"; *)
+  fprintf o "let ocaml = %S\n" camlexec.top;
+  fprintf o "let ocamlc = %S\n" camlexec.byte;
+  fprintf o "let ocamlopt = %S\n" camlexec.opt;
+  fprintf o "let ocamlmklib = %S\n" camlexec.mklib;
+  fprintf o "let ocamldep = %S\n" camlexec.dep;
+  fprintf o "let ocamldoc = %S\n" camlexec.doc;
+  fprintf o "let ocamlyacc = %S\n" camlexec.yacc;
+  fprintf o "let ocamllex = %S\n" camlexec.lex;
+  fprintf o "let camlbin = %S\n" camlbin;
+  fprintf o "let camllib = %S\n" camllib;
+  fprintf o "let camlp4 = %S\n" camlp4;
+  fprintf o "let camlp4o = %S\n" camlexec.p4;
+  fprintf o "let camlp4bin = %S\n" camlp4bin;
+  fprintf o "let camlp4lib = %S\n" camlp4lib;
+  fprintf o "let camlp4compat = %S\n" camlp4compat;
+  fprintf o "let cflags = %S\n" cflags;
+  fprintf o "let best = %S\n" best_compiler;
+  fprintf o "let arch = %S\n" arch;
+  fprintf o "let arch_is_win32 = %B\n" (arch = "win32");
+(*  fprintf o "let coqideincl = "$LABLGTKINCLUDES"\n";
+  fprintf o "let has_coqide = "$COQIDE"\n";
+  fprintf o "let gtk_platform = \`$IDEARCHDEF\n"; *)
+  fprintf o "let has_natdynlink = %B\n" hasnatdynlink;
+  fprintf o "let natdynlinkflag = %S\n" natdynlinkflag;
+  fprintf o "let osdeplibs = %S\n" osdeplibs;
+  fprintf o "let version = %S\n" coq_version;
+  fprintf o "let caml_version = %S\n" caml_version;
+  fprintf o "let date = %S\n" short_date;
+  fprintf o "let compile_date = %S\n" full_date;
+  fprintf o "let vo_magic_number = %d\n" vo_magic;
+  fprintf o "let state_magic_number = %d\n" state_magic;
+  fprintf o "let exec_extension = %S\n" exe;
+  fprintf o "let with_geoproof = ref %B\n" !Prefs.geoproof;
+  fprintf o "let browser = %S\n" browser;
+  fprintf o "let wwwcoq = %S\n" !Prefs.coqwebsite;
+  fprintf o "let wwwrefman = wwwcoq ^ \"distrib/\" ^ version ^ \"/refman/\"\n";
+  fprintf o "let wwwstdlib = wwwcoq ^ \"distrib/\" ^ version ^ \"/stdlib/\"\n";
+  fprintf o "let localwwwrefman = \"file:/\" ^ docdir ^ \"/html/refman\"\n";
+  fprintf o "let no_native_compiler = %B\n" (not !Prefs.nativecompiler);
+  fprintf o "\nlet plugins_dirs = [\n";
+  let plugins = Sys.readdir "plugins" in
+  Array.sort compare plugins;
+  Array.iter
+    (fun f ->
+      if Sys.is_directory ("plugins/"^f) && f.[0] <> '.'
+      then fprintf o "  %S;\n" f)
+    plugins;
+  fprintf o "]\n";
+  close_out o;
+  Unix.chmod mlconf 0o444;
+  Sys.remove mymlconf;
+  Unix.symlink mlconf mymlconf
 
+let _ = write_mlconf ()
 
-END_OF_COQ_CONFIG
-
-printf "let plugins_dirs = [" >> "$mlconfig_file"
-find plugins/* \( -name .svn -prune \) -o \( -type d -exec printf "\"%s\";\n" {} \; \) >> "$mlconfig_file"
-printf "]" >> "$mlconfig_file"
-
-chmod a-w "$mlconfig_file"
-ln -sf "$mlconfig_file" "$mymlconfig_file"
-
-###############################################
-# Building the config/Makefile file
-###############################################
+(*
+(** * Building the config/Makefile file *)
 
 rm -f "$config_file"
 
@@ -1236,6 +1231,7 @@ END_OF_MAKEFILE
 
 chmod a-w "$config_file"
 *)
+
 
 (** * The end *)
 
