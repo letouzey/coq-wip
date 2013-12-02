@@ -46,6 +46,8 @@ let run ?(fatal=true) cmd =
   | _ when fatal -> die ("Error while running: "^cmd)
   | _ -> ""
 
+let tryrun cmd = run ~fatal:false cmd
+
 (** Splitting a string at some character *)
 
 let string_split c s =
@@ -94,7 +96,7 @@ let global_path =
 
 (** A "which" command. May raise [Not_found] *)
 
-(* TODO: .exe on win32 ? *)
+(* TODO: .exe on win32 ? TODO: ";" as delimitor on win32 ? *)
 
 let which ?(path=global_path) prog =
   let rec search = function
@@ -345,7 +347,7 @@ let query_arch () =
 
 let rec try_archs = function
   | (prog,opt)::rest when is_executable prog ->
-    let arch = run ~fatal:false (prog^opt) in
+    let arch = tryrun (prog^opt) in
     if arch <> "" then arch else try_archs rest
   | _ :: rest -> try_archs rest
   | [] -> query_arch ()
@@ -355,7 +357,7 @@ let cygwin = ref false
 let arch = match !Prefs.arch with
   | Some a -> a
   | None ->
-    let arch = run ~fatal:false "uname -s" in
+    let arch = tryrun "uname -s" in
     if starts_with arch "CYGWIN" then (cygwin := true; "win32")
     else if starts_with arch "MINGW32" then "win32"
     else if arch <> "" then arch
@@ -491,7 +493,7 @@ let check_camlp5 testcma = match !Prefs.camlp5dir with
           dir testcma
       in die msg
   | None ->
-    let dir = run ~fatal:false "camlp5 -where" in
+    let dir = tryrun "camlp5 -where" in
     if dir <> "" then dir
     else if Sys.file_exists (camllib^"/camlp5/"^ testcma) then
       camllib^"/camlp5"
@@ -617,101 +619,109 @@ let operating_system, osdeplibs =
   else
     "", osdeplibs
 
-(*
-# lablgtk2 and CoqIDE
 
-IDEARCHFLAGS=
-IDEARCHFILE=
-IDEARCHDEF=X11
+(** * lablgtk2 and CoqIDE *)
 
-# -byte-only should imply -coqide byte, unless the user decides otherwise
+(** -byte-only implies -coqide byte, unless the user decides otherwise *)
 
-if [ "$best_compiler" = "byte" -a "$coqide_spec" = "no" ]; then
-    coqide_spec=yes
-    COQIDE=byte
-fi
+let _ =
+  if best_compiler = "byte" && !Prefs.coqide = None then
+    Prefs.coqide := Some Byte
 
-# Which coqide is asked ? which one is possible ?
+(** Which coqide is asked ? which one is possible ? *)
 
-if [ "$coqide_spec" = "yes" -a "$COQIDE" = "no" ]; then
-    printf "CoqIde disabled as requested."
-else
-    case $lablgtkdir_spec in
-        no)
-            # Beware of the final \r in Win32
-            lablgtkdirtmp="$(ocamlfind query lablgtk2.sourceview2 2> /dev/null | tr -d '\r')"
-            if [ "$lablgtkdirtmp" != "" ]; then
-                if [ ! -f "$lablgtkdirtmp/gSourceView2.cmi" ]; then
-                    printf "Incomplete Lablgtk2 found by ocamlfind (gSourceView2.cmi not found)."
-                elif [ ! -f "$lablgtkdirtmp/glib.mli" ]; then
-                    printf "Incomplete Lablgtk2 found by ocamlfind (glib.mli not found)."
-                else
-                    lablgtkdirfoundmsg="LabelGtk2 found by ocamlfind"
-                    lablgtkdir=$lablgtkdirtmp
-                    LABLGTKLIB=$lablgtkdir # Pour le message utilisateur
-                fi
-            fi
-            if [ "$lablgtkdir" = "" -a -f "${CAMLLIB}/lablgtk2/gSourceView2.cmi" -a -f "${CAMLLIB}/lablgtk2/glib.mli" ]; then
-                lablgtkdirfoundmsg="LablGtk2 found in ocaml lib directory"
-                lablgtkdir=${CAMLLIB}/lablgtk2
-                LABLGTKLIB=+lablgtk2 # Pour le message utilisateur
-            fi;;
-        yes)
-            if [ ! -d "$lablgtkdir" ]; then
-                printf "$lablgtkdir is not a valid directory."
-                printf "Configuration script failed!"
-                exit 1
-            elif [ ! -f "$lablgtkdir/gSourceView2.cmi" ]; then
-                printf "Incomplete LablGtk2 library (gSourceView2.cmi not found)."
-                printf "Make sure that the GtkSourceView bindings are available."
-                printf "Configuration script failed!"
-                exit 1
-            elif [ ! -f "$lablgtkdir/glib.mli" ]; then
-                printf "Incomplete LablGtk2 library (glib.mli not found)."
-                printf "Configuration script failed!"
-                exit 1
-            else
-                lablgtkdirfoundmsg="LablGtk2 directory found"
-                LABLGTKLIB=$lablgtkdir # Pour le message utilisateur
-            fi;;
-    esac
-    if [ "$lablgtkdir" = "" ]; then
-        printf "LablGtk2 not found: CoqIde will not be available."
-        COQIDE=no
-    elif [ -z "`grep -w convert_with_fallback "$lablgtkdir/glib.mli"`" ]; then
-        printf "$lablgtkdirfoundmsg but too old: CoqIde will not be available."
-        COQIDE=no;
-    elif [ "$coqide_spec" = "yes" -a "$COQIDE" = "byte" ]; then
-        printf "$lablgtkdirfoundmsg, bytecode CoqIde will be used as requested."
-        COQIDE=byte
-    elif [ ! -f "${CAMLLIB}/threads/threads.cmxa" -a -f "${lablgtkdir}/gtkThread.cmx" ]; then
-        printf "$lablgtkdirfoundmsg, not native (or no native threads): bytecode CoqIde will be available."
-        COQIDE=byte
+let check_lablgtkdir ?(fatal=false) msg dir =
+  let yell msg = if fatal then die msg else (printf "%s\n" msg; false) in
+  if not (dir_exists dir) then
+    yell (sprintf "No such directory '%s' (%s)." dir msg)
+  else if not (Sys.file_exists (dir^"/gSourceView2.cmi")) then
+    yell (sprintf "Incomplete LablGtk2 (%s): no %s/gSourceView2.cmi." msg dir)
+  else if not (Sys.file_exists (dir^"/glib.mli")) then
+    yell (sprintf "Incomplete LablGtk2 (%s): no %s/glib.mli." msg dir)
+  else true
+
+let get_lablgtkdir () =
+  match !Prefs.lablgtkdir with
+  | Some dir ->
+    let msg = "manually provided" in
+    if check_lablgtkdir ~fatal:true msg dir then dir, msg
+    else "", ""
+  | None ->
+    let msg = "via ocamlfind" in
+    let d1 = tryrun "ocamlfind query lablgtk2.sourceview2 2> /dev/null" in
+    if d1 <> "" && check_lablgtkdir msg d1 then d1, msg
     else
-        printf "$lablgtkdirfoundmsg, native threads: native CoqIde will be available."
-        COQIDE=opt
-        if [ "$nomacintegration_spec" = "no" ] && lablgtkosxdir=$(ocamlfind query lablgtkosx 2> /dev/null);
-        then
-            IDEARCHFLAGS=lablgtkosx.cmxa
-            IDEARCHDEF=QUARTZ
-        elif [ "$ARCH" = "win32" ];
-        then
-            IDEARCHFLAGS=
-            IDEARCHFILE=ide/ide_win32_stubs.o
-            IDEARCHDEF=WIN32
-        fi
-    fi
-fi
+      (* In debian wheezy, ocamlfind knows only of lablgtk2 *)
+      let d2 = tryrun "ocamlfind query lablgtk2 2> /dev/null" in
+      if d2 <> "" && d2 <> d1 && check_lablgtkdir msg d2 then d2, msg
+      else
+        let msg = "in OCaml library" in
+        let d3 = camllib^"/lablgtk2" in
+        if check_lablgtkdir msg d3 then d3, msg
+        else "", ""
 
-case $COQIDE in
-    byte|opt)
-        LABLGTKINCLUDES="-I $LABLGTKLIB";;
-    no)
-        LABLGTKINCLUDES="";;
-esac
+let lablgtkdir = ref ""
 
-[ x$lablgtkosxdir = x ] || LABLGTKINCLUDES="$LABLGTKINCLUDES -I $lablgtkosxdir"
-*)
+let check_coqide () =
+  (* If the user asks something impossible, we abort the configuration *)
+  let check_expected res msg = match res, !Prefs.coqide with
+    | No, Some (Byte|Opt) -> die msg
+    | Byte, Some Opt -> die msg
+    | _ -> let () = printf "%s\n" msg in res
+  in
+  match !Prefs.coqide with
+  | Some No -> let () = printf "CoqIde disabled as requested.\n" in No
+  | _ ->
+    let dir, msg = get_lablgtkdir () in
+    if dir = "" then
+      check_expected No "LablGtk2 not found: CoqIde will not be available."
+    else
+      let msg1 = sprintf "LablGtk2 found (%s)" msg in
+      let test = sprintf "grep -q -w convert_with_fallback %S/glib.mli" dir in
+      if Sys.command test <> 0 then
+        check_expected No (msg1 ^" but too old: CoqIde will not be available.")
+      else
+        let () = lablgtkdir := shorten_camllib dir in
+        if !Prefs.coqide = Some Byte then
+          let () = printf ", bytecode CoqIde will be used as requested.\n" in
+          Byte
+        else if not (Sys.file_exists (camllib^"/threads/threads.cmxa") &&
+                     Sys.file_exists (dir^"/gtkThread.cmx"))
+        then
+          let msg2 = ", but no native LablGtk2 or threads:\n" in
+          let msg3 = "only bytecode CoqIde will be available." in
+          check_expected Byte (msg1^msg2^msg3)
+        else
+          let msg2 = ", native threads: native Coqide will be available.\n" in
+          let () = printf "%s%s" msg1 msg2 in
+          Opt
+
+let coqide = check_coqide ()
+
+let coqide_str = match coqide with Opt -> "opt" | Byte -> "byte" | No -> "no"
+
+let lablgtkincludes = ref ""
+let idearchflags = ref ""
+let idearchfile = ref ""
+let idearchdef = ref "X11"
+
+let coqide_flags () =
+  if !lablgtkdir <> "" then lablgtkincludes := sprintf "-I %S" !lablgtkdir;
+  match coqide, arch with
+    | Opt, "Darwin" when !Prefs.macintegration ->
+      let osxdir = tryrun "ocamlfind query lablgtkosx 2> /dev/null" in
+      if osxdir <> "" then begin
+        lablgtkincludes := sprintf "%s -I %S" !lablgtkincludes osxdir;
+        idearchflags := "lablgtkosx.cmxa";
+        idearchdef := "QUARTZ"
+      end
+    | Opt, "win32" ->
+      idearchfile := "ide/ide_win32_stubs.o";
+      idearchdef := "WIN32"
+    | _ -> ()
+
+let _ = coqide_flags ()
+
 
 (** * strip command *)
 
@@ -885,33 +895,28 @@ let print_summary () =
   printf "  Architecture                      : %s\n" arch;
   if operating_system <> "" then
     printf "  Operating system                  : %s\n" operating_system;
+(* TODO
   printf "  Coq VM bytecode link flags        : $COQRUNBYTEFLAGS\n";
   printf "  Coq tools bytecode link flags     : $COQTOOLSBYTEFLAGS\n";
   printf "  OS dependent libraries            : $OSDEPLIBS\n";
+*)
   printf "  Objective-Caml/Camlp4 version     : %s\n" caml_version;
   printf "  Objective-Caml/Camlp4 binaries in : %s\n" camlbin;
   printf "  Objective-Caml library in         : %s\n" camllib;
   printf "  Camlp4 library in                 : %s\n" camlp4lib;
   if best_compiler = "opt" then
     printf "  Native dynamic link support       : %B\n" hasnatdynlink;
-(*
-if test "$COQIDE" != "no"; then
-printf "  Lablgtk2 library in               : $LABLGTKLIB"
-fi
-if test "$IDEARCHDEF" = "QUARTZ"; then
-printf "  Mac OS integration is on"
-fi
-*)
+  if coqide <> No then
+    printf "  Lablgtk2 library in               : %s\n" !lablgtkdir;
+  if !idearchdef = "QUARTZ" then
+    printf "  Mac OS integration is on\n";
+  printf "  CoqIde                            : %s\n" coqide_str;
   printf "  Documentation                     : %s\n"
     (if withdoc then "All" else "None");
-  printf "  CoqIde                            : $COQIDE\n";
   printf "  Web browser                       : %s\n" browser;
-  printf "  Coq web site                      : %s\n" !Prefs.coqwebsite;
-  printf "\n";
-
+  printf "  Coq web site                      : %s\n\n" !Prefs.coqwebsite;
   if not !Prefs.nativecompiler then
     printf "  Native compiler for conversion and normalization disabled\n\n";
-
   if !Prefs.local then
     printf "  Local build, no installation...\n"
   else begin
@@ -1056,9 +1061,9 @@ let write_configml f my =
   pr_s "arch" arch;
   pr_b "arch_is_win32" (arch = "win32");
   pr_s "exec_extension" exe;
-(*  fprintf o "let coqideincl = "$LABLGTKINCLUDES"\n";
-  fprintf o "let has_coqide = "$COQIDE"\n";
-  fprintf o "let gtk_platform = \`$IDEARCHDEF\n"; *)
+  pr_s "coqideincl" !lablgtkincludes;
+  pr_s "has_coqide" coqide_str;
+  pr "let gtk_platform = `%s\n" !idearchdef;
   pr_b "has_natdynlink" hasnatdynlink;
   pr_s "natdynlinkflag" natdynlinkflag;
   pr_i "vo_magic_number" vo_magic;
@@ -1141,10 +1146,8 @@ EMACS=$EMACS
   pr "CAMLP4O=%S\n" camlexec.p4;
   pr "CAMLP4COMPAT=%S\n" camlp4compat;
   pr "MYCAMLP4LIB=%S\n\n" camlp4lib;
-(*
-# LablGTK
-COQIDEINCLUDES=$LABLGTKINCLUDES
-*)
+  pr "# LablGTK\n";
+  pr "COQIDEINCLUDES=%S\n\n" !lablgtkincludes; (* TODO: check quotes *)
   pr "# Objective-Caml compile command\n";
   pr "OCAML=%S\n" camlexec.top;
   pr "OCAMLC=%S\n" camlexec.byte;
@@ -1192,13 +1195,11 @@ COQIDEINCLUDES=$LABLGTKINCLUDES
   pr "# Unix systems and profiling: true\n";
   pr "# Unix systems and no profiling: strip\n";
   pr "STRIP=%s\n\n" strip;
-(*
-# CoqIde (no/byte/opt)
-HASCOQIDE=$COQIDE
-IDEOPTFLAGS=$IDEARCHFLAGS
-IDEOPTDEPS=$IDEARCHFILE
-IDEOPTINT=$IDEARCHDEF
-*)
+  pr "# CoqIde (no/byte/opt)\n";
+  pr "HASCOQIDE=%s\n" coqide_str;
+  pr "IDEOPTFLAGS=%s\n" !idearchflags;
+  pr "IDEOPTDEPS=%s\n" !idearchfile;
+  pr "IDEOPTINT=%s\n\n" !idearchdef;
   pr "# Defining REVISION\n";
   pr "CHECKEDOUT=%s\n\n" vcs;
   pr "# Option to control compilation and installation of the documentation\n";
