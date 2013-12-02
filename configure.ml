@@ -622,12 +622,6 @@ let operating_system, osdeplibs =
 
 (** * lablgtk2 and CoqIDE *)
 
-(** -byte-only implies -coqide byte, unless the user decides otherwise *)
-
-let _ =
-  if best_compiler = "byte" && !Prefs.coqide = None then
-    Prefs.coqide := Some Byte
-
 (** Which coqide is asked ? which one is possible ? *)
 
 let check_lablgtkdir ?(fatal=false) msg dir =
@@ -660,41 +654,42 @@ let get_lablgtkdir () =
         if check_lablgtkdir msg d3 then d3, msg
         else "", ""
 
+(* If the user asks an impossible situation, we abort the configuration *)
+
+let pr_ide = function No -> "no" | Byte -> "only bytecode" | Opt -> "native"
+
+let answer ide msg = match ide, !Prefs.coqide with
+  | No, Some (Byte|Opt)
+  | Byte, Some Opt -> die (msg^":\n=> cannot build requested CoqIde")
+  | _ -> printf "%s:\n=> %s CoqIde will be built\n" msg (pr_ide ide); ide
+
 let lablgtkdir = ref ""
 
 let check_coqide () =
-  (* If the user asks something impossible, we abort the configuration *)
-  let check_expected res msg = match res, !Prefs.coqide with
-    | No, Some (Byte|Opt) -> die msg
-    | Byte, Some Opt -> die msg
-    | _ -> let () = printf "%s\n" msg in res
-  in
-  match !Prefs.coqide with
-  | Some No -> let () = printf "CoqIde disabled as requested.\n" in No
-  | _ ->
-    let dir, msg = get_lablgtkdir () in
+  if !Prefs.coqide = Some No then
+    answer No "CoqIde manually disabled"
+  else
+    let dir, via = get_lablgtkdir () in
     if dir = "" then
-      check_expected No "LablGtk2 not found: CoqIde will not be available."
+      answer No "LablGtk2 not found"
     else
-      let msg1 = sprintf "LablGtk2 found (%s)" msg in
+      let found = sprintf "LablGtk2 found (%s)" via in
       let test = sprintf "grep -q -w convert_with_fallback %S/glib.mli" dir in
       if Sys.command test <> 0 then
-        check_expected No (msg1 ^" but too old: CoqIde will not be available.")
+        answer No (found^" but too old")
       else
+        (* We're now sure to produce at least one kind of coqide *)
         let () = lablgtkdir := shorten_camllib dir in
         if !Prefs.coqide = Some Byte then
-          let () = printf ", bytecode CoqIde will be used as requested.\n" in
-          Byte
-        else if not (Sys.file_exists (camllib^"/threads/threads.cmxa") &&
-                     Sys.file_exists (dir^"/gtkThread.cmx"))
-        then
-          let msg2 = ", but no native LablGtk2 or threads:\n" in
-          let msg3 = "only bytecode CoqIde will be available." in
-          check_expected Byte (msg1^msg2^msg3)
+          answer Byte (found^", bytecode requested")
+        else if best_compiler <> "opt" then
+          answer Byte (found^", but no native compiler")
+        else if not (Sys.file_exists (dir^"/gtkThread.cmx")) then
+          answer Byte (found^", but no native LablGtk2")
+        else if not (Sys.file_exists (camllib^"/threads/threads.cmxa")) then
+          answer Byte (found^", but no native threads")
         else
-          let msg2 = ", native threads: native Coqide will be available.\n" in
-          let () = printf "%s%s" msg1 msg2 in
-          Opt
+          answer Opt (found^", with native threads")
 
 let coqide = check_coqide ()
 
