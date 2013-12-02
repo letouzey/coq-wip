@@ -363,7 +363,9 @@ let arch = match !Prefs.arch with
     else if arch <> "" then arch
     else try_archs arch_progs
 
-let exe,dll = if arch = "win32" then ".exe",".dll" else "", ".so"
+let win32 = (arch = "win32")
+
+let exe,dll = if win32 then ".exe",".dll" else "", ".so"
 
 (** * VCS
 
@@ -394,7 +396,7 @@ let make =
 let browser =
   match !Prefs.browser with
   | Some b -> b
-  | None when arch = "win32" -> "start %s"
+  | None when win32 -> "start %s"
   | None when arch = "Darwin" -> "open %s"
   | _ -> "firefox -remote \"OpenURL(%s,new-tab)\" || firefox %s &"
 
@@ -428,7 +430,7 @@ let _ =
 (* TODO: check the quoting under windows! *)
 
 let mk_win_path file =
-  if arch <> "win32" then file
+  if not win32 then file
   else if !cygwin then run ("cygpath -m "^Filename.quote file)
   else run (camlexec.top^" tools/mingwpath.ml "^Filename.quote file)
 
@@ -622,7 +624,7 @@ let operating_system, osdeplibs =
 
 (** * lablgtk2 and CoqIDE *)
 
-(** Which coqide is asked ? which one is possible ? *)
+(** Is some location a suitable LablGtk2 installation ? *)
 
 let check_lablgtkdir ?(fatal=false) msg dir =
   let yell msg = if fatal then die msg else (printf "%s\n" msg; false) in
@@ -633,6 +635,8 @@ let check_lablgtkdir ?(fatal=false) msg dir =
   else if not (Sys.file_exists (dir^"/glib.mli")) then
     yell (sprintf "Incomplete LablGtk2 (%s): no %s/glib.mli." msg dir)
   else true
+
+(** Detect and/or verify the Lablgtk2 location *)
 
 let get_lablgtkdir () =
   match !Prefs.lablgtkdir with
@@ -654,46 +658,46 @@ let get_lablgtkdir () =
         if check_lablgtkdir msg d3 then d3, msg
         else "", ""
 
-(* If the user asks an impossible situation, we abort the configuration *)
-
 let pr_ide = function No -> "no" | Byte -> "only bytecode" | Opt -> "native"
 
-let answer ide msg = match ide, !Prefs.coqide with
+exception Ide of ide
+
+(** If the user asks an impossible coqide, we abort the configuration *)
+
+let set_ide ide msg = match ide, !Prefs.coqide with
   | No, Some (Byte|Opt)
   | Byte, Some Opt -> die (msg^":\n=> cannot build requested CoqIde")
-  | _ -> printf "%s:\n=> %s CoqIde will be built\n" msg (pr_ide ide); ide
+  | _ ->
+    printf "%s:\n=> %s CoqIde will be built.\n" msg (pr_ide ide);
+    raise (Ide ide)
 
 let lablgtkdir = ref ""
 
+(** Which CoqIde is possible ? Which one is requested ?
+    This function also sets the lablgtkdir reference in case of success. *)
+
 let check_coqide () =
-  if !Prefs.coqide = Some No then
-    answer No "CoqIde manually disabled"
-  else
-    let dir, via = get_lablgtkdir () in
-    if dir = "" then
-      answer No "LablGtk2 not found"
-    else
-      let found = sprintf "LablGtk2 found (%s)" via in
-      let test = sprintf "grep -q -w convert_with_fallback %S/glib.mli" dir in
-      if Sys.command test <> 0 then
-        answer No (found^" but too old")
-      else
-        (* We're now sure to produce at least one kind of coqide *)
-        let () = lablgtkdir := shorten_camllib dir in
-        if !Prefs.coqide = Some Byte then
-          answer Byte (found^", bytecode requested")
-        else if best_compiler <> "opt" then
-          answer Byte (found^", but no native compiler")
-        else if not (Sys.file_exists (dir^"/gtkThread.cmx")) then
-          answer Byte (found^", but no native LablGtk2")
-        else if not (Sys.file_exists (camllib^"/threads/threads.cmxa")) then
-          answer Byte (found^", but no native threads")
-        else
-          answer Opt (found^", with native threads")
+  if !Prefs.coqide = Some No then set_ide No "CoqIde manually disabled";
+  let dir, via = get_lablgtkdir () in
+  if dir = "" then set_ide No "LablGtk2 not found";
+  let found = sprintf "LablGtk2 found (%s)" via in
+  let test = sprintf "grep -q -w convert_with_fallback %S/glib.mli" dir in
+  if Sys.command test <> 0 then set_ide No (found^" but too old");
+  (* We're now sure to produce at least one kind of coqide *)
+  lablgtkdir := shorten_camllib dir;
+  if !Prefs.coqide = Some Byte then set_ide Byte (found^", bytecode requested");
+  if best_compiler<>"opt" then set_ide Byte (found^", but no native compiler");
+  if not (Sys.file_exists (dir^"/gtkThread.cmx")) then
+    set_ide Byte (found^", but no native LablGtk2");
+  if not (Sys.file_exists (camllib^"/threads/threads.cmxa")) then
+    set_ide Byte (found^", but no native threads");
+  set_ide Opt (found^", with native threads")
 
-let coqide = check_coqide ()
+let coqide =
+  try check_coqide ()
+  with Ide Opt -> "opt" | Ide Byte -> "byte" | Ide No -> "no"
 
-let coqide_str = match coqide with Opt -> "opt" | Byte -> "byte" | No -> "no"
+(** System-specific CoqIde flags *)
 
 let lablgtkincludes = ref ""
 let idearchflags = ref ""
@@ -703,14 +707,14 @@ let idearchdef = ref "X11"
 let coqide_flags () =
   if !lablgtkdir <> "" then lablgtkincludes := sprintf "-I %S" !lablgtkdir;
   match coqide, arch with
-    | Opt, "Darwin" when !Prefs.macintegration ->
+    | "opt", "Darwin" when !Prefs.macintegration ->
       let osxdir = tryrun "ocamlfind query lablgtkosx 2> /dev/null" in
       if osxdir <> "" then begin
         lablgtkincludes := sprintf "%s -I %S" !lablgtkincludes osxdir;
         idearchflags := "lablgtkosx.cmxa";
         idearchdef := "QUARTZ"
       end
-    | Opt, "win32" ->
+    | "opt", "win32" ->
       idearchfile := "ide/ide_win32_stubs.o";
       idearchdef := "WIN32"
     | _ -> ()
@@ -744,187 +748,150 @@ let check_doc () =
 let withdoc = check_doc ()
 
 
-(*
-###########################################
-# bindir, libdir, mandir, docdir, etc.
+(** * Installation directories : bindir, libdir, mandir, docdir, etc *)
 
-COQTOP=$PWD
+let coqtop = Sys.getcwd ()
 
-# OCaml only understand Windows filenames (C:\...)
+(* TODO
+(** OCaml only understand Windows filenames (C:\...) *)
 case $ARCH in
     win32) COQTOP=`mk_win_path "$COQTOP"`
            CAMLBIN=`mk_win_path "$CAMLBIN"`
            CAMLP4BIN=`mk_win_path "$CAMLP4BIN"`
 esac
-
-# Default installation directories
-
-case $ARCH$CYGWIN in
-  win32)
-         W32PREF='C:/coq/'
-         bindir_def="${W32PREF}bin"
-         libdir_def="${W32PREF}lib"
-         configdir_def="${W32PREF}config"
-         datadir_def="${W32PREF}share"
-         mandir_def="${W32PREF}man"
-         docdir_def="${W32PREF}doc"
-         emacslib_def="${W32PREF}emacs"
-         coqdocdir_def="${W32PREF}latex";;
-  * )
-         bindir_def=/usr/local/bin
-         libdir_def=/usr/local/lib/coq
-         configdir_def=/etc/xdg/coq
-         datadir_def=/usr/local/share/coq
-         mandir_def=/usr/local/share/man
-         docdir_def=/usr/local/share/doc/coq
-         emacslib_def=/usr/local/share/emacs/site-lisp
-         coqdocdir_def=/usr/local/share/texmf/tex/latex/misc;;
-esac
-
-askdir () {
-  printf "Where should I install $1 [%s]? " $2
-  read answer
-  if [ "$answer" = "" ]; then answer="$2"; fi
-}
-
-if [ $local = false ]; then
-
-# Installation directories for a non-local build
-
-case $bindir_spec/$prefix_spec in
-    yes/* ) BINDIR=$bindir ;;
-    no/yes) BINDIR=$prefix/bin ;;
-    * ) askdir "the Coq binaries" $bindir_def
-       BINDIR="$answer";;
-esac
-
-case $libdir_spec/$prefix_spec/$ARCH in
-    yes/* ) LIBDIR=$libdir;;
-    no/yes/win32) LIBDIR=$prefix;;
-    no/yes/* ) LIBDIR=$prefix/lib/coq ;;
-    * ) askdir "the Coq library" $libdir_def
-       LIBDIR="$answer";;
-esac
-libdir_spec=yes
-
-case $configdir_spec/$prefix_spec/$ARCH in
-    yes/* ) CONFIGDIR=$configdir;;
-    no/yes/win32) CONFIGDIR=$prefix/config;;
-    no/yes/* ) CONFIGDIR=$prefix/etc/xdg/coq;;
-    * ) askdir "the Coqide configuration files" $configdir_def
-       CONFIGDIR="$answer";;
-esac
-if [ "$CONFIGDIR" != "$configdir_def" ]; then configdir_spec=yes; fi
-
-case $datadir_spec/$prefix_spec in
-    yes/* ) DATADIR=$datadir;;
-    no/yes) DATADIR=$prefix/share/coq;;
-    * ) askdir "the Coqide data files" $datadir_def
-        DATADIR="$answer";;
-esac
-if [ "$DATADIR" != "datadir_def" ]; then datadir_spec=yes; fi
-
-case $mandir_spec/$prefix_spec in
-    yes/* ) MANDIR=$mandir;;
-    no/yes) MANDIR=$prefix/share/man ;;
-    * ) askdir "the Coq man pages" $mandir_def
-       MANDIR="$answer";;
-esac
-
-case $docdir_spec/$prefix_spec in
-    yes/* ) DOCDIR=$docdir;;
-    no/yes) DOCDIR=$prefix/share/doc/coq;;
-    * ) askdir "the Coq documentation [%s]? " $docdir_def
-       DOCDIR="$answer";;
-esac
-
-case $emacslib_spec/$prefix_spec/$ARCH in
-    yes/* ) EMACSLIB=$emacslib;;
-    no/yes/win32) EMACSLIB=$prefix/emacs ;;
-    no/yes/* ) EMACSLIB=$prefix/share/emacs/site-lisp ;;
-    * ) askdir "the Coq Emacs mode" $emacslib_def
-       EMACSLIB="$answer";;
-esac
-
-case $coqdocdir_spec/$prefix_spec/$ARCH in
-    yes/* ) COQDOCDIR=$coqdocdir;;
-    no/yes/win32) COQDOCDIR=$prefix/latex ;;
-    no/yes/* ) COQDOCDIR=$prefix/share/emacs/site-lisp ;;
-    * ) askdir "Coqdoc TeX/LaTeX files" $coqdocdir_def
-       COQDOCDIR="$answer";;
-esac
-
-else # local build
-    CONFIGDIR=$COQTOP/ide
-    DATADIR=$COQTOP/ide
-    configdir_spec=yes
-    datadir_spec=yes
-fi
-
-# Determine if we enable -custom by default (Windows and MacOS)
-CUSTOM_OS=no
-if [ "$ARCH" = "win32" ] || [ "$ARCH" = "Darwin" ]; then
-    CUSTOM_OS=yes
-fi
-
-BUILDLDPATH="# you might want to set CAML_LD_LIBRARY_PATH by hand!"
-case $coqrunbyteflags_spec/$local/$custom_spec/$CUSTOM_OS in
-    yes/*/*/* ) COQRUNBYTEFLAGS="$coqrunbyteflags";;
-    */*/yes/*|*/*/*/yes) COQRUNBYTEFLAGS="-custom";;
-    */true/*/* ) COQRUNBYTEFLAGS="-dllib -lcoqrun -dllpath '$COQTOP'/kernel/byterun";;
-    * )
-        COQRUNBYTEFLAGS="-dllib -lcoqrun -dllpath '$LIBDIR'"
-        BUILDLDPATH="export CAML_LD_LIBRARY_PATH='$COQTOP'/kernel/byterun:$CAML_LD_LIBRARY_PATH";;
-esac
-case $coqtoolsbyteflags_spec/$custom_spec/$CUSTOM_OS in
-    yes/*/* ) COQTOOLSBYTEFLAGS="$coqtoolsbyteflags";;
-    */yes/*|*/*/yes) COQTOOLSBYTEFLAGS="-custom";;
-    * ) COQTOOLSBYTEFLAGS="";;
-esac
 *)
+
+let unix = !cygwin || not win32
+
+(** Variable name, description, ref in Prefs, default dir, prefix-relative *)
+
+let install = [
+  "BINDIR", "the Coq binaries", Prefs.bindir,
+    (if unix then "/usr/local/bin" else "C:/coq/bin"),
+    "/bin";
+  "COQLIBINSTALL", "the Coq library", Prefs.libdir,
+    (if unix then "/usr/local/lib/coq" else "C:/coq/lib"),
+    (if win32 then "" else "/lib/coq");
+  "CONFIGDIR", "the Coqide configuration files", Prefs.configdir,
+    (if unix then "/etc/xdg/coq" else "C:/coq/config"),
+    (if win32 then "/config" else "/etc/xdg/coq");
+  "DATADIR", "the Coqide data files", Prefs.datadir,
+    (if unix then "/usr/local/share/coq" else "C:/coq/share"),
+    "/share/coq";
+  "MANDIR", "the Coq man pages", Prefs.mandir,
+    (if unix then "/usr/local/share/man" else "C:/coq/man"),
+    "/share/man";
+  "DOCDIR", "the Coq documentation", Prefs.docdir,
+    (if unix then "/usr/local/share/doc/coq" else "C:/coq/doc"),
+    "/share/doc/coq";
+  "EMACSLIB", "the Coq Emacs mode", Prefs.emacslib,
+    (if unix then "/usr/local/share/emacs/site-lisp" else "C:/coq/emacs"),
+    (if win32 then "/emacs" else "/share/emacs/site-lisp");
+  "COQDOCDIR", "the Coqdoc LaTeX files", Prefs.coqdocdir,
+    (if unix then "/usr/local/share/texmf/tex/latex/misc" else "C:/coq/latex"),
+    (if win32 then "/latex" else "/share/emacs/site-lisp");
+ ]
+
+let do_one_instdir (var,msg,r,dflt,suff) =
+  let dir = match !r, !Prefs.prefix with
+    | Some d, _ -> d
+    | _, Some p -> p^suff
+    | _ ->
+      let () = printf "Where should I install %s [%s]? " msg dflt in
+      let line = read_line () in
+      if line = "" then dflt else line
+  in (var,msg,dir,dir<>dflt)
+
+let do_one_noinst (var,msg,_,_,_) =
+  if var="CONFIGDIR" || var="DATADIR" then (var,msg,coqtop^"/ide",true)
+  else (var,msg,"",false)
+
+let install_dirs =
+  let f = if !Prefs.local then do_one_noinst else do_one_instdir in
+  List.map f install
+
+let select var = List.find (fun (v,_,_,_) -> v=var) install_dirs
+
+let libdir = let (_,_,d,_) = select "COQLIBINSTALL" in d
+
+let docdir = let (_,_,d,_) = select "DOCDIR" in d
+
+let configdir =
+  let (_,_,d,b) = select "CONFIGDIR" in if b then Some d else None
+
+let datadir =
+  let (_,_,d,b) = select "DATADIR" in if b then Some d else None
+
+
+(** * OCaml runtime flags *)
+
+(** Determine if we enable -custom by default (Windows and MacOS) *)
+let custom_os = win32 || arch = "Darwin"
+
+let build_loadpath =
+  ref "# you might want to set CAML_LD_LIBRARY_PATH by hand!"
+
+let config_runtime () =
+  match !Prefs.coqrunbyteflags with
+  | Some flags -> flags
+  | _ when !Prefs.custom || custom_os -> "-custom"
+  | _ when !Prefs.local ->
+    sprintf "-dllib -lcoqrun -dllpath '%s'/kernel/byterun" coqtop
+  | _ ->
+    let ld="CAML_LD_LIBRARY_PATH" in
+    build_loadpath := sprintf "export %s='%s'/kernel/byterun:$%s" ld coqtop ld;
+    sprintf "-dllib -lcoqrun -dllpath '%s'" libdir
+
+let coqrunbyteflags = config_runtime ()
+
+let config_tools_runtime () =
+  match !Prefs.coqtoolsbyteflags with
+  | Some flags -> flags
+  | _ when !Prefs.custom || custom_os -> "-custom"
+  | _ -> ""
+
+let coqtoolsbyteflags = config_tools_runtime ()
+
 
 (** * Summary of the configuration *)
 
 let print_summary () =
-  printf "\n";
-  printf "  Architecture                      : %s\n" arch;
+  let pr s = printf s in
+  pr "\n";
+  pr "  Architecture                      : %s\n" arch;
   if operating_system <> "" then
-    printf "  Operating system                  : %s\n" operating_system;
-(* TODO
-  printf "  Coq VM bytecode link flags        : $COQRUNBYTEFLAGS\n";
-  printf "  Coq tools bytecode link flags     : $COQTOOLSBYTEFLAGS\n";
-  printf "  OS dependent libraries            : $OSDEPLIBS\n";
-*)
-  printf "  Objective-Caml/Camlp4 version     : %s\n" caml_version;
-  printf "  Objective-Caml/Camlp4 binaries in : %s\n" camlbin;
-  printf "  Objective-Caml library in         : %s\n" camllib;
-  printf "  Camlp4 library in                 : %s\n" camlp4lib;
+    pr "  Operating system                  : %s\n" operating_system;
+  pr "  Coq VM bytecode link flags        : %s\n" coqrunbyteflags;
+  pr "  Coq tools bytecode link flags     : %s\n" coqtoolsbyteflags;
+  pr "  OS dependent libraries            : %s\n" osdeplibs;
+  pr "  Objective-Caml/Camlp4 version     : %s\n" caml_version;
+  pr "  Objective-Caml/Camlp4 binaries in : %s\n" camlbin;
+  pr "  Objective-Caml library in         : %s\n" camllib;
+  pr "  Camlp4 library in                 : %s\n" camlp4lib;
   if best_compiler = "opt" then
-    printf "  Native dynamic link support       : %B\n" hasnatdynlink;
-  if coqide <> No then
-    printf "  Lablgtk2 library in               : %s\n" !lablgtkdir;
+    pr "  Native dynamic link support       : %B\n" hasnatdynlink;
+  if coqide <> "no" then
+    pr "  Lablgtk2 library in               : %s\n" !lablgtkdir;
   if !idearchdef = "QUARTZ" then
-    printf "  Mac OS integration is on\n";
-  printf "  CoqIde                            : %s\n" coqide_str;
-  printf "  Documentation                     : %s\n"
+    pr "  Mac OS integration is on\n";
+  pr "  CoqIde                            : %s\n" coqide;
+  pr "  Documentation                     : %s\n"
     (if withdoc then "All" else "None");
-  printf "  Web browser                       : %s\n" browser;
-  printf "  Coq web site                      : %s\n\n" !Prefs.coqwebsite;
+  pr "  Web browser                       : %s\n" browser;
+  pr "  Coq web site                      : %s\n\n" !Prefs.coqwebsite;
   if not !Prefs.nativecompiler then
-    printf "  Native compiler for conversion and normalization disabled\n\n";
+    pr "  Native compiler for conversion and normalization disabled\n\n";
   if !Prefs.local then
-    printf "  Local build, no installation...\n"
-  else begin
-    printf "  Paths for true installation:\n";
-    printf "    binaries      will be copied in $BINDIR\n";
-    printf "    library       will be copied in $LIBDIR\n";
-    printf "    config files  will be copied in $CONFIGDIR\n";
-    printf "    data files    will be copied in $DATADIR\n";
-    printf "    man pages     will be copied in $MANDIR\n";
-    printf "    documentation will be copied in $DOCDIR\n";
-    printf "    emacs mode    will be copied in $EMACSLIB\n";
-  end;
-  printf "\n"
+    pr "  Local build, no installation...\n"
+  else
+    (pr "  Paths for true installation:\n";
+     List.iter
+       (fun (_,msg,dir,_) -> pr "  - %s will be copied in %s\n" msg dir)
+       install_dirs);
+  pr "\n";
+  pr "If anything is wrong above, please restart './configure'.\n\n";
+  pr "*Warning* To compile the system for a new architecture\n";
+  pr "          don't forget to do a 'make clean' before './configure'.\n"
 
 let _ = print_summary ()
 
@@ -933,7 +900,7 @@ let _ = print_summary ()
 
 let ocamldebug_coq = "dev/ocamldebug-coq"
 
-(*
+(*TODO
 if !Prefs.debug then begin
   Sys.remove ocamldebug_coq;
   let cmd = sprintf "sed -e 's|COQTOPDIRECTORY|%s|' -e 's|CAMLBINDIRECTORY|%s|' -e 's|CAMLP4LIBDIRECTORY|
@@ -945,74 +912,6 @@ if !Prefs.debug then begin
       $OCAMLDEBUGCOQ.template > $OCAMLDEBUGCOQ
   chmod a-w,a+x $OCAMLDEBUGCOQ
 fi
-
-
-##############################################
-# Creation of configuration files
-##############################################
-
-config_file=config/Makefile
-config_template=config/Makefile.template
-
-
-### Warning !!
-### After this line, be careful when using variables,
-### since some of them will be escaped
-
-escape_string () {
-    "$ocamlexec" "tools/escape_string.ml" "$1"
-}
-
-# Escaped version of browser command
-BROWSER=`escape_string "$BROWSER"`
-
-# Under Windows, we now escape the backslashes that will ends in
-# ocaml strings (coq_config.ml) or in Makefile variables.
-
-case $ARCH in
-    win32)
-        BINDIR=`escape_string "$BINDIR"`
-        LIBDIR=`escape_string "$LIBDIR"`
-        CONFIGDIR=`escape_string "$CONFIGDIR"`
-        DATADIR=`escape_string "$DATADIR"`
-        CAMLBIN=`escape_string "$CAMLBIN"`
-        CAMLLIB=`escape_string "$CAMLLIB"`
-        MANDIR=`escape_string "$MANDIR"`
-        DOCDIR=`escape_string "$DOCDIR"`
-        EMACSLIB=`escape_string "$EMACSLIB"`
-        COQDOCDIR=`escape_string "$COQDOCDIR"`
-        CAMLP4BIN=`escape_string "$CAMLP4BIN"`
-        CAMLP4LIB=`escape_string "$CAMLP4LIB"`
-        LABLGTKINCLUDES=`escape_string "$LABLGTKINCLUDES"`
-        COQRUNBYTEFLAGS=`escape_string "$COQRUNBYTEFLAGS"`
-        COQTOOLSBYTEFLAGS=`escape_string "$COQTOOLSBYTEFLAGS"`
-        BUILDLDPATH=`escape_string "$BUILDLDPATH"`
-        ocamlexec=`escape_string "$ocamlexec"`
-        bytecamlc=`escape_string "$bytecamlc"`
-        nativecamlc=`escape_string "$nativecamlc"`
-        ocamlmklibexec=`escape_string "$ocamlmklibexec"`
-        ocamldepexec=`escape_string "$ocamldepexec"`
-        ocamldocexec=`escape_string "$ocamldocexec"`
-        ocamllexexec=`escape_string "$ocamllexexec"`
-        ocamlyaccexec=`escape_string "$ocamlyaccexec"`
-        camlp4oexec=`escape_string "$camlp4oexec"`
-    ;;
-esac
-
-case $libdir_spec in
-    yes) LIBDIR_OPTION="Some \"$LIBDIR\"";;
-    * ) LIBDIR_OPTION="None";;
-esac
-
-case $configdir_spec in
-    yes) CONFIGDIR_OPTION="Some \"$CONFIGDIR\"";;
-    * ) CONFIGDIR_OPTION="None";;
-esac
-
-case $datadir_spec in
-    yes) DATADIR_OPTION="Some \"$DATADIR\"";;
-    * ) DATADIR_OPTION="None";;
-esac
 *)
 
 (** * Building the config/coq_config.ml file *)
@@ -1024,13 +923,16 @@ let write_configml f my =
   let pr_s = pr "let %s = %S\n" in
   let pr_b = pr "let %s = %B\n" in
   let pr_i = pr "let %s = %d\n" in
+  let pr_o s o = pr "let %s = %s\n" s
+    (match o with None -> "None" | Some d -> "Some "^String.escaped d)
+  in
   pr "(* DO NOT EDIT THIS FILE: automatically generated by ../configure *)\n";
   pr_b "local" !Prefs.local;
-(*  fprintf o "let coqrunbyteflags = $COQRUNBYTEFLAGS\n";
-  fprintf o "let coqlib = $LIBDIR_OPTION\n";
-  fprintf o "let configdir = $CONFIGDIR_OPTION\n";
-  fprintf o "let datadir = $DATADIR_OPTION\n";
-  fprintf o "let docdir = "$DOCDIR"\n"; *)
+  pr_s "coqrunbyteflags" coqrunbyteflags;
+  pr_o "coqlib" (if !Prefs.local then None else Some libdir);
+  pr_o "configdir" configdir;
+  pr_o "datadir" datadir;
+  pr_s "docdir" docdir;
   pr_s "ocaml" camlexec.top;
   pr_s "ocamlc" camlexec.byte;
   pr_s "ocamlopt" camlexec.opt;
@@ -1054,10 +956,10 @@ let write_configml f my =
   pr_s "date" short_date;
   pr_s "compile_date" full_date;
   pr_s "arch" arch;
-  pr_b "arch_is_win32" (arch = "win32");
+  pr_b "arch_is_win32" win32;
   pr_s "exec_extension" exe;
   pr_s "coqideincl" !lablgtkincludes;
-  pr_s "has_coqide" coqide_str;
+  pr_s "has_coqide" coqide;
   pr "let gtk_platform = `%s\n" !idearchdef;
   pr_b "has_natdynlink" hasnatdynlink;
   pr_s "natdynlinkflag" natdynlinkflag;
@@ -1068,7 +970,7 @@ let write_configml f my =
   pr_s "wwwcoq" !Prefs.coqwebsite;
   pr_s "wwwrefman" (!Prefs.coqwebsite ^ "distrib/" ^ coq_version ^ "/refman/");
   pr_s "wwwstdlib" (!Prefs.coqwebsite ^ "distrib/" ^ coq_version ^ "/stdlib/");
-(* pr_s "localwwwrefman"  ("file:/" ^ docdir ^ "/html/refman"); *)
+  pr_s "localwwwrefman"  ("file:/" ^ docdir ^ "/html/refman");
   pr_b "no_native_compiler" (not !Prefs.nativecompiler);
   pr "\nlet plugins_dirs = [\n";
   let plugins = Sys.readdir "plugins" in
@@ -1105,27 +1007,13 @@ let write_makefile f =
   pr "# Local use (no installation)\n";
   pr "LOCAL=%B\n\n" !Prefs.local;
   pr "# Bytecode link flags for VM (\"-custom\" or \"-dllib -lcoqrun\")\n";
-(*TODO
-COQRUNBYTEFLAGS=$COQRUNBYTEFLAGS
-COQTOOLSBYTEFLAGS=$COQTOOLSBYTEFLAGS
-$BUILDLDPATH
-
-# Paths for true installation
-# BINDIR=path where coqtop, coqc, coqmktop, coq-tex, coqdep, gallina and
-#        do_Makefile will reside
-# LIBDIR=path where the Coq library will reside
-# MANDIR=path where to install manual pages
-# EMACSDIR=path where to put Coq's Emacs mode (coq.el)
-BINDIR="$BINDIR"
-COQLIBINSTALL="$LIBDIR"
-CONFIGDIR="$CONFIGDIR"
-DATADIR="$DATADIR"
-MANDIR="$MANDIR"
-DOCDIR="$DOCDIR"
-EMACSLIB="$EMACSLIB"
-EMACS=$EMACS
-*)
-  pr "# Path to Coq distribution\n";
+  pr "COQRUNBYTEFLAGS=%s\n" coqrunbyteflags;
+  pr "COQTOOLSBYTEFLAGS=%s\n" coqtoolsbyteflags;
+  pr "%s\n\n" !build_loadpath;
+  pr "# Paths for true installation\n";
+  List.iter (fun (v,msg,_,_) -> pr "# %s: path for %s\n" v msg) install_dirs;
+  List.iter (fun (v,_,dir,_) -> pr "%s=%S\n" v dir) install_dirs;
+  pr "\n# Coq version\n";
   pr "VERSION=%s\n\n" coq_version;
   pr "# Ocaml version number\n";
   pr "CAMLVERSION=%s\n\n" camltag;
@@ -1184,14 +1072,12 @@ EMACS=$EMACS
   pr "DLLEXT=%s\n\n" dll;
   pr "# the command MKDIR (try to use mkdirhier if you have problems)\n";
   pr "MKDIR=mkdir -p\n\n";
-  pr "# where to put the coqdoc.sty style file\n";
-(*  pr "COQDOCDIR=%s\n\n" coqdocdir; *)
   pr "#the command STRIP\n";
   pr "# Unix systems and profiling: true\n";
   pr "# Unix systems and no profiling: strip\n";
   pr "STRIP=%s\n\n" strip;
   pr "# CoqIde (no/byte/opt)\n";
-  pr "HASCOQIDE=%s\n" coqide_str;
+  pr "HASCOQIDE=%s\n" coqide;
   pr "IDEOPTFLAGS=%s\n" !idearchflags;
   pr "IDEOPTDEPS=%s\n" !idearchfile;
   pr "IDEOPTINT=%s\n\n" !idearchdef;
@@ -1203,14 +1089,3 @@ EMACS=$EMACS
   Unix.chmod f 0o444
 
 let _ = write_makefile "config/Makefile"
-
-
-(** * The end *)
-
-let final_message () =
-  printf "If anything in the above is wrong, please restart './configure'.\n";
-  printf "\n";
-  printf "*Warning* To compile the system for a new architecture\n";
-  printf "          don't forget to do a 'make clean' before './configure'.\n"
-
-let _ = final_message ()
