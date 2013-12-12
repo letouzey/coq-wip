@@ -30,23 +30,62 @@ let remove_final_cr s =
   else s
 *)
 
-(** Run some unix command and read the first line of its stdout *)
+let check_exit_code (_,code) = match code with
+  | Unix.WEXITED 0 -> ()
+  | Unix.WEXITED 127 -> failwith "no such command"
+  | Unix.WEXITED n -> failwith ("exit code "^string_of_int n)
+  | Unix.WSIGNALED n -> failwith ("killed by signal "^string_of_int n)
+  | Unix.WSTOPPED n -> failwith ("stopped by signal "^string_of_int n)
 
-(* TODO: capture and discard stderr (at least in case of non-fatal) *)
+let pr_exn = function Failure msg -> msg | e -> Printexc.to_string e
 
-let run ?(fatal=true) cmd =
+(** We need below to read all lines on a channel, otherwise a SIGPIPE
+    could be encountered *)
+
+let read_lines cin =
+  let rec loop acc =
+    try loop (input_line cin :: acc)
+    with End_of_file -> List.rev acc
+  in loop []
+
+let get_first = function
+  | line::_ -> line
+  | [] -> ""
+
+(** Run some unix command and read the first line of its stdout.
+    We avoid Unix.open_process and its non-fully-portable /bin/sh,
+    especially when it comes to quoting the filenames.
+    See open_process_pid in ide/coq.ml for more details.
+    When join=true, we merge stderr and stdout (just as 2>&1)
+    When silent=true, we capture stderr and discard it (same as 2> /dev/null).
+    Otherwise, error messages end in the stderr of our script. *)
+
+let run ?(fatal=true) ?(silent=false) ?(join=false) prog args =
   try
-    let chan = Unix.open_process_in cmd in
-    let line = (*remove_final_cr*) (input_line chan) in
-    match Unix.close_process_in chan with
-    | Unix.WEXITED 0 -> line
-    | _ -> failwith "process failed, killed or stopped"
+    let out_r,out_w = Unix.pipe () in
+    let err_r,err_w = Unix.pipe () in
+    let () = Unix.set_close_on_exec out_w in
+    let () = Unix.set_close_on_exec err_w in
+    let argv = Array.of_list (prog::args) in
+    let err = if join then out_w else if silent then err_w else Unix.stderr in
+    let pid = Unix.create_process prog argv Unix.stdin out_w err in
+    let () = Unix.close out_w in
+    let () = Unix.close err_w in
+    let line = get_first (read_lines (Unix.in_channel_of_descr out_r)) in
+    (* We discard err_r since it received error messages when silent=true *)
+    let _ = read_lines (Unix.in_channel_of_descr err_r) in
+    let () = Unix.close out_r in
+    let () = Unix.close err_r in
+    let () = check_exit_code (Unix.waitpid [] pid) in
+    line
   with
-  | End_of_file -> ""
-  | _ when fatal -> die ("Error while running: "^cmd)
+  | e when fatal ->
+    let cmd = String.concat " " (prog::args) in
+    die ("Error while running: "^cmd^" ("^pr_exn e^")")
   | _ -> ""
 
-let tryrun cmd = run ~fatal:false cmd
+let tryrun ?(join=false) prog args =
+  run ~fatal:false ~silent:true ~join prog args
 
 (** Splitting a string at some character *)
 
@@ -90,6 +129,8 @@ let is_executable f =
 
 (** The PATH list for searching programs *)
 
+(* TODO: ";" as separator on win32 *)
+
 let global_path =
   try string_split ':' (Sys.getenv "PATH")
   with Not_found -> []
@@ -98,13 +139,13 @@ let global_path =
 
 (* TODO: .exe on win32 ? TODO: ";" as delimitor on win32 ? *)
 
-let which ?(path=global_path) prog =
+let which prog =
   let rec search = function
     | [] -> raise Not_found
     | dir :: path ->
       let file = if dir = "" then "./"^prog else dir^"/"^prog in
       if is_executable file then file else search path
-  in search path
+  in search global_path
 
 let program_in_path prog =
   try let _ = which prog in true with Not_found -> false
@@ -238,7 +279,7 @@ let args_options = [
   "-arch", arg_string_option Prefs.arch,
     "<arch>\t\tSpecifies the architecture";
   "-opt", Arg.Set Prefs.opt,
-    "\t\t\tUse OCaml *.opt optimized compilers or not";
+    "\t\t\tUse OCaml *.opt optimized compilers";
   "-natdynlink", arg_bool Prefs.natdynlink,
     "(yes|no)\tUse dynamic loading of native code or not";
   "-coqide", Arg.String (fun s -> Prefs.coqide := Some (get_ide s)),
@@ -334,11 +375,11 @@ let cflags = "-fno-defer-pop -Wall -Wno-unused"
 (** * Architecture *)
 
 let arch_progs =
-  [("/bin/uname"," -s");
-   ("/usr/bin/uname"," -s");
-   ("/bin/arch", "");
-   ("/usr/bin/arch", "");
-   ("/usr/ucb/arch", "") ]
+  [("/bin/uname",["-s"]);
+   ("/usr/bin/uname",["-s"]);
+   ("/bin/arch", []);
+   ("/usr/bin/arch", []);
+   ("/usr/ucb/arch", []) ]
 
 let query_arch () =
   printf "I can not automatically find the name of your architecture.\n";
@@ -346,8 +387,8 @@ let query_arch () =
   read_line ()
 
 let rec try_archs = function
-  | (prog,opt)::rest when is_executable prog ->
-    let arch = tryrun (prog^opt) in
+  | (prog,args)::rest when is_executable prog ->
+    let arch = tryrun prog args in
     if arch <> "" then arch else try_archs rest
   | _ :: rest -> try_archs rest
   | [] -> query_arch ()
@@ -357,7 +398,7 @@ let cygwin = ref false
 let arch = match !Prefs.arch with
   | Some a -> a
   | None ->
-    let arch = tryrun "uname -s" in
+    let arch = tryrun "uname" ["-s"] in
     if starts_with arch "CYGWIN" then (cygwin := true; "win32")
     else if starts_with arch "MINGW32" then "win32"
     else if arch <> "" then arch
@@ -383,11 +424,11 @@ let vcs =
 
 let make =
   try
-    let cmd = which ~path:(global_path@["."]) !Prefs.makecmd in
-    let ver = List.nth (string_split ' ' (run (cmd^" -v"))) 2 in
-    match string_split '.' ver with
+    let version_line = run !Prefs.makecmd ["-v"] in
+    let version = List.nth (string_split ' ' version_line) 2 in
+    match string_split '.' version with
     | major::minor::_ when (int major, int minor) >= (3,81) ->
-      printf "You have GNU Make %s. Good!\n" ver
+      printf "You have GNU Make %s. Good!\n" version
     | _ -> failwith "bad version"
   with _ -> die "Error: Cannot find GNU Make >= 3.81."
 
@@ -409,14 +450,8 @@ let camlbin, camlc = match !Prefs.camldir with
   | None ->
     try let camlc = which camlexec.byte in Filename.dirname camlc, camlc
     with Not_found ->
-      printf "%s is not present in your path!\n" camlexec.byte;
-      printf "Give me manually the path to the %s executable " camlexec.byte;
-      printf "[/usr/local/bin by default]:\n%!";
-      match read_line () with
-      | "" -> let d = "/usr/local/bin" in d, Filename.concat d camlexec.byte
-      | s when Filename.basename s = "ocamlc" -> Filename.dirname s, s
-      | s when Filename.basename s = "ocamlc.opt" -> Filename.dirname s, s
-      | s -> s, Filename.concat s camlexec.byte
+      die (sprintf "Error: cannot find '%s' in your path!\n" camlexec.byte ^
+           "Please adjust your path or use the -camldir option of ./configure")
 
 let _ =
   if not (is_executable camlc) then
@@ -431,13 +466,13 @@ let _ =
 
 let mk_win_path file =
   if not win32 then file
-  else if !cygwin then run ("cygpath -m "^Filename.quote file)
-  else run (camlexec.top^" tools/mingwpath.ml "^Filename.quote file)
+  else if !cygwin then run "cygpath" ["-m";file]
+  else run camlexec.top ["tools/mingwpath.ml";file]
 
 let camlbin = mk_win_path camlbin
 
-let caml_version = run (Filename.quote camlc ^ " -version")
-let camllib = run (Filename.quote camlc ^ " -where")
+let caml_version = run camlc ["-version"]
+let camllib = run camlc ["-where"]
 let camlp4compat = "-loc loc"
 
 (** Caml version as a list of string, e.g. ["4";"00";"1"] *)
@@ -495,7 +530,7 @@ let check_camlp5 testcma = match !Prefs.camlp5dir with
           dir testcma
       in die msg
   | None ->
-    let dir = tryrun "camlp5 -where" in
+    let dir = tryrun "camlp5" ["-where"] in
     if dir <> "" then dir
     else if Sys.file_exists (camllib^"/camlp5/"^ testcma) then
       camllib^"/camlp5"
@@ -513,11 +548,11 @@ let check_camlp5_version () =
     if s.[i] = '4' then s.[i] <- '5'
   done;
   try
-    (* TODO Quotes ? *)
-    let ver = List.nth (string_split ' ' (run (camlexec.p4^" -v 2>&1"))) 2 in
-    match string_split '.' ver with
+    let version_line = run ~join:true camlexec.p4 ["-v"] in
+    let version = List.nth (string_split ' ' version_line) 2 in
+    match string_split '.' version with
     | major::minor::_ when (int major, int minor) >= (5,1) ->
-      printf "You have Camlp5 %s. Good!\n" ver
+      printf "You have Camlp5 %s. Good!\n" version
     | _ -> failwith "bad version"
   with _ -> die "Error: unsupported Camlp5 (version < 5.01 or unrecognized).\n"
 
@@ -536,7 +571,7 @@ let config_camlpX () =
     if not (Sys.file_exists (dir^"/"^lib^".cma")) then
       die "No Camlp4 installation found.\n";
     let () = camlexec.p4 <- camlexec.p4 ^ "rf" in
-    ignore (run camlexec.p4);
+    ignore (run camlexec.p4 []);
     "camlp4", dir, lib
 
 let camlp4, fullcamlp4lib, camlp4mod = config_camlpX ()
@@ -575,7 +610,7 @@ let check_native () =
     (msg_no_camlp4_cmxa (); raise Not_found);
   if not (Sys.file_exists (camllib^"/dynlink.cmxa")) then
     (msg_no_dynlink_cmxa (); raise Not_found);
-  let version = run (camlexec.opt^" -version") in
+  let version = run camlexec.opt ["-version"] in
   if version <> caml_version then
     printf
       "Warning: Native and bytecode compilers do not have the same version!\n";
@@ -595,7 +630,7 @@ let hasnatdynlink = !Prefs.natdynlink && best_compiler = "opt"
 let needs_MacOS_fix () =
   match hasnatdynlink, arch, caml_version_nums with
   | true, "Darwin", 3::11::_ ->
-    (match string_split '.' (run "uname -r") with
+    (match string_split '.' (run "uname" ["-r"]) with
     | "9"::_ -> true
     | "10"::("0"|"1"|"2")::_ -> true
     | "10"::_ when Sys.word_size = 32 -> true
@@ -613,7 +648,7 @@ let osdeplibs = "-cclib -lunix"
 
 let operating_system, osdeplibs =
   if starts_with arch "sun4" then
-    let os = run "uname -r" in
+    let os = run "uname" ["-r"] in
     if starts_with os "5" then
       "Sun Solaris "^os, osdeplibs^" -cclib -lnsl -cclib -lsocket"
     else
@@ -646,11 +681,11 @@ let get_lablgtkdir () =
     else "", ""
   | None ->
     let msg = "via ocamlfind" in
-    let d1 = tryrun "ocamlfind query lablgtk2.sourceview2 2> /dev/null" in
+    let d1 = tryrun "ocamlfind" ["query";"lablgtk2.sourceview2"] in
     if d1 <> "" && check_lablgtkdir msg d1 then d1, msg
     else
       (* In debian wheezy, ocamlfind knows only of lablgtk2 *)
-      let d2 = tryrun "ocamlfind query lablgtk2 2> /dev/null" in
+      let d2 = tryrun "ocamlfind" ["query";"lablgtk2"] in
       if d2 <> "" && d2 <> d1 && check_lablgtkdir msg d2 then d2, msg
       else
         let msg = "in OCaml library" in
@@ -708,7 +743,7 @@ let coqide_flags () =
   if !lablgtkdir <> "" then lablgtkincludes := sprintf "-I %S" !lablgtkdir;
   match coqide, arch with
     | "opt", "Darwin" when !Prefs.macintegration ->
-      let osxdir = tryrun "ocamlfind query lablgtkosx 2> /dev/null" in
+      let osxdir = tryrun "ocamlfind" ["query";"lablgtkosx"] in
       if osxdir <> "" then begin
         lablgtkincludes := sprintf "%s -I %S" !lablgtkincludes osxdir;
         idearchflags := "lablgtkosx.cmxa";
