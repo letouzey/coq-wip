@@ -13,13 +13,14 @@ let coq_version = "trunk"
 let vo_magic = 8511
 let state_magic = 58511
 
+let verbose = ref false (* for debugging this script *)
+
 (** * Utility functions *)
 
 let die msg = eprintf "%s\nConfiguration script failed!\n" msg; exit 1
 
-(** Shortcut *)
-
-let int = int_of_string
+let s2i = int_of_string
+let i2s = string_of_int
 
 (* TODO: check that input_line on win32 removes the \r
 (** Remove the final '\r' that may exists on Win32 *)
@@ -33,59 +34,59 @@ let remove_final_cr s =
 let check_exit_code (_,code) = match code with
   | Unix.WEXITED 0 -> ()
   | Unix.WEXITED 127 -> failwith "no such command"
-  | Unix.WEXITED n -> failwith ("exit code "^string_of_int n)
-  | Unix.WSIGNALED n -> failwith ("killed by signal "^string_of_int n)
-  | Unix.WSTOPPED n -> failwith ("stopped by signal "^string_of_int n)
+  | Unix.WEXITED n -> failwith ("exit code " ^ i2s n)
+  | Unix.WSIGNALED n -> failwith ("killed by signal " ^ i2s n)
+  | Unix.WSTOPPED n -> failwith ("stopped by signal " ^ i2s n)
 
-let pr_exn = function Failure msg -> msg | e -> Printexc.to_string e
+(** Below, we'd better read all lines on a channel before closing it,
+    otherwise a SIGPIPE could be encountered by the sub-process *)
 
-(** We need below to read all lines on a channel, otherwise a SIGPIPE
-    could be encountered *)
+let read_first_line_and_close fd =
+  let cin = Unix.in_channel_of_descr fd in
+  let line = try input_line cin with End_of_file -> "" in
+  (try while true do ignore (input_line cin) done with End_of_file -> ());
+  close_in cin;
+  line
 
-let read_lines cin =
-  let rec loop acc =
-    try loop (input_line cin :: acc)
-    with End_of_file -> List.rev acc
-  in loop []
-
-let get_first = function
-  | line::_ -> line
-  | [] -> ""
-
-(** Run some unix command and read the first line of its stdout.
+(** Run some unix command and read the first line of its output.
     We avoid Unix.open_process and its non-fully-portable /bin/sh,
     especially when it comes to quoting the filenames.
     See open_process_pid in ide/coq.ml for more details.
-    When join=true, we merge stderr and stdout (just as 2>&1)
-    When silent=true, we capture stderr and discard it (same as 2> /dev/null).
-    Otherwise, error messages end in the stderr of our script. *)
+    Error messages:
+     - if err=StdErr, any error message goes in the stderr of our script.
+     - if err=StdOut, we merge stderr and stdout (just as 2>&1).
+     - if err=DevNull, we drop the error messages (same as 2>/dev/null). *)
 
-let run ?(fatal=true) ?(silent=false) ?(join=false) prog args =
+type err = StdErr | StdOut | DevNull
+
+let run ?(fatal=true) ?(err=StdErr) prog args =
+  let argv = Array.of_list (prog::args) in
   try
     let out_r,out_w = Unix.pipe () in
-    let err_r,err_w = Unix.pipe () in
-    let () = Unix.set_close_on_exec out_w in
-    let () = Unix.set_close_on_exec err_w in
-    let argv = Array.of_list (prog::args) in
-    let err = if join then out_w else if silent then err_w else Unix.stderr in
-    let pid = Unix.create_process prog argv Unix.stdin out_w err in
+    let nul_r,nul_w = Unix.pipe () in
+    let () = Unix.set_close_on_exec out_r in
+    let () = Unix.set_close_on_exec nul_r in
+    let fd_err = match err with
+      | StdErr -> Unix.stderr
+      | StdOut -> out_w
+      | DevNull -> nul_w
+    in
+    let pid = Unix.create_process prog argv Unix.stdin out_w fd_err in
     let () = Unix.close out_w in
-    let () = Unix.close err_w in
-    let line = get_first (read_lines (Unix.in_channel_of_descr out_r)) in
-    (* We discard err_r since it received error messages when silent=true *)
-    let _ = read_lines (Unix.in_channel_of_descr err_r) in
-    let () = Unix.close out_r in
-    let () = Unix.close err_r in
+    let () = Unix.close nul_w in
+    let line = read_first_line_and_close out_r in
+    let _ = read_first_line_and_close nul_r in
     let () = check_exit_code (Unix.waitpid [] pid) in
     line
   with
-  | e when fatal ->
-    let cmd = String.concat " " (prog::args) in
-    die ("Error while running: "^cmd^" ("^pr_exn e^")")
-  | _ -> ""
+  | _ when not fatal && not !verbose -> ""
+  | e ->
+      let cmd = String.concat " " (prog::args) in
+      let exn = match e with Failure s -> s | _ -> Printexc.to_string e in
+      let msg = sprintf "Error while running '%s' (%s)" cmd exn in
+      if fatal then die msg else (printf "W: %s\n" msg; "")
 
-let tryrun ?(join=false) prog args =
-  run ~fatal:false ~silent:true ~join prog args
+let tryrun prog args = run ~fatal:false ~err:DevNull prog args
 
 (** Splitting a string at some character *)
 
@@ -129,15 +130,16 @@ let is_executable f =
 
 (** The PATH list for searching programs *)
 
-(* TODO: ";" as separator on win32 *)
+(* TODO: check ";" in win32 *)
 
 let global_path =
-  try string_split ':' (Sys.getenv "PATH")
+  let delim = if Sys.os_type = "Win32" then ';' else ':' in
+  try string_split delim (Sys.getenv "PATH")
   with Not_found -> []
 
 (** A "which" command. May raise [Not_found] *)
 
-(* TODO: .exe on win32 ? TODO: ";" as delimitor on win32 ? *)
+(* TODO: .exe on win32 ? *)
 
 let which prog =
   let rec search = function
@@ -427,7 +429,7 @@ let make =
     let version_line = run !Prefs.makecmd ["-v"] in
     let version = List.nth (string_split ' ' version_line) 2 in
     match string_split '.' version with
-    | major::minor::_ when (int major, int minor) >= (3,81) ->
+    | major::minor::_ when (s2i major, s2i minor) >= (3,81) ->
       printf "You have GNU Make %s. Good!\n" version
     | _ -> failwith "bad version"
   with _ -> die "Error: Cannot find GNU Make >= 3.81."
@@ -484,7 +486,7 @@ let caml_version_list = numeric_prefix_list caml_version
 let caml_version_nums =
   try
     if List.length caml_version_list < 2 then failwith "bad version";
-    List.map int caml_version_list
+    List.map s2i caml_version_list
   with _ ->
     die ("I found the OCaml compiler but cannot read its version number!\n" ^
          "Is it installed properly?")
@@ -548,10 +550,10 @@ let check_camlp5_version () =
     if s.[i] = '4' then s.[i] <- '5'
   done;
   try
-    let version_line = run ~join:true camlexec.p4 ["-v"] in
+    let version_line = run ~err:StdOut camlexec.p4 ["-v"] in
     let version = List.nth (string_split ' ' version_line) 2 in
     match string_split '.' version with
-    | major::minor::_ when (int major, int minor) >= (5,1) ->
+    | major::minor::_ when (s2i major, s2i minor) >= (5,1) ->
       printf "You have Camlp5 %s. Good!\n" version
     | _ -> failwith "bad version"
   with _ -> die "Error: unsupported Camlp5 (version < 5.01 or unrecognized).\n"
@@ -871,10 +873,10 @@ let config_runtime () =
   | Some flags -> flags
   | _ when !Prefs.custom || custom_os -> "-custom"
   | _ when !Prefs.local ->
-    sprintf "-dllib -lcoqrun -dllpath '%s'/kernel/byterun" coqtop
+    sprintf "-dllib -lcoqrun -dllpath '%s/kernel/byterun'" coqtop
   | _ ->
     let ld="CAML_LD_LIBRARY_PATH" in
-    build_loadpath := sprintf "export %s='%s'/kernel/byterun:$%s" ld coqtop ld;
+    build_loadpath := sprintf "export %s='%s/kernel/byterun':$%s" ld coqtop ld;
     sprintf "-dllib -lcoqrun -dllpath '%s'" libdir
 
 let coqrunbyteflags = config_runtime ()
