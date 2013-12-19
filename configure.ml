@@ -129,6 +129,10 @@ let is_executable f =
   try let () = Unix.access f [Unix.X_OK] in true
   with Unix.Unix_error _ -> false
 
+(** Equivalent of rm -f *)
+
+let safe_remove f = try Sys.remove f with Sys_error _ -> ()
+
 (** The PATH list for searching programs *)
 
 let w32 = (Sys.os_type = "Win32")
@@ -934,7 +938,7 @@ let _ = print_summary ()
 (** * Build the dev/ocamldebug-coq file *)
 
 let write_dbg_wrapper f =
-  Sys.remove f;
+  safe_remove f;
   let o = open_out f in
   let pr s = fprintf o s in
   pr "#!/bin/sh\n\n";
@@ -953,7 +957,7 @@ let _ = write_dbg_wrapper "dev/ocamldebug-coq"
 (** * Build the config/coq_config.ml file (+ link to myocamlbuild_config.ml) *)
 
 let write_configml f my =
-  Sys.remove f;
+  safe_remove f;
   let o = open_out f in
   let pr s = fprintf o s in
   let pr_s = pr "let %s = %S\n" in
@@ -1019,7 +1023,7 @@ let write_configml f my =
   pr "]\n";
   close_out o;
   Unix.chmod f 0o444;
-  Sys.remove my;
+  safe_remove my;
   Unix.symlink f my
 
 let _ = write_configml "config/coq_config.ml" "myocamlbuild_config.ml"
@@ -1028,7 +1032,7 @@ let _ = write_configml "config/coq_config.ml" "myocamlbuild_config.ml"
 (** * Build the config/Makefile file *)
 
 let write_makefile f =
-  Sys.remove f;
+  safe_remove f;
   let o = open_out f in
   let pr s = fprintf o s in
   pr "###### config/Makefile : Configuration file for Coq ##############\n";
