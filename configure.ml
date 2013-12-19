@@ -131,7 +131,8 @@ let is_executable f =
 
 (** Equivalent of rm -f *)
 
-let safe_remove f = try Sys.remove f with Sys_error _ -> ()
+let safe_remove f =
+  try Unix.chmod f 0o644; Sys.remove f with _ -> ()
 
 (** The PATH list for searching programs *)
 
