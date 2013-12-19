@@ -21,6 +21,7 @@ let die msg = eprintf "%s\nConfiguration script failed!\n" msg; exit 1
 
 let s2i = int_of_string
 let i2s = string_of_int
+let (/) = Filename.concat
 
 (* TODO: check that input_line on win32 removes the \r
 (** Remove the final '\r' that may exists on Win32 *)
@@ -142,9 +143,8 @@ let which prog =
   let rec search = function
     | [] -> raise Not_found
     | dir :: path ->
-      let file = if dir = "" then "./"^prog else dir^"/"^prog in
-      let realfile = if w32 then file^".exe" else file in
-      if is_executable realfile then file else search path
+      let file = if w32 then dir/prog^".exe" else dir/prog in
+      if is_executable file then file else search path
   in search global_path
 
 let program_in_path prog =
@@ -523,7 +523,7 @@ exception NoCamlp5
 
 let check_camlp5 testcma = match !Prefs.camlp5dir with
   | Some dir ->
-    if Sys.file_exists (dir^"/"^ testcma) then dir
+    if Sys.file_exists (dir/testcma) then dir
     else
       let msg =
         sprintf "Cannot find camlp5 libraries in '%s' (%s not found)."
@@ -532,10 +532,10 @@ let check_camlp5 testcma = match !Prefs.camlp5dir with
   | None ->
     let dir = tryrun "camlp5" ["-where"] in
     if dir <> "" then dir
-    else if Sys.file_exists (camllib^"/camlp5/"^ testcma) then
-      camllib^"/camlp5"
-    else if Sys.file_exists (camllib^"/site-lib/camlp5/"^ testcma) then
-      camllib^"/site-lib/camlp5"
+    else if Sys.file_exists (camllib/"camlp5"/testcma) then
+      camllib/"camlp5"
+    else if Sys.file_exists (camllib/"site-lib"/"camlp5"/testcma) then
+      camllib/"site-lib"/"camlp5"
     else
       let () = printf "No Camlp5 installation found." in
       let () = printf "Looking for Camlp4 instead...\n" in
@@ -567,8 +567,8 @@ let config_camlpX () =
     (* We now try to use Camlp4, either by explicit choice or
        by lack of proper Camlp5 installation *)
     let lib = "camlp4lib" in
-    let dir = camllib^"/camlp4" in
-    if not (Sys.file_exists (dir^"/"^lib^".cma")) then
+    let dir = camllib/"camlp4" in
+    if not (Sys.file_exists (dir/lib^".cma")) then
       die "No Camlp4 installation found.\n";
     let () = camlexec.p4 <- camlexec.p4 ^ "rf" in
     ignore (run camlexec.p4 []);
@@ -577,7 +577,7 @@ let config_camlpX () =
 let camlp4, fullcamlp4lib, camlp4mod = config_camlpX ()
 
 let shorten_camllib s =
-  if starts_with s (camllib^"/") then
+  if starts_with s (camllib^"/") then  (** TODO WIN32 *)
     let l = String.length camllib + 1 in
     "+" ^ String.sub s l (String.length s - l)
   else s
@@ -606,9 +606,9 @@ let check_native () =
   if !Prefs.byteonly then raise Not_found;
   if not (is_executable camlexec.opt || program_in_path camlexec.opt) then
     (msg_no_ocamlopt (); raise Not_found);
-  if not (Sys.file_exists (fullcamlp4lib^"/"^camlp4mod^".cmxa")) then
+  if not (Sys.file_exists (fullcamlp4lib/camlp4mod^".cmxa")) then
     (msg_no_camlp4_cmxa (); raise Not_found);
-  if not (Sys.file_exists (camllib^"/dynlink.cmxa")) then
+  if not (Sys.file_exists (camllib/"dynlink.cmxa")) then
     (msg_no_dynlink_cmxa (); raise Not_found);
   let version = run camlexec.opt ["-version"] in
   if version <> caml_version then
@@ -665,9 +665,9 @@ let check_lablgtkdir ?(fatal=false) msg dir =
   let yell msg = if fatal then die msg else (printf "%s\n" msg; false) in
   if not (dir_exists dir) then
     yell (sprintf "No such directory '%s' (%s)." dir msg)
-  else if not (Sys.file_exists (dir^"/gSourceView2.cmi")) then
+  else if not (Sys.file_exists (dir/"gSourceView2.cmi")) then
     yell (sprintf "Incomplete LablGtk2 (%s): no %s/gSourceView2.cmi." msg dir)
-  else if not (Sys.file_exists (dir^"/glib.mli")) then
+  else if not (Sys.file_exists (dir/"glib.mli")) then
     yell (sprintf "Incomplete LablGtk2 (%s): no %s/glib.mli." msg dir)
   else true
 
@@ -722,9 +722,9 @@ let check_coqide () =
   lablgtkdir := shorten_camllib dir;
   if !Prefs.coqide = Some Byte then set_ide Byte (found^", bytecode requested");
   if best_compiler<>"opt" then set_ide Byte (found^", but no native compiler");
-  if not (Sys.file_exists (dir^"/gtkThread.cmx")) then
+  if not (Sys.file_exists (dir/"gtkThread.cmx")) then
     set_ide Byte (found^", but no native LablGtk2");
-  if not (Sys.file_exists (camllib^"/threads/threads.cmxa")) then
+  if not (Sys.file_exists (camllib/"threads"/"threads.cmxa")) then
     set_ide Byte (found^", but no native threads");
   set_ide Opt (found^", with native threads")
 
