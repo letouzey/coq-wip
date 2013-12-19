@@ -657,7 +657,7 @@ let operating_system, osdeplibs =
     else
       "Sun OS "^os, osdeplibs
   else
-    "", osdeplibs
+    (try Sys.getenv "OS" with Not_found -> ""), osdeplibs
 
 
 (** * lablgtk2 and CoqIDE *)
