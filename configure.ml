@@ -956,7 +956,7 @@ let _ = write_dbg_wrapper "dev/ocamldebug-coq"
 
 (** * Build the config/coq_config.ml file (+ link to myocamlbuild_config.ml) *)
 
-let write_configml f my =
+let write_configml f =
   safe_remove f;
   let o = open_out f in
   let pr s = fprintf o s in
@@ -1022,11 +1022,13 @@ let write_configml f my =
     plugins;
   pr "]\n";
   close_out o;
-  Unix.chmod f 0o444;
-  safe_remove my;
-  Unix.symlink f my
+  Unix.chmod f 0o444
 
-let _ = write_configml "config/coq_config.ml" "myocamlbuild_config.ml"
+let write_configml_my f f' =
+  write_configml f;
+  if w32 then write_configml f' else (safe_remove f'; Unix.symlink f f')
+
+let _ = write_configml_my "config/coq_config.ml" "myocamlbuild_config.ml"
 
 
 (** * Build the config/Makefile file *)
