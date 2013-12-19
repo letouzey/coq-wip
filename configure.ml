@@ -130,23 +130,21 @@ let is_executable f =
 
 (** The PATH list for searching programs *)
 
-(* TODO: check ";" in win32 *)
+let w32 = (Sys.os_type = "Win32")
 
 let global_path =
-  let delim = if Sys.os_type = "Win32" then ';' else ':' in
-  try string_split delim (Sys.getenv "PATH")
+  try string_split (if w32 then ';' else ':') (Sys.getenv "PATH")
   with Not_found -> []
 
 (** A "which" command. May raise [Not_found] *)
-
-(* TODO: .exe on win32 ? *)
 
 let which prog =
   let rec search = function
     | [] -> raise Not_found
     | dir :: path ->
       let file = if dir = "" then "./"^prog else dir^"/"^prog in
-      if is_executable file then file else search path
+      let realfile = if w32 then file^".exe" else file in
+      if is_executable realfile then file else search path
   in search global_path
 
 let program_in_path prog =
