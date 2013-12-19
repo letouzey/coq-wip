@@ -134,10 +134,10 @@ let safe_remove f =
 
 (** The PATH list for searching programs *)
 
-let w32 = (Sys.os_type = "Win32")
+let os_type_win32 = (Sys.os_type = "Win32")
 
 let global_path =
-  try string_split (if w32 then ';' else ':') (Sys.getenv "PATH")
+  try string_split (if os_type_win32 then ';' else ':') (Sys.getenv "PATH")
   with Not_found -> []
 
 (** A "which" command. May raise [Not_found] *)
@@ -146,7 +146,7 @@ let which prog =
   let rec search = function
     | [] -> raise Not_found
     | dir :: path ->
-      let file = if w32 then dir/prog^".exe" else dir/prog in
+      let file = if os_type_win32 then dir/prog^".exe" else dir/prog in
       if is_executable file then file else search path
   in search global_path
 
@@ -396,20 +396,22 @@ let rec try_archs = function
   | _ :: rest -> try_archs rest
   | [] -> query_arch ()
 
-let cygwin = ref false
+let os_type_cygwin = (Sys.os_type = "Cygwin")
 
 let arch = match !Prefs.arch with
   | Some a -> a
   | None ->
     let arch = tryrun "uname" ["-s"] in
-    if starts_with arch "CYGWIN" then (cygwin := true; "win32")
+    if starts_with arch "CYGWIN" then "win32"
     else if starts_with arch "MINGW32" then "win32"
     else if arch <> "" then arch
     else try_archs arch_progs
 
-let win32 = (arch = "win32")
+(** NB: [arch_win32] is broader than [os_type_win32], cf. cygwin *)
 
-let exe,dll = if win32 then ".exe",".dll" else "", ".so"
+let arch_win32 = (arch = "win32")
+
+let exe,dll = if arch_win32 then ".exe",".dll" else "", ".so"
 
 (** * VCS
 
@@ -440,7 +442,7 @@ let make =
 let browser =
   match !Prefs.browser with
   | Some b -> b
-  | None when win32 -> "start %s"
+  | None when arch_win32 -> "start %s"
   | None when arch = "Darwin" -> "open %s"
   | _ -> "firefox -remote \"OpenURL(%s,new-tab)\" || firefox %s &"
 
@@ -460,6 +462,7 @@ let _ =
   if not (is_executable camlc) then
     die ("Error: cannot find the executable '"^camlc^"'.")
 
+(*
 (* Under Windows, we need to convert from cygwin/mingw paths
    (e.g. /c/Program Files/Ocaml) to more windows-looking paths
    (c:/Program Files/Ocaml). Note that / are kept, since they are
@@ -468,11 +471,12 @@ let _ =
 (* TODO: check the quoting under windows! *)
 
 let mk_win_path file =
-  if not win32 then file
-  else if !cygwin then run "cygpath" ["-m";file]
+  if not arch_win32 then file
+  else if os_type_cygwin then run "cygpath" ["-m";file]
   else run camlexec.top ["tools/mingwpath.ml";file]
 
 let camlbin = mk_win_path camlbin
+*)
 
 let caml_version = run camlc ["-version"]
 let camllib = run camlc ["-where"]
@@ -580,7 +584,7 @@ let config_camlpX () =
 let camlp4, fullcamlp4lib, camlp4mod = config_camlpX ()
 
 let shorten_camllib s =
-  if starts_with s (camllib^"/") then  (** TODO WIN32 *)
+  if starts_with s (camllib^"/") then
     let l = String.length camllib + 1 in
     "+" ^ String.sub s l (String.length s - l)
   else s
@@ -799,7 +803,7 @@ case $ARCH in
 esac
 *)
 
-let unix = !cygwin || not win32
+let unix = os_type_cygwin || not arch_win32
 
 (** Variable name, description, ref in Prefs, default dir, prefix-relative *)
 
@@ -809,10 +813,10 @@ let install = [
     "/bin";
   "COQLIBINSTALL", "the Coq library", Prefs.libdir,
     (if unix then "/usr/local/lib/coq" else "C:/coq/lib"),
-    (if win32 then "" else "/lib/coq");
+    (if arch_win32 then "" else "/lib/coq");
   "CONFIGDIR", "the Coqide configuration files", Prefs.configdir,
     (if unix then "/etc/xdg/coq" else "C:/coq/config"),
-    (if win32 then "/config" else "/etc/xdg/coq");
+    (if arch_win32 then "/config" else "/etc/xdg/coq");
   "DATADIR", "the Coqide data files", Prefs.datadir,
     (if unix then "/usr/local/share/coq" else "C:/coq/share"),
     "/share/coq";
@@ -824,10 +828,10 @@ let install = [
     "/share/doc/coq";
   "EMACSLIB", "the Coq Emacs mode", Prefs.emacslib,
     (if unix then "/usr/local/share/emacs/site-lisp" else "C:/coq/emacs"),
-    (if win32 then "/emacs" else "/share/emacs/site-lisp");
+    (if arch_win32 then "/emacs" else "/share/emacs/site-lisp");
   "COQDOCDIR", "the Coqdoc LaTeX files", Prefs.coqdocdir,
     (if unix then "/usr/local/share/texmf/tex/latex/misc" else "C:/coq/latex"),
-    (if win32 then "/latex" else "/share/emacs/site-lisp");
+    (if arch_win32 then "/latex" else "/share/emacs/site-lisp");
  ]
 
 let do_one_instdir (var,msg,r,dflt,suff) =
@@ -864,7 +868,7 @@ let datadir =
 (** * OCaml runtime flags *)
 
 (** Determine if we enable -custom by default (Windows and MacOS) *)
-let custom_os = win32 || arch = "Darwin"
+let custom_os = arch_win32 || arch = "Darwin"
 
 let build_loadpath =
   ref "# you might want to set CAML_LD_LIBRARY_PATH by hand!"
@@ -995,7 +999,7 @@ let write_configml f =
   pr_s "date" short_date;
   pr_s "compile_date" full_date;
   pr_s "arch" arch;
-  pr_b "arch_is_win32" win32;
+  pr_b "arch_is_win32" arch_win32;
   pr_s "exec_extension" exe;
   pr_s "coqideincl" !lablgtkincludes;
   pr_s "has_coqide" coqide;
@@ -1025,7 +1029,10 @@ let write_configml f =
 
 let write_configml_my f f' =
   write_configml f;
-  if w32 then write_configml f' else (safe_remove f'; Unix.symlink f f')
+  if os_type_win32 then
+    write_configml f'
+  else
+    (safe_remove f'; Unix.symlink f f')
 
 let _ = write_configml_my "config/coq_config.ml" "myocamlbuild_config.ml"
 
