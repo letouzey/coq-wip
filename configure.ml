@@ -23,14 +23,12 @@ let s2i = int_of_string
 let i2s = string_of_int
 let (/) = Filename.concat
 
-(* TODO: check that input_line on win32 removes the \r
 (** Remove the final '\r' that may exists on Win32 *)
 
 let remove_final_cr s =
   let n = String.length s in
   if n<>0 && s.[n-1] = '\r' then String.sub s 0 (n-1)
   else s
-*)
 
 let check_exit_code (_,code) = match code with
   | Unix.WEXITED 0 -> ()
@@ -44,7 +42,7 @@ let check_exit_code (_,code) = match code with
 
 let read_first_line_and_close fd =
   let cin = Unix.in_channel_of_descr fd in
-  let line = try input_line cin with End_of_file -> "" in
+  let line = try remove_final_cr (input_line cin) with End_of_file -> "" in
   (try while true do ignore (input_line cin) done with End_of_file -> ());
   close_in cin;
   line
