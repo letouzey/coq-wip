@@ -237,86 +237,86 @@ end
 
 (* TODO : earlier any option -foo was also available as --foo *)
 
-let args_options = [
+let args_options = Arg.align [
   "-prefix", arg_string_option Prefs.prefix,
-    "<dir>\t\tSet installation directory to <dir>";
+    "<dir> Set installation directory to <dir>";
   "-local", Arg.Set Prefs.local,
-    "\t\tSet installation directory to the current source tree";
+    " Set installation directory to the current source tree";
   "-coqrunbyteflags", arg_string_option Prefs.coqrunbyteflags,
-    "<flags>\tSet link flags for VM-dependent bytecode (coqtop)";
+    "<flags> Set link flags for VM-dependent bytecode (coqtop)";
   "-coqtoolsbyteflags", arg_string_option Prefs.coqtoolsbyteflags,
-    "<flags>\tSet link flags for VM-independant bytecode (coqdep,coqdoc,...)";
+    "<flags> Set link flags for VM-independant bytecode (coqdep,coqdoc,...)";
   "-custom", Arg.Set Prefs.custom,
-    "\t\tGenerate all bytecode executables with -custom (not recommended)";
+    " Generate all bytecode executables with -custom (not recommended)";
   "-bindir", arg_string_option Prefs.bindir,
-    "<dir>\t\tWhere to install bin files";
+    "<dir> Where to install bin files";
   "-libdir", arg_string_option Prefs.libdir,
-    "<dir>\t\tWhere to install lib files";
+    "<dir> Where to install lib files";
   "-configdir", arg_string_option Prefs.configdir,
-    "<dir>\tWhere to install config files";
+    "<dir> Where to install config files";
   "-datadir", arg_string_option Prefs.datadir,
-    "<dir>\tWhere to install data files";
+    "<dir> Where to install data files";
   "-mandir", arg_string_option Prefs.mandir,
-    "<dir>\t\tWhere to install man files";
+    "<dir> Where to install man files";
   "-docdir", arg_string_option Prefs.docdir,
-    "<dir>\t\tWhere to install doc files";
+    "<dir> Where to install doc files";
   "-emacslib", arg_string_option Prefs.emacslib,
-    "<dir>\tWhere to install emacs files";
+    "<dir> Where to install emacs files";
   "-emacs", Arg.String (fun s ->
       printf "Warning: obsolete -emacs option\n";
       Prefs.emacslib := Some s),
-    "<dir>\t\t(Obsolete) same as -emacslib";
+    "<dir> (Obsolete) same as -emacslib";
   "-coqdocdir", arg_string_option Prefs.coqdocdir,
-    "<dir>\tWhere to install Coqdoc style files";
+    "<dir> Where to install Coqdoc style files";
   "-camldir", arg_string_option Prefs.camldir,
-    "<dir>\tSpecifies the path to the OCaml library";
+    "<dir> Specifies the path to the OCaml library";
   "-lablgtkdir", arg_string_option Prefs.lablgtkdir,
-    "<dir>\tSpecifies the path to the Lablgtk library";
+    "<dir> Specifies the path to the Lablgtk library";
   "-usecamlp5", Arg.Set Prefs.usecamlp5,
-    "\t\tSpecifies to use camlp5 instead of camlp4";
+    " Specifies to use camlp5 instead of camlp4";
   "-usecamlp4", Arg.Clear Prefs.usecamlp5,
-    "\t\tSpecifies to use camlp4 instead of camlp5";
+    " Specifies to use camlp4 instead of camlp5";
   "-camlp5dir",
     Arg.String (fun s -> Prefs.usecamlp5:=true; Prefs.camlp5dir:=Some s),
-    "<dir>\tSpecifies where to look for the Camlp5 library and tells to use it";
+    "<dir> Specifies where to look for the Camlp5 library and tells to use it";
   "-arch", arg_string_option Prefs.arch,
-    "<arch>\t\tSpecifies the architecture";
+    "<arch> Specifies the architecture";
   "-opt", Arg.Set Prefs.opt,
-    "\t\t\tUse OCaml *.opt optimized compilers";
+    " Use OCaml *.opt optimized compilers";
   "-natdynlink", arg_bool Prefs.natdynlink,
-    "(yes|no)\tUse dynamic loading of native code or not";
+    "(yes|no) Use dynamic loading of native code or not";
   "-coqide", Arg.String (fun s -> Prefs.coqide := Some (get_ide s)),
-    "(opt|byte|no)\tSpecifies whether or not to compile Coqide";
+    "(opt|byte|no) Specifies whether or not to compile Coqide";
   "-nomacintegration", Arg.Clear Prefs.macintegration,
-    "\tDo not try to build coqide mac integration";
+    " Do not try to build coqide mac integration";
   "-browser", arg_string_option Prefs.browser,
-    "<command>\tUse <command> to open URL %s";
+    "<command> Use <command> to open URL %s";
   "-nodoc", Arg.Clear Prefs.withdoc,
-    "\t\tDo not compile the documentation";
+    " Do not compile the documentation";
   "-with-doc", arg_bool Prefs.withdoc,
-    "(yes|no)\tCompile the documentation or not";
+    "(yes|no) Compile the documentation or not";
   "-with-geoproof", arg_bool Prefs.geoproof,
-    "(yes|no)\tUse Geoproof binding or not";
+    "(yes|no) Use Geoproof binding or not";
   "-byte-only", Arg.Set Prefs.byteonly,
-    "\t\tCompiles only bytecode version of Coq";
+    " Compiles only bytecode version of Coq";
   "-byteonly", Arg.Set Prefs.byteonly,
-    "\t\tCompiles only bytecode version of Coq";
+    " Compiles only bytecode version of Coq";
   "-debug", Arg.Set Prefs.debug,
-    "\t\tAdd debugging information in the Coq executables";
+    " Add debugging information in the Coq executables";
   "-profile", Arg.Set Prefs.profile,
-    "\t\tAdd profiling information in the Coq executables";
+    " Add profiling information in the Coq executables";
   "-annotate", Arg.Set Prefs.annotate,
-    "\t\tCompiles Coq with -dtypes option";
+    " Compiles Coq with -dtypes option";
   "-typerex", Arg.Set Prefs.typerex,
-    "\t\tCompiles Coq using typerex wrapper";
+    " Compiles Coq using typerex wrapper";
   "-makecmd", Arg.Set_string Prefs.makecmd,
-    "<command>\tName of GNU Make command";
+    "<command> Name of GNU Make command";
   "-no-native-compiler", Arg.Clear Prefs.nativecompiler,
-    "\tDisables compilation to native code for conversion and normalization";
+    " Disables compilation to native code for conversion and normalization";
   "-coqwebsite", Arg.Set_string Prefs.coqwebsite,
-    "\t\tURL of the coq website";
+    " URL of the coq website";
   "-force-caml-version", arg_bool Prefs.force_caml_version,
-    "\tForce OCaml version";
+    " Force OCaml version";
 ]
 
 let parse_args () =
