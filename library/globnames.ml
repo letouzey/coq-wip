@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Util
-open Errors
+open Err
 open Names
 open Term
 open Mod_subst

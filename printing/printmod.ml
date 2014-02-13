@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Names
 open Declarations
 open Nameops
@@ -126,7 +126,7 @@ let nametab_register_modparam mbid mtb =
        via a Declaremods function that converts back to module entries *)
     try
       Declaremods.process_module_binding mbid (get_typ_expr_alg mtb)
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       (* Otherwise, we try to play with the nametab ourselves *)
       let mp = MPbound mbid in
       let dir = DirPath.make [MBId.to_id mbid] in
@@ -160,7 +160,7 @@ let print_body is_impl env mp (l,body) =
       try
 	let env = Option.get env in
 	Printer.pr_mutual_inductive_body env (MutInd.make2 mp l) mib
-      with e when Errors.noncritical e ->
+      with e when Err.noncritical e ->
 	(if mib.mind_finite then str "Inductive " else str "CoInductive")
 	++ name)
 
@@ -279,7 +279,7 @@ let print_module with_body mp =
   try
     if !short then raise ShortPrinting;
     unsafe_print_module (Some (Global.env ())) mp with_body me ++ fnl ()
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     unsafe_print_module None mp with_body me ++ fnl ()
 
 let print_modtype kn =
@@ -290,5 +290,5 @@ let print_modtype kn =
      (try
 	if !short then raise ShortPrinting;
 	print_signature' true (Some (Global.env ())) kn mtb.typ_expr
-      with e when Errors.noncritical e ->
+      with e when Err.noncritical e ->
 	print_signature' true None kn mtb.typ_expr))

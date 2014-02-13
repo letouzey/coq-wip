@@ -9,7 +9,7 @@
 (** This module is about the low-level declaration of logical objects *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Libnames

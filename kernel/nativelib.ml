@@ -12,7 +12,7 @@ open Nativevalues
 open Declarations
 open Nativecode
 open Pre_env
-open Errors
+open Err
 open Envars
 
 (** This file provides facilities to access OCaml compiler and dynamic linker,
@@ -88,7 +88,7 @@ let call_linker ~fatal prefix f upds =
    with | Dynlink.Error e ->
           let msg = "Dynlink error, " ^ Dynlink.error_message e in
           if fatal then anomaly (Pp.str msg) else Pp.msg_warning (Pp.str msg)
-        | e when Errors.noncritical e ->
+        | e when Err.noncritical e ->
           let msg = "Dynlink error" in
           if fatal then anomaly (Pp.str msg) else Pp.msg_warning (Pp.str msg));
   match upds with Some upds -> update_locations upds | _ -> ()

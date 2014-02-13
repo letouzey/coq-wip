@@ -331,7 +331,7 @@ let dual_raw_certificate (l:  (Poly.t * Mc.op1) list) =
     | Inr _ -> None
     | Inl cert ->  Some (rats_to_ints (Vect.to_list cert)) 
        (* should not use rats_to_ints *)
-  with x when Errors.noncritical x ->
+  with x when Err.noncritical x ->
    if debug
    then (Printf.printf "raw certificate %s" (Printexc.to_string x);
          flush stdout) ;
@@ -378,7 +378,7 @@ let linear_prover n_spec l  =
 
 let linear_prover n_spec l  =
  try linear_prover n_spec l
- with x when Errors.noncritical x ->
+ with x when Err.noncritical x ->
    (print_string (Printexc.to_string x); None)
 
 let linear_prover_with_cert spec l = 

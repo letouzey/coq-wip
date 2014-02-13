@@ -16,7 +16,7 @@ open Names
 open Tacexpr
 open Glob_ops
 open Tactics
-open Errors
+open Err
 open Util
 open Evd
 open Equality
@@ -632,7 +632,7 @@ let hResolve_auto id c t gl =
       hResolve id c n t gl
     with
     | UserError _ as e -> raise e
-    | e when Errors.noncritical e -> resolve_auto (n+1)
+    | e when Err.noncritical e -> resolve_auto (n+1)
   in
   resolve_auto 1
 

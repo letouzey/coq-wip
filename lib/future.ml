@@ -13,7 +13,7 @@ let set_freeze f g = freeze := f; unfreeze := g
 
 exception NotReady
 exception NotHere
-let _ = Errors.register_handler (function
+let _ = Err.register_handler (function
   | NotReady ->
       Pp.strbrk("The value you are asking for is not ready yet. " ^
                 "Please wait or pass "^
@@ -24,7 +24,7 @@ let _ = Errors.register_handler (function
                 "in this process. If you really need this, pass "^
                 "the \"-async-proofs off\" option to CoqIDE to disable "^
                 "asynchronous script processing.")
-  | _ -> raise Errors.Unhandled)
+  | _ -> raise Err.Unhandled)
 
 type fix_exn = exn -> exn
 let id x = prerr_endline "no fix_exn"; x
@@ -117,7 +117,7 @@ let rec compute ~pure ck : 'a value =
         let state = if pure then None else Some (!freeze ()) in
         c := Val (data, state); `Val data
       with e ->
-        let e = Errors.push e in
+        let e = Err.push e in
         let e = fix_exn e in
         match e with
         | NotReady -> `Exn e
@@ -137,9 +137,9 @@ let chain ~pure ck f =
   | Val (v, Some state) -> Closure (fun () -> !unfreeze state; f v)
   | Val (v, None) ->
       match !ck with
-      | Finished _ -> Errors.anomaly(Pp.str
+      | Finished _ -> Err.anomaly(Pp.str
           "Future.chain ~pure:false call on an already joined computation")
-      | Ongoing _ -> Errors.anomaly(Pp.strbrk(
+      | Ongoing _ -> Err.anomaly(Pp.strbrk(
           "Future.chain ~pure:false call on a pure computation. "^
           "This can happen if the computation was initial created with "^
           "Future.from_val or if it was Future.chain ~pure:true with a "^
@@ -151,7 +151,7 @@ let replace kx y =
   let _, _, x = get kx in
   match !x with
   | Exn _ -> x := Closure (fun () -> force ~pure:false y)
-  | _ -> Errors.anomaly
+  | _ -> Err.anomaly
            (Pp.str "A computation can be replaced only if is_exn holds")
 
 let purify f x =
@@ -160,12 +160,12 @@ let purify f x =
     let v = f x in
     !unfreeze state;
     v
-  with e -> let e = Errors.push e in !unfreeze state; raise e
+  with e -> let e = Err.push e in !unfreeze state; raise e
 
 let transactify f x =
   let state = !freeze () in
   try f x
-  with e -> let e = Errors.push e in !unfreeze state; raise e
+  with e -> let e = Err.push e in !unfreeze state; raise e
 
 let purify_future f x = if is_over x then f x else purify f x
 let compute x = purify_future (compute ~pure:false) x
@@ -191,5 +191,5 @@ let map2 ?greedy f x l =
     let xi = chain ?greedy ~pure:true x (fun x ->
         try List.nth x i
         with Failure _ | Invalid_argument _ ->
-          Errors.anomaly (Pp.str "Future.map2 length mismatch")) in
+          Err.anomaly (Pp.str "Future.map2 length mismatch")) in
     f xi y) 0 l

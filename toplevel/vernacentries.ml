@@ -9,7 +9,7 @@
 (* Concrete syntax of the mathematical vernacular MV V2.6 *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Flags
 open Names
@@ -378,7 +378,7 @@ let dump_global r =
   try
     let gr = Smartlocate.smart_global r in
     Dumpglob.add_glob (Constrarg.loc_of_or_by_notation loc_of_reference r) gr
-  with e when Errors.noncritical e -> ()
+  with e when Err.noncritical e -> ()
 (**********)
 (* Syntax *)
 
@@ -518,14 +518,14 @@ let vernac_inductive finite infer indl =
 	  (((coe', AssumExpr ((loc, Name id), ce)), None), [])
       in vernac_record (Class true) finite infer id bl c None [f]
   | [ ( id , bl , c , Class true, _), _ ] ->
-      Errors.error "Definitional classes must have a single method"
+      Err.error "Definitional classes must have a single method"
   | [ ( id , bl , c , Class false, Constructors _), _ ] ->
-      Errors.error "Inductive classes not supported"
+      Err.error "Inductive classes not supported"
   | [ ( _ , _ , _ , _, RecordDecl _ ) , _ ] ->
-      Errors.error "where clause not supported for (co)inductive records"
+      Err.error "where clause not supported for (co)inductive records"
   | _ -> let unpack = function
       | ( (_, id) , bl , c , _ , Constructors l ) , ntn  -> ( id , bl , c , l ) , ntn
-      | _ -> Errors.error "Cannot handle mutually (co)inductive records."
+      | _ -> Err.error "Cannot handle mutually (co)inductive records."
     in
     let indl = List.map unpack indl in
     do_mutual_inductive indl (finite != CoFinite)
@@ -1491,7 +1491,7 @@ let vernac_focus gln =
     match gln with
       | None -> Proof.focus focus_command_cond () 1 p
       | Some 0 ->
-         Errors.error "Invalid goal number: 0. Goal numbering starts with 1."
+         Err.error "Invalid goal number: 0. Goal numbering starts with 1."
       | Some n ->
          Proof.focus focus_command_cond () n p);
   print_subgoals ()
@@ -1784,7 +1784,7 @@ let check_vernac_supports_locality c l =
     | VernacSetOption _ | VernacUnsetOption _
     | VernacDeclareReduction _
     | VernacExtend _ ) -> ()
-  | Some _, _ -> Errors.error "This command does not support Locality"
+  | Some _, _ -> Err.error "This command does not support Locality"
 
 (** A global default timeout, controled by option "Set Default Timeout n".
     Use "Unset Default Timeout" to deactivate it (or set it to 0). *)
@@ -1844,9 +1844,9 @@ let interp ?(verbosely=true) ?proof (loc,c) =
   let orig_program_mode = Flags.is_program_mode () in
   let rec aux ?locality isprogcmd = function
     | VernacProgram c when not isprogcmd -> aux ?locality true c
-    | VernacProgram _ -> Errors.error "Program mode specified twice"
+    | VernacProgram _ -> Err.error "Program mode specified twice"
     | VernacLocal (b, c) when Option.is_empty locality -> aux ~locality:b isprogcmd c
-    | VernacLocal _ -> Errors.error "Locality specified twice"
+    | VernacLocal _ -> Err.error "Locality specified twice"
     | VernacStm (Command c) -> aux ?locality isprogcmd c
     | VernacStm (PGLast c) -> aux ?locality isprogcmd c
     | VernacStm _ -> assert false (* Done by Stm *)
@@ -1863,10 +1863,10 @@ let interp ?(verbosely=true) ?proof (loc,c) =
                with
                | HasNotFailed as e -> raise e
                | e -> raise (HasFailed (Pp.string_of_ppcmds
-                  (Errors.print (Cerrors.process_vernac_interp_error e)))))
+                  (Err.print (Cerrors.process_vernac_interp_error e)))))
             v
-        with e when Errors.noncritical e -> 
-          let e = Errors.push e in
+        with e when Err.noncritical e -> 
+          let e = Err.push e in
           match e with
 	  | HasNotFailed ->
 	      errorlabstrm "Fail" (str "The command has not failed!")
@@ -1898,14 +1898,14 @@ let interp ?(verbosely=true) ?proof (loc,c) =
           if orig_program_mode || not !Flags.program_mode || isprogcmd then
             Flags.program_mode := orig_program_mode
         with
-          | reraise when Errors.noncritical reraise ->
-            let e = Errors.push reraise in
+          | reraise when Err.noncritical reraise ->
+            let e = Err.push reraise in
             let e = locate_if_not_already loc e in
             restore_timeout psh;
             Flags.program_mode := orig_program_mode;
             raise e
           | Timeout as reraise ->
-            let e = Errors.push reraise in
+            let e = Err.push reraise in
             let e = locate_if_not_already loc e in
             restore_timeout psh;
             Flags.program_mode := orig_program_mode;

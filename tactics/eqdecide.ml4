@@ -14,7 +14,7 @@
 
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
-open Errors
+open Err
 open Util
 open Names
 open Namegen

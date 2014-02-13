@@ -7,7 +7,7 @@
 (************************************************************************)
 open Term
 open Names
-open Errors
+open Err
 open Util
 
 (** This modules defines the representation of values internally used by

@@ -9,7 +9,7 @@
 open Pp
 open Names
 
-open Errors
+open Err
 open Util
 open Extend
 open Vernacexpr
@@ -886,7 +886,7 @@ let rec pr_vernac = function
       hov 1 (str "Opaque" ++
              spc() ++ prlist_with_sep sep pr_smart_global l)
   | VernacSetOpacity _ ->
-      Errors.anomaly (str "VernacSetOpacity used to set something else")
+      Err.anomaly (str "VernacSetOpacity used to set something else")
   | VernacSetStrategy l ->
       let pr_lev = function
           Conv_oracle.Opaque -> str"opaque"
@@ -991,5 +991,5 @@ let pr_vernac v = make_pr_vernac pr_constr_expr pr_lconstr_expr v ++ sep_end v
 
 let pr_vernac x =
   try pr_vernac x
-  with e -> Errors.print e
+  with e -> Err.print e
 

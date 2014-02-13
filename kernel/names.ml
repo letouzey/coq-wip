@@ -19,7 +19,7 @@
    Élie Soubiran, ... *)
 
 open Pp
-open Errors
+open Err
 open Util
 
 (** {6 Identifiers } *)
@@ -36,7 +36,7 @@ struct
 
   let check_soft x =
     let iter (fatal, x) =
-      if fatal then Errors.error x else Pp.msg_warning (str x)
+      if fatal then Err.error x else Pp.msg_warning (str x)
     in
     Option.iter iter (Unicode.ident_refutation x)
 

@@ -213,9 +213,9 @@ let declare_class_instance gr ctx params =
     (ce,Decl_kinds.IsDefinition Decl_kinds.Instance) in
   Typeclasses.add_instance (Typeclasses.new_instance cl (Some 100) true (ConstRef cst));
   new_instance_message ident typ def
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     msg_info (str"Error defining instance := "++pr_constr def++
-              str" : "++pr_constr typ++str"  "++Errors.print e)
+              str" : "++pr_constr typ++str"  "++Err.print e)
 
 let rec iter_under_prod (f:rel_context->constr->unit) (ctx:rel_context) t = f ctx t;
   match kind_of_term t with

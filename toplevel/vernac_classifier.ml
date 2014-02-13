@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Vernacexpr
-open Errors
+open Err
 open Pp
 
 let string_of_in_script b = if b then " (inside script)" else ""

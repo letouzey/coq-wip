@@ -10,7 +10,7 @@
    decidable equality, created by Vincent Siles, Oct 2007 *)
 
 open Tacmach
-open Errors
+open Err
 open Util
 open Pp
 open Term
@@ -108,7 +108,7 @@ let mkFullInd ind n =
 
 let check_bool_is_defined () =
   try let _ = Global.type_of_global Coqlib.glob_bool in ()
-  with e when Errors.noncritical e -> raise (UndefinedCst "bool")
+  with e when Err.noncritical e -> raise (UndefinedCst "bool")
 
 let beq_scheme_kind_aux = ref (fun _ -> failwith "Undefined")
 
@@ -340,7 +340,7 @@ let do_replace_lb lb_scheme_key aavoid narg p q =
             else error ("Var "^(Id.to_string s)^" seems unknown.")
       )
     in mkVar (find 1)
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
       (* if this happen then the args have to be already declared as a
               Parameter*)
       (
@@ -368,7 +368,7 @@ let do_replace_lb lb_scheme_key aavoid narg p q =
 	     Printer.pr_constr type_of_pq ++
 	     str " first.")
           in
-          Proofview.tclZERO (Errors.UserError("",err_msg))
+          Proofview.tclZERO (Err.UserError("",err_msg))
        in
        lb_type_of_p >>= fun (lb_type_of_p,eff) ->
        let lb_args = Array.append (Array.append
@@ -397,7 +397,7 @@ let do_replace_bl bl_scheme_key ind aavoid narg lft rgt =
             else error ("Var "^(Id.to_string s)^" seems unknown.")
       )
     in mkVar (find 1)
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
       (* if this happen then the args have to be already declared as a
          Parameter*)
       (
@@ -420,7 +420,7 @@ let do_replace_bl bl_scheme_key ind aavoid narg lft rgt =
         else (
           let u,v = try  destruct_ind tt1
           (* trick so that the good sequence is returned*)
-                with e when Errors.noncritical e -> ind,[||]
+                with e when Err.noncritical e -> ind,[||]
           in if eq_ind u ind
              then Tacticals.New.tclTHENLIST [Equality.replace t1 t2; Auto.default_auto ; aux q1 q2 ]
              else (
@@ -768,7 +768,7 @@ let _ = lb_scheme_kind_aux := fun () -> lb_scheme_kind
 
 let check_not_is_defined () =
   try ignore (Coqlib.build_coq_not ())
-  with e when Errors.noncritical e -> raise (UndefinedCst "not")
+  with e when Err.noncritical e -> raise (UndefinedCst "not")
 
 (* {n=m}+{n<>m}  part  *)
 let compute_dec_goal ind lnamesparrec nparrec =

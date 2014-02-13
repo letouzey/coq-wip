@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -467,7 +467,7 @@ module New = struct
 
   (* Try the first tactic that does not fail in a list of tactics *)
   let rec tclFIRST = function
-    | [] -> tclZERO (Errors.UserError ("Tacticals.New.tclFIRST",str"No applicable tactic."))
+    | [] -> tclZERO (Err.UserError ("Tacticals.New.tclFIRST",str"No applicable tactic."))
     |  t::rest -> tclORELSE0 t (tclFIRST rest)
 
   let rec tclFIRST_PROGRESS_ON tac = function
@@ -477,7 +477,7 @@ module New = struct
 
   let rec tclDO n t =
     if n < 0 then
-      tclZERO (Errors.UserError (
+      tclZERO (Err.UserError (
         "Refiner.tclDO",
         str"Wrong argument : Do needs a positive integer.")
       )
@@ -503,7 +503,7 @@ module New = struct
   let tclCOMPLETE t =
     t >>= fun res ->
       (tclINDEPENDENT
-         (tclZERO (Errors.UserError ("",str"Proof is not complete.")))
+         (tclZERO (Err.UserError ("",str"Proof is not complete.")))
       ) <*>
         tclUNIT res
 
@@ -521,7 +521,7 @@ module New = struct
           try
             Refiner.check_evars env new_sigma sigma initial_sigma;
             tclUNIT ()
-          with e when Errors.noncritical e ->
+          with e when Err.noncritical e ->
             tclZERO e
         in
         let check_evars_if =
@@ -538,7 +538,7 @@ module New = struct
     Proofview.tclOR
       (Proofview.tclTIMEOUT n t)
       begin function
-        | Proofview.Timeout as e -> Proofview.tclZERO (Refiner.FailError (0,lazy (Errors.print e)))
+        | Proofview.Timeout as e -> Proofview.tclZERO (Refiner.FailError (0,lazy (Err.print e)))
         | e -> Proofview.tclZERO e
       end
 
@@ -546,7 +546,7 @@ module New = struct
     let hyps = Proofview.Goal.hyps gl in
     try
       List.nth hyps (m-1)
-    with Failure _ -> Errors.error "No such assumption."
+    with Failure _ -> Err.error "No such assumption."
 
   let nthHypId m gl =
     let (id,_,_) = nthDecl m gl in

@@ -176,11 +176,11 @@ let declare_tactic loc s c cl =
                  Tacexpr.TacExtend($default_loc$,$se$,l)))
            | None -> () ])
           $atomic_tactics$ }
-      with [ e when Errors.noncritical e ->
+      with [ e when Err.noncritical e ->
 	Pp.msg_warning
 	  (Pp.app
 	     (Pp.str ("Exception in tactic extend " ^ $se$ ^": "))
-	     (Errors.print e)) ];
+	     (Err.print e)) ];
       Egramml.extend_tactic_grammar $se$ $gl$;
       List.iter (fun (s, r) -> Pptactic.declare_ml_tactic_pprule s r) $pp$; } >>
     ]
@@ -216,7 +216,7 @@ EXTEND
         let t, g = interp_entry_name false None e sep in
         GramNonTerminal (!@loc, t, g, Some (Names.Id.of_string s))
       | s = STRING ->
-	if String.is_empty s then Errors.user_err_loc (!@loc,"",Pp.str "Empty terminal.");
+	if String.is_empty s then Err.user_err_loc (!@loc,"",Pp.str "Empty terminal.");
         GramTerminal s
     ] ]
   ;

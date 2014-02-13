@@ -216,17 +216,17 @@ Module IOBase.
  Extract Constant catch => "fun s h -> ();
   fun () -> try s ()
   with Proof_errors.Exception e as src ->
-    let src = Errors.push src in
+    let src = Err.push src in
     let e = Backtrace.app_backtrace ~src ~dst:e in
     h e ()".
  Extraction Implicit catch [A].
 
  Parameter read_line : T String.
- Extract Constant read_line => "fun () -> try Pervasives.read_line () with e -> let e = Errors.push e in raise e ()".
+ Extract Constant read_line => "fun () -> try Pervasives.read_line () with e -> let e = Err.push e in raise e ()".
  Parameter print_char : Char -> T unit.
  Extract Constant print_char => "fun c -> (); fun () -> print_char c".
  Parameter print : Ppcmds -> T unit.
- Extract Constant print => "fun s -> (); fun () -> try Pp.pp s; Pp.pp_flush () with e -> let e = Errors.push e in raise e ()".
+ Extract Constant print => "fun s -> (); fun () -> try Pp.pp s; Pp.pp_flush () with e -> let e = Err.push e in raise e ()".
 
  Parameter timeout: forall A, Int -> T A -> T A.
  Extract Constant timeout => "fun n t -> (); fun () ->
@@ -243,7 +243,7 @@ Module IOBase.
       res
     with
     | e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       restore_timeout ();
       Pervasives.raise e
  ".
@@ -659,7 +659,7 @@ Module NonLogical.
  Parameter run : forall a:Set, t a -> a.
  Extract Constant run => "fun x ->
   try x () with Proof_errors.Exception e as src ->
-    let src = Errors.push src in
+    let src = Err.push src in
     let e = Backtrace.app_backtrace ~src ~dst:e in
     Pervasives.raise e".
  Extraction Implicit run [a].

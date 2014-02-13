@@ -15,7 +15,7 @@
 
 (* This file provides with various operations on modules and module types *)
 
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -286,7 +286,7 @@ let add_retroknowledge mp =
     |Retroknowledge.RKRegister (f, (Const _ | Ind _ as e)) ->
       Environ.register env f e
     |_ ->
-      Errors.anomaly ~label:"Modops.add_retroknowledge"
+      Err.anomaly ~label:"Modops.add_retroknowledge"
         (Pp.str "had to import an unsupported kind of term")
   in
   fun lclrk env ->

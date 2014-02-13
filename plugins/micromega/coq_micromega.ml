@@ -939,7 +939,7 @@ struct
                            let (expr,env) = parse_expr env args.(0) in
                            let power = (parse_exp expr args.(1)) in
                              (power  , env)
-			 with e when Errors.noncritical e ->
+			 with e when Err.noncritical e ->
                            (* if the exponent is a variable *)
                            let (env,n) = Env.compute_rank_add env term in (Mc.PEX n, env)
                        end
@@ -1111,7 +1111,7 @@ struct
       try
         let (at,env) = parse_atom env t in
         (A(at,tg,t), env,Tag.next tg)
-      with e when Errors.noncritical e -> (X(t),env,tg) in
+      with e when Err.noncritical e -> (X(t),env,tg) in
 
     let rec xparse_formula env tg term =
      match kind_of_term term with
@@ -1252,7 +1252,7 @@ let btree_of_array typ a  =
 let btree_of_array typ a =
  try
   btree_of_array typ a
- with x when Errors.noncritical x ->
+ with x when Err.noncritical x ->
   failwith (Printf.sprintf "btree of array : %s" (Printexc.to_string x))
 
 let dump_varmap typ env =
@@ -1321,7 +1321,7 @@ let rec parse_hyps parse_arith env tg hyps =
       try
        let (c,env,tg) = parse_formula parse_arith env  tg t in
 	((i,c)::lhyps, env,tg)
-      with e when Errors.noncritical e -> (lhyps,env,tg)
+      with e when Err.noncritical e -> (lhyps,env,tg)
        (*(if debug then Printf.printf "parse_arith : %s\n" x);*)
 
 
@@ -1465,7 +1465,7 @@ let compact_proofs (cnf_ff: 'cst cnf) res (cnf_ff': 'cst cnf) =
           (pp_ml_list prover.pp_f) (List.map fst new_cl)   ;
           flush stdout
       end ; *)
-    let res = try prover.compact prf remap with x when Errors.noncritical x ->
+    let res = try prover.compact prf remap with x when Err.noncritical x ->
       if debug then Printf.fprintf stdout "Proof compaction %s" (Printexc.to_string x) ;
       (* This should not happen -- this is the recovery plan... *)
       match prover.prover (List.map fst new_cl) with

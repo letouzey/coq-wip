@@ -104,11 +104,11 @@ let declare_command loc s c nt cl =
 	try do { 
           Vernacinterp.vinterp_add $se$ $funcl$;
           Vernac_classifier.declare_vernac_classifier $se$ $classl$ }
-	with [ e when Errors.noncritical e ->
+	with [ e when Err.noncritical e ->
 	  Pp.msg_warning
 	    (Pp.app
 	       (Pp.str ("Exception in vernac extend " ^ $se$ ^": "))
-	       (Errors.print e)) ];
+	       (Err.print e)) ];
 	Egramml.extend_vernac_command_grammar $se$ $nt$ $gl$
       } >> ]
 
@@ -143,7 +143,7 @@ EXTEND
         c = OPT [ "=>"; "["; c = Pcaml.expr; "]" -> <:expr< fun () -> $c$>> ];
                   "->"; "["; e = Pcaml.expr; "]" ->
       if String.is_empty s then
-        Errors.user_err_loc (!@loc,"",Pp.str"Command name is empty.");
+        Err.user_err_loc (!@loc,"",Pp.str"Command name is empty.");
       (Some s,l,c,<:expr< fun () -> $e$ >>)
       | "[" ; "-" ; l = LIST1 args ; "]" ;
         c = OPT [ "=>"; "["; c = Pcaml.expr; "]" -> <:expr< fun () -> $c$>> ];

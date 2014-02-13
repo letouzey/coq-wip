@@ -9,7 +9,7 @@
 open Pp
 open Compat
 open Tok
-open Errors
+open Err
 open Util
 open Extend
 open Genarg
@@ -740,7 +740,7 @@ let rec symbol_of_prod_entry_key = function
         in
         get_entry (get_univ u) s
       with Not_found ->
-        Errors.anomaly (str "Unregistered grammar entry: " ++ str s)
+        Err.anomaly (str "Unregistered grammar entry: " ++ str s)
     in
     Snterm (Gram.Entry.obj (object_of_typed_entry e))
   | Aentry (u,s) ->

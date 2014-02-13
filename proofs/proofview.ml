@@ -225,7 +225,7 @@ let apply env t sp =
 
 let rec catchable_exception = function
   | Proof_errors.Exception _ -> false
-  | e -> Errors.noncritical e
+  | e -> Err.noncritical e
 
 
 (* Unit of the tactic monad *)
@@ -281,9 +281,9 @@ let tclONCE t =
     | Cons (x,_) -> tclUNIT x
 
 exception MoreThanOneSuccess
-let _ = Errors.register_handler begin function
-  | MoreThanOneSuccess -> Errors.error "This tactic has more than one success."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | MoreThanOneSuccess -> Err.error "This tactic has more than one success."
+  | _ -> raise Err.Unhandled
 end
 
 (* [tclONCE e t] succeeds as [t] if [t] has exactly one
@@ -304,9 +304,9 @@ let tclEXACTLY_ONCE e t =
 
 (* Focuses a tactic at a range of subgoals, found by their indices. *)
 exception NoSuchGoals
-let _ = Errors.register_handler begin function
-  | NoSuchGoals -> Errors.error "No such goals."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | NoSuchGoals -> Err.error "No such goals."
+  | _ -> raise Err.Unhandled
 end
 let tclFOCUS_gen nosuchgoal i j t =
   (* spiwack: convenience notations, waiting for ocaml 3.12 *)
@@ -337,9 +337,9 @@ let tclTRYFOCUS i j t = tclFOCUS_gen (tclUNIT ()) i j t
    tactics), each element being the result of the tactic executed in
    the corresponding goal. *)
 exception SizeMismatch
-let _ = Errors.register_handler begin function
-  | SizeMismatch -> Errors.error "Incorrect number of goals."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | SizeMismatch -> Err.error "Incorrect number of goals."
+  | _ -> raise Err.Unhandled
 end
 
 (* A monadic list iteration function *)
@@ -529,7 +529,7 @@ let tclSENSITIVE s =
     let next = sensitive_on_proofview s env step in
     Proof.set next
   with e when catchable_exception e ->
-    let e = Errors.push e in
+    let e = Err.push e in
     tclZERO e
 
 let tclPROGRESS t =
@@ -545,7 +545,7 @@ let tclPROGRESS t =
   if test then
     tclUNIT res
   else
-    tclZERO (Errors.UserError ("Proofview.tclPROGRESS" , Pp.str"Failed to progress."))
+    tclZERO (Err.UserError ("Proofview.tclPROGRESS" , Pp.str"Failed to progress."))
 
 let tclEVARMAP =
   (* spiwack: convenience notations, waiting for ocaml 3.12 *)
@@ -556,9 +556,9 @@ let tclEVARMAP =
 let tclENV = Proof.current
 
 exception Timeout
-let _ = Errors.register_handler begin function
-  | Timeout -> Errors.errorlabstrm "Proofview.tclTIMEOUT" (Pp.str"Tactic timeout!")
-  | _ -> Pervasives.raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | Timeout -> Err.errorlabstrm "Proofview.tclTIMEOUT" (Pp.str"Tactic timeout!")
+  | _ -> Pervasives.raise Err.Unhandled
 end
 
 let tclTIMEOUT n t =
@@ -678,7 +678,7 @@ module V82 = struct
       let sgs = List.flatten goalss in
       Proof.set { ps with solution=evd ; comb=sgs; }
     with e when catchable_exception e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       tclZERO e
 
 
@@ -736,9 +736,9 @@ module V82 = struct
       let evl = Evarutil.non_instantiated pv.solution in
       let evl = Evar.Map.bindings evl in
       if (n <= 0) then
-	Errors.error "incorrect existential variable index"
+	Err.error "incorrect existential variable index"
       else if List.length evl < n then
-	  Errors.error "not so many uninstantiated existential variables"
+	  Err.error "not so many uninstantiated existential variables"
       else
 	List.nth evl (n-1) 
     in
@@ -751,7 +751,7 @@ module V82 = struct
       let (_,final,_) = apply (Goal.V82.env gls.Evd.sigma gls.Evd.it) t init in
       { Evd.sigma = final.solution ; it = final.comb }
     with Proof_errors.TacticFailure e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       raise e
 
   let put_status b =
@@ -761,7 +761,7 @@ module V82 = struct
 
   let wrap_exceptions f =
     try f ()
-    with e when catchable_exception e -> let e = Errors.push e in tclZERO e
+    with e when catchable_exception e -> let e = Err.push e in tclZERO e
 
 end
 
@@ -796,7 +796,7 @@ module Goal = struct
       Proof.set { step with solution=sigma } >>
       tclDISPATCH ks
     with e when catchable_exception e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       tclZERO e
 
   let enter_t f = Goal.enter begin fun env sigma hyps concl self ->
@@ -811,7 +811,7 @@ module Goal = struct
         let (t,_) = Goal.eval (enter_t f) env sigma goal in
         t
       with e when catchable_exception e ->
-        let e = Errors.push e in
+        let e = Err.push e in
         tclZERO e
     end
 

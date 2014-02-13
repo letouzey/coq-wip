@@ -60,7 +60,7 @@ let remove_module_dirpath_from_dirpath ~basedir dir =
 let get_uri_of_var v pvars =
   let rec search_in_open_sections =
    function
-      [] -> Errors.error ("Variable "^v^" not found")
+      [] -> Err.error ("Variable "^v^" not found")
     | he::tl as modules ->
        let dirpath = DirPath.make modules in
        if Id.List.mem (Id.of_string v) (Decls.last_section_hyps dirpath)
@@ -160,7 +160,7 @@ let family_of_term ty =
  match Term.kind_of_term ty with
     Term.Sort s -> Coq_sort (Term.family_of_sort s)
   | Term.Const _ -> CProp  (* I could check that the constant is CProp *)
-  | _ -> Errors.anomaly (Pp.str "family_of_term")
+  | _ -> Err.anomaly (Pp.str "family_of_term")
 ;;
 
 module CPropRetyping =
@@ -176,7 +176,7 @@ module CPropRetyping =
   | h::rest ->
       match T.kind_of_term (DoubleTypeInference.whd_betadeltaiotacprop env sigma typ) with
         | T.Prod (na,c1,c2) -> subst_type env sigma (V.subst1 h c2) rest
-        | _ -> Errors.anomaly (Pp.str "Non-functional construction")
+        | _ -> Err.anomaly (Pp.str "Non-functional construction")
 
 
   let sort_of_atomic_type env sigma ft args =
@@ -192,7 +192,7 @@ let typeur sigma metamap =
     match Term.kind_of_term cstr with
     | T.Meta n ->
           (try T.strip_outer_cast (Int.List.assoc n metamap)
-           with Not_found -> Errors.anomaly ~label:"type_of" (Pp.str "this is not a well-typed term"))
+           with Not_found -> Err.anomaly ~label:"type_of" (Pp.str "this is not a well-typed term"))
     | T.Rel n ->
         let (_,_,ty) = Environ.lookup_rel n env in
         V.lift n ty
@@ -201,7 +201,7 @@ let typeur sigma metamap =
           let (_,_,ty) = Environ.lookup_named id env in
           ty
         with Not_found ->
-          Errors.anomaly ~label:"type_of" (str "variable " ++ Id.print id ++ str " unbound"))
+          Err.anomaly ~label:"type_of" (str "variable " ++ Id.print id ++ str " unbound"))
     | T.Const c ->
         let cb = Environ.lookup_constant c env in
         Typeops.type_of_constant_type env (cb.Declarations.const_type)
@@ -211,7 +211,7 @@ let typeur sigma metamap =
     | T.Case (_,p,c,lf) ->
         let Inductiveops.IndType(_,realargs) =
           try Inductiveops.find_rectype env sigma (type_of env c)
-          with Not_found -> Errors.anomaly ~label:"type_of" (Pp.str "Bad recursive type") in
+          with Not_found -> Err.anomaly ~label:"type_of" (Pp.str "Bad recursive type") in
         let t = Reductionops.whd_beta sigma (T.applist (p, realargs)) in
         (match Term.kind_of_term (DoubleTypeInference.whd_betadeltaiotacprop env sigma (type_of env t)) with
           | T.Prod _ -> Reductionops.whd_beta sigma (T.applist (t, [c]))
@@ -252,7 +252,7 @@ let typeur sigma metamap =
           | _, (CProp as s) -> s)
     | T.App(f,args) -> sort_of_atomic_type env sigma (type_of env f) args
     | T.Lambda _ | T.Fix _ | T.Construct _ ->
-        Errors.anomaly ~label:"sort_of" (Pp.str "Not a type (1)")
+        Err.anomaly ~label:"sort_of" (Pp.str "Not a type (1)")
     | _ -> outsort env sigma (type_of env t)
 
   and sort_family_of env t =
@@ -264,7 +264,7 @@ let typeur sigma metamap =
     | T.App(f,args) ->
        sort_of_atomic_type env sigma (type_of env f) args
     | T.Lambda _ | T.Fix _ | T.Construct _ ->
-        Errors.anomaly ~label:"sort_of" (Pp.str "Not a type (1)")
+        Err.anomaly ~label:"sort_of" (Pp.str "Not a type (1)")
     | _ -> outsort env sigma (type_of env t)
 
   in type_of, sort_of, sort_family_of
@@ -344,7 +344,7 @@ let acic_of_cic_context' computeinnertypes seed ids_to_terms constr_to_ids
          if computeinnertypes then
 try
           Acic.CicHash.find terms_to_types tt
-with e when Errors.noncritical e ->
+with e when Err.noncritical e ->
 (*CSC: Warning: it really happens, for example in Ring_theory!!! *)
 Pp.msg_debug (Pp.(++) (Pp.str "BUG: this subterm was not visited during the double-type-inference: ") (Printer.pr_lconstr tt)) ; assert false
          else
@@ -509,7 +509,7 @@ print_endline "PASSATO" ; flush stdout ;
                add_inner_type fresh_id'' ;
               Acic.AEvar
                (fresh_id'', n, Array.to_list (Array.map (aux' env idrefs) l))
-           | Term.Meta _ -> Errors.anomaly (Pp.str "Meta met during exporting to XML")
+           | Term.Meta _ -> Err.anomaly (Pp.str "Meta met during exporting to XML")
            | Term.Sort s -> Acic.ASort (fresh_id'', s)
            | Term.Cast (v,_, t) ->
               Hashtbl.add ids_to_inner_sorts fresh_id'' innersort ;
@@ -723,7 +723,7 @@ print_endline "PASSATO" ; flush stdout ;
                 let ids = ref (Termops.ids_of_context env) in
                  Array.map
                   (function
-                      Names.Anonymous -> Errors.error "Anonymous fix function met"
+                      Names.Anonymous -> Err.error "Anonymous fix function met"
                     | Names.Name id as n ->
                        let res = Names.Name (Namegen.next_name_away n !ids) in
                         ids := id::!ids ;
@@ -736,7 +736,7 @@ print_endline "PASSATO" ; flush stdout ;
                     let fi' =
                      match fi with
                         Names.Name fi -> fi
-                      | Names.Anonymous -> Errors.error "Anonymous fix function met"
+                      | Names.Anonymous -> Err.error "Anonymous fix function met"
                     in
                      (id, fi', ai,
                       aux' env idrefs ti,
@@ -757,7 +757,7 @@ print_endline "PASSATO" ; flush stdout ;
                 let ids = ref (Termops.ids_of_context env) in
                  Array.map
                   (function
-                      Names.Anonymous -> Errors.error "Anonymous fix function met"
+                      Names.Anonymous -> Err.error "Anonymous fix function met"
                     | Names.Name id as n ->
                        let res = Names.Name (Namegen.next_name_away n !ids) in
                         ids := id::!ids ;
@@ -770,7 +770,7 @@ print_endline "PASSATO" ; flush stdout ;
                     let fi' =
                      match fi with
                         Names.Name fi -> fi
-                      | Names.Anonymous -> Errors.error "Anonymous fix function met"
+                      | Names.Anonymous -> Err.error "Anonymous fix function met"
                     in
                      (id, fi',
                       aux' env idrefs ti,

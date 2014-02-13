@@ -34,7 +34,7 @@ let proof_modes = Hashtbl.create 6
 let find_proof_mode n =
   try Hashtbl.find proof_modes n
   with Not_found ->
-    Errors.error (Format.sprintf "No proof mode named \"%s\"." n)
+    Err.error (Format.sprintf "No proof mode named \"%s\"." n)
 
 let register_proof_mode ({name = n} as m) =
   Hashtbl.add proof_modes n (Ephemeron.create m)
@@ -112,9 +112,9 @@ let push a l = l := a::!l;
   update_proof_mode ()
 
 exception NoSuchProof
-let _ = Errors.register_handler begin function
-  | NoSuchProof -> Errors.error "No such proof."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | NoSuchProof -> Err.error "No such proof."
+  | _ -> raise Err.Unhandled
 end
 let extract id l =
   let rec aux = function
@@ -128,9 +128,9 @@ let extract id l =
   np
 
 exception NoCurrentProof
-let _ = Errors.register_handler begin function
-  | NoCurrentProof -> Errors.error "No focused proof (No proof-editing in progress)."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | NoCurrentProof -> Err.error "No focused proof (No proof-editing in progress)."
+  | _ -> raise Err.Unhandled
 end
 let extract_top l =
   match !l with
@@ -198,7 +198,7 @@ let check_no_pending_proof () =
   if not (there_are_pending_proofs ()) then
     ()
   else begin
-    Errors.error (Pp.string_of_ppcmds
+    Err.error (Pp.string_of_ppcmds
       (str"Proof editing in progress" ++ msg_proofs () ++ fnl() ++
        str"Use \"Abort All\" first or complete proof(s)."))
   end
@@ -210,7 +210,7 @@ let discard (loc,id) =
   let n = List.length !pstates in
   discard_gen id;
   if Int.equal (List.length !pstates) n then
-    Errors.user_err_loc
+    Err.user_err_loc
       (loc,"Pfedit.delete_proof",str"No such proof" ++ msg_proofs ())
 
 let discard_current () =
@@ -235,9 +235,9 @@ let disactivate_proof_mode mode =
   Ephemeron.iter_opt (find_proof_mode mode) (fun x -> x.reset ())
 
 exception AlreadyExists
-let _ = Errors.register_handler begin function
-  | AlreadyExists -> Errors.error "Already editing something of that name."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | AlreadyExists -> Err.error "Already editing something of that name."
+  | _ -> raise Err.Unhandled
 end
 
 (** [start_proof id str goals terminator] starts a proof of name [id]
@@ -278,7 +278,7 @@ let set_used_variables l =
   | [] -> raise NoCurrentProof
   | p :: rest ->
       if not (Option.is_empty p.section_vars) then
-        Errors.error "Used section variables can be declared only once";
+        Err.error "Used section variables can be declared only once";
       pstates := { p with section_vars = Some ctx} :: rest
 
 let get_open_goals () =
@@ -309,7 +309,7 @@ let return_proof () =
   let { proof } = cur_pstate () in
   let initial_goals = Proof.initial_goals proof in
   let evd =
-    let error s = raise (Errors.UserError("last tactic before Qed",s)) in
+    let error s = raise (Err.UserError("last tactic before Qed",s)) in
     try Proof.return proof with
     | Proof.UnfinishedProof ->
         error(str"Attempt to save an incomplete proof")
@@ -463,9 +463,9 @@ let parse_goal_selector = function
       let err_msg = "A selector must be \"all\" or a natural number." in
       begin try
               let i = int_of_string i in
-              if i < 0 then Errors.error err_msg;
+              if i < 0 then Err.error err_msg;
               Vernacexpr.SelectNth i
-        with Failure _ -> Errors.error err_msg
+        with Failure _ -> Err.error err_msg
       end
 
 let _ =
@@ -492,7 +492,7 @@ type state = pstate list
 let freeze ~marshallable =
   match marshallable with
   | `Yes ->
-      Errors.anomaly (Pp.str"full marshalling of proof state not supported")
+      Err.anomaly (Pp.str"full marshalling of proof state not supported")
   | `Shallow -> !pstates
   | `No -> !pstates
 let unfreeze s = pstates := s; update_proof_mode ()

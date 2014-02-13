@@ -14,7 +14,7 @@ open Context
 open Evd
 open Environ
 open Nametab
-open Errors
+open Err
 open Util
 open Typeclasses_errors
 open Typeclasses
@@ -327,7 +327,7 @@ let context l =
   let () = List.iter (fun (n, b, t) -> Option.iter ce b; ce t) fullctx in
   let ctx =
     try named_of_rel_context fullctx
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       error "Anonymous variables not allowed in contexts."
   in
   let fn status (id, _, t) =

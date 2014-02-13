@@ -17,7 +17,7 @@ let pr_err s = Printf.eprintf "%s] %s\n" (process_id ()) s; flush stderr
 let prerr_endline s = if !Flags.debug then begin pr_err s end else ()
 
 open Vernacexpr
-open Errors
+open Err
 open Pp
 open Names
 open Util
@@ -50,7 +50,7 @@ let vernac_interp ?proof id { verbose; loc; expr } =
     prerr_endline ("interpreting " ^ string_of_ppcmds(pr_vernac expr));
     try Vernacentries.interp ~verbosely:verbose ?proof (loc, expr)
     with e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       raise (Cerrors.process_vernac_interp_error e)
   end
 
@@ -583,7 +583,7 @@ end = struct (* {{{ *)
       if Proof_global.there_are_pending_proofs () then
         VCS.goals id (Proof_global.get_open_goals ());
     with e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       let good_id = !cur_id in
       cur_id := Stateid.dummy;
       VCS.reached id false;
@@ -985,7 +985,7 @@ end = struct (* {{{ *)
       f, cancel_switch
 
   exception RemoteException of std_ppcmds
-  let _ = Errors.register_handler (function
+  let _ = Err.register_handler (function
     | RemoteException ppcmd -> ppcmd
     | _ -> raise Unhandled)
 
@@ -1172,7 +1172,7 @@ end = struct (* {{{ *)
         pr_err ("Fatal marshal error: " ^ s); flush_all (); exit 2
       | End_of_file ->
         prerr_endline "connection lost"; flush_all (); exit 2
-      | e when Errors.noncritical e ->
+      | e when Err.noncritical e ->
         (* This can happen if the proof is broken.  The error has also been
          * signalled as a feedback, hence we can silently recover *)
         let err_id, safe_id = match Stateid.get e with
@@ -1565,7 +1565,7 @@ let observe id =
     Reach.known_state ~cache:(interactive ()) id;
     VCS.print ()
   with e ->
-    let e = Errors.push e in
+    let e = Err.push e in
     VCS.print ();
     VCS.restore vcs;
     raise e
@@ -1605,7 +1605,7 @@ let check_task name (tasks,_) i =
     Pp.pperr_flush ();
     VCS.restore vcs;
     rc
-  with e when Errors.noncritical e -> VCS.restore vcs; false
+  with e when Err.noncritical e -> VCS.restore vcs; false
 let info_tasks (tasks,_) = Slaves.info_tasks tasks
 let finish_tasks name u d p (t,rcbackup as tasks) =
   RemoteCounter.restore rcbackup;
@@ -1658,7 +1658,7 @@ let handle_failure e vcs tty =
       end;
       VCS.print ();
       anomaly(str"error with no safe_id attached:" ++ spc() ++
-        Errors.print_no_report e)
+        Err.print_no_report e)
   | Some (safe_id, id) ->
       prerr_endline ("Failed at state " ^ Stateid.to_string id);
       VCS.restore vcs;
@@ -1721,13 +1721,13 @@ let process_transaction ~tty verbose c (loc, expr) =
           finish ();
           (try Future.purify (vernac_interp Stateid.dummy)
                   { verbose = true; loc; expr }
-           with e when Errors.noncritical e ->
-             let e = Errors.push e in
+           with e when Err.noncritical e ->
+             let e = Err.push e in
              raise(State.exn_on Stateid.dummy e)); `Ok
       | VtQuery false, VtNow ->
           (try vernac_interp Stateid.dummy x
-           with e when Errors.noncritical e ->
-             let e = Errors.push e in
+           with e when Err.noncritical e ->
+             let e = Err.push e in
              raise(State.exn_on Stateid.dummy e)); `Ok
       | VtQuery true, w ->
           let id = VCS.new_node () in
@@ -1825,7 +1825,7 @@ let process_transaction ~tty verbose c (loc, expr) =
     VCS.print ();
     rc
   with e ->
-    let e = Errors.push e in
+    let e = Err.push e in
     handle_failure e vcs tty
 
 (** STM interface {{{******************************************************* **)
@@ -1955,11 +1955,11 @@ let edit_at id =
     VCS.print ();
     rc
   with e ->
-    let e = Errors.push e in
+    let e = Err.push e in
     match Stateid.get e with
     | None ->
         VCS.print ();
-        anomaly (str ("edit_at: "^string_of_ppcmds (Errors.print_no_report e)))
+        anomaly (str ("edit_at: "^string_of_ppcmds (Err.print_no_report e)))
     | Some (_, id) ->
         prerr_endline ("Failed at state " ^ Stateid.to_string id);
         VCS.restore vcs;
@@ -1979,7 +1979,7 @@ let interp verb (_,e as lexpr) =
     let vcs = VCS.backup () in
     try finish ()
     with e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       handle_failure e vcs true
 
 let get_current_state () = VCS.cur_tip ()

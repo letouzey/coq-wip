@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -175,7 +175,7 @@ let double_ind h1 h2 =
   let abs =
     if abs_i < abs_j then Proofview.tclUNIT (abs_i,abs_j) else
     if abs_i > abs_j then  Proofview.tclUNIT (abs_j,abs_i) else
-      Proofview.tclZERO (Errors.UserError ("", Pp.str"Both hypotheses are the same.")) in
+      Proofview.tclZERO (Err.UserError ("", Pp.str"Both hypotheses are the same.")) in
   abs >>= fun (abs_i,abs_j) ->
   (Tacticals.New.tclTHEN (Tacticals.New.tclDO abs_i intro)
      (Tacticals.New.onLastHypId

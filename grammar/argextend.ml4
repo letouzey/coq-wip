@@ -226,8 +226,8 @@ let declare_vernac_argument loc s pr cl =
 	(None, [(None, None, $rules$)]);
       Pptactic.declare_extra_genarg_pprule $wit$
         $pr_rules$
-        (fun _ _ _ _ -> Errors.anomaly (Pp.str "vernac argument needs not globwit printer"))
-        (fun _ _ _ _ -> Errors.anomaly (Pp.str "vernac argument needs not wit printer")) }
+        (fun _ _ _ _ -> Err.anomaly (Pp.str "vernac argument needs not globwit printer"))
+        (fun _ _ _ _ -> Err.anomaly (Pp.str "vernac argument needs not wit printer")) }
       >> ]
 
 open Pcoq

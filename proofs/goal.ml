@@ -297,18 +297,18 @@ let clear ids = (); fun env rdefs gl info ->
 let wrap_apply_to_hyp_and_dependent_on sign id f g =
   try Environ.apply_to_hyp_and_dependent_on sign id f g
   with Environ.Hyp_not_found ->
-    Errors.error "No such assumption"
+    Err.error "No such assumption"
 
 let check_typability env sigma c =
   let _ = Typing.type_of env sigma c in ()
 
 let recheck_typability (what,id) env sigma t =
   try check_typability env sigma t
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     let s = match what with
       | None -> "the conclusion"
       | Some id -> "hypothesis "^(Names.Id.to_string id) in
-    Errors.error
+    Err.error
       ("The correctness of "^s^" relies on the body of "^(Names.Id.to_string id))
 
 let remove_hyp_body env sigma id =
@@ -316,7 +316,7 @@ let remove_hyp_body env sigma id =
     wrap_apply_to_hyp_and_dependent_on (Environ.named_context_val env) id
       (fun (_,c,t) _ ->
 	match c with
-	| None -> Errors.error ((Names.Id.to_string id)^" is not a local definition")
+	| None -> Err.error ((Names.Id.to_string id)^" is not a local definition")
 	| Some c ->(id,None,t))
       (fun (id',c,t as d) sign ->
 	(
@@ -386,9 +386,9 @@ let convert_hyp check (id,b,bt as d) = (); fun env rdefs gl info ->
   let replace_function =
     (fun _ (_,c,ct) _ ->
        if check && not (Reductionops.is_conv env sigma bt ct) then
-	 Errors.error ("Incorrect change of the type of "^(Names.Id.to_string id));
+	 Err.error ("Incorrect change of the type of "^(Names.Id.to_string id));
        if check && not (Option.equal (Reductionops.is_conv env sigma) b c) then
-	 Errors.error ("Incorrect change of the body of "^(Names.Id.to_string id));
+	 Err.error ("Incorrect change of the body of "^(Names.Id.to_string id));
        d)
   in
   (* Modified named context. *)
@@ -419,7 +419,7 @@ let convert_concl check cl' = (); fun env rdefs gl info ->
     rdefs := Evd.define gl.content new_constr !rdefs;
     { subgoals = [new_goal] }
   else
-    Errors.error "convert-concl rule passed non-converting term"
+    Err.error "convert-concl rule passed non-converting term"
 
 
 (*** Bureaucracy in hypotheses ***)
@@ -438,7 +438,7 @@ let rename_hyp id1 id2 = (); fun env rdefs gl info ->
     Names.Id.List.mem id2
       (Termops.ids_of_named_context (Environ.named_context_of_val hyps))
   then
-    Errors.error ((Names.Id.to_string id2)^" is already used.");
+    Err.error ((Names.Id.to_string id2)^" is already used.");
   let new_hyps = rename_hyp_sign id1 id2 hyps in
   let new_env = Environ.reset_with_named_context new_hyps env in
   let old_concl = concl env rdefs gl info in

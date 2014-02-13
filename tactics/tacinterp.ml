@@ -14,7 +14,7 @@ open Genredexpr
 open Glob_term
 open Glob_ops
 open Tacred
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -73,7 +73,7 @@ let catching_error call_trace fail e =
   in
   if List.is_empty call_trace && List.is_empty inner_trace then fail e
   else begin
-    assert (Errors.noncritical e); (* preserved invariant *)
+    assert (Err.noncritical e); (* preserved invariant *)
     let new_trace = inner_trace @ call_trace in
     let located_exc = Exninfo.add e ltac_trace_info new_trace in
     fail located_exc
@@ -88,8 +88,8 @@ let f_trace : ltac_trace TacStore.field = TacStore.field ()
 
 let catch_error call_trace f x =
   try f x
-  with e when Errors.noncritical e ->
-    let e = Errors.push e in
+  with e when Err.noncritical e ->
+    let e = Err.push e in
     catching_error call_trace raise e
 
 let catch_error_tac call_trace tac =
@@ -654,7 +654,7 @@ let interp_may_eval f ist env sigma = function
      try
 	f ist env sigma c
      with reraise ->
-       let reraise = Errors.push reraise in
+       let reraise = Err.push reraise in
        (* spiwack: to avoid unnecessary modifications of tacinterp, as this
           function already use effect, I call [run] hoping it doesn't mess
           up with any assumption. *)
@@ -668,7 +668,7 @@ let interp_constr_may_eval ist env sigma c =
     try
       interp_may_eval interp_constr ist env sigma c
     with reraise ->
-      let reraise = Errors.push reraise in
+      let reraise = Err.push reraise in
       (* spiwack: to avoid unnecessary modifications of tacinterp, as this
           function already use effect, I call [run] hoping it doesn't mess
           up with any assumption. *)
@@ -1100,7 +1100,7 @@ and interp_tacarg ist arg gl =
       else if String.equal tg "constr" then
         Proofview.tclUNIT (Value.of_constr (constr_out t))
       else
-        Errors.anomaly ~loc:dloc ~label:"Tacinterp.val_interp"
+        Err.anomaly ~loc:dloc ~label:"Tacinterp.val_interp"
 	  (str "Unknown dynamic: <" ++ str (Dyn.tag t) ++ str ">")
 
 (* Interprets an application node *)
@@ -1260,10 +1260,10 @@ and interp_match ist lz constr lmr gl =
     (interp_ltac_constr ist constr gl)
     begin function
       | e ->
-          (* spiwack: [Errors.push] here is unlikely to do what
+          (* spiwack: [Err.push] here is unlikely to do what
              it's intended to, or anything meaningful for that
              matter. *)
-          let e = Errors.push e in
+          let e = Err.push e in
           Proofview.tclLIFT (debugging_exception_step ist true e
           (fun () -> str "evaluation of the matched expression")) <*>
           Proofview.tclZERO e
@@ -1826,7 +1826,7 @@ and interp_atomic ist tac =
 	   is dropped as the evar_map taken as input (from
 	   extend_gl_hyps) is incorrect.  This means that evar
 	   instantiated by pf_interp_constr may be lost, there. *)
-          let to_catch = function Not_found -> true | e -> Errors.is_anomaly e in
+          let to_catch = function Not_found -> true | e -> Err.is_anomaly e in
           let (_,c_interp) =
 	    try pf_interp_constr ist (extend_gl_hyps gl sign) c
 	    with e when to_catch e (* Hack *) ->
@@ -2150,9 +2150,9 @@ let globTacticIn t = TacArg (dloc,TacDynamic (dloc,tactic_in t))
 let tacticIn t =
   globTacticIn (fun ist ->
     try glob_tactic (t ist)
-    with e when Errors.noncritical e -> anomaly ~label:"tacticIn"
+    with e when Err.noncritical e -> anomaly ~label:"tacticIn"
       (str "Incorrect tactic expression. Received exception is:" ++
-       Errors.print e))
+       Err.print e))
 
 (***************************************************************************)
 (* Backwarding recursive needs of tactic glob/interp/eval functions *)

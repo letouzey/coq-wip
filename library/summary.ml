@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 
 type marshallable = [ `Yes | `No | `Shallow ]
@@ -131,7 +131,7 @@ let unfreeze_summary datas =
       let (name, summary) = Int.Map.find id !summaries in
       try summary.unfreeze_function data
       with e ->
-        let e = Errors.push e in
+        let e = Err.push e in
         prerr_endline ("Exception unfreezing " ^ name);
         raise e)
   datas

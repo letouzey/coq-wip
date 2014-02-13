@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 
 (* Table of vernac entries *)
 let vernac_tab =
@@ -53,7 +53,7 @@ let call ?locality (opn,converted_args) =
   with
     | Drop -> raise Drop
     | reraise ->
-        let reraise = Errors.push reraise in
+        let reraise = Err.push reraise in
         if !Flags.debug then
 	  msg_debug (str"Vernac Interpreter " ++ str !loc);
         raise reraise

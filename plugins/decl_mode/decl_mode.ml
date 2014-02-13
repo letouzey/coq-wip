@@ -9,7 +9,7 @@
 open Names
 open Term
 open Evd
-open Errors
+open Err
 open Util
 
 let daimon_flag = ref false

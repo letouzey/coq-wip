@@ -9,7 +9,7 @@
 (* Parsing of vernacular. *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Flags
 open System
@@ -61,7 +61,7 @@ let display_cmd_header loc com =
   let (start,stop) = Loc.unloc loc in
   let safe_pr_vernac x =
     try Ppvernac.pr_vernac x
-    with e when Errors.noncritical e -> str (Printexc.to_string e) in
+    with e when Err.noncritical e -> str (Printexc.to_string e) in
   let cmd = noblank (shorten (string_of_ppcmds (safe_pr_vernac com)))
   in
   Pp.pp (str "Chars " ++ int start ++ str " - " ++ int stop ++
@@ -109,10 +109,10 @@ let raise_with_file f e =
   raise (add_exn_files e { outer = f; inner = inner_f })
 
 let disable_drop = function
-  | Drop -> Errors.error "Drop is forbidden."
+  | Drop -> Err.error "Drop is forbidden."
   | e -> e
 
-let user_error loc s = Errors.user_err_loc (loc,"_",str s)
+let user_error loc s = Err.user_err_loc (loc,"_",str s)
 
 (* Open an utf-8 encoded file and skip the byte-order mark if any *)
 
@@ -148,7 +148,7 @@ let close_input in_chan (_,verb) =
     match verb with
       | Some verb_ch -> close_in verb_ch
       | _ -> ()
-  with e when Errors.noncritical e -> ()
+  with e when Err.noncritical e -> ()
 
 let verbose_phrase verbch loc =
   let loc = Loc.unloc loc in
@@ -256,7 +256,7 @@ let rec vernac_com verbosely checknav (loc,com) =
             read_vernac_file verbosely (CUnix.make_suffix fname ".v");
 	    restore_translator_coqdoc st;
 	  with reraise ->
-            let reraise = Errors.push reraise in
+            let reraise = Err.push reraise in
 	    restore_translator_coqdoc st;
 	    raise reraise
 	end
@@ -275,7 +275,7 @@ let rec vernac_com verbosely checknav (loc,com) =
       let com = if !Flags.time then VernacTime com else com in
       interp com
     with reraise ->
-      let reraise = Errors.push reraise in
+      let reraise = Err.push reraise in
       Format.set_formatter_out_channel stdout;
       let loc' = Option.default Loc.ghost (Loc.get_loc reraise) in
       if Loc.is_ghost loc' then Loc.raise loc reraise
@@ -298,7 +298,7 @@ and read_vernac_file verbosely s =
       pp_flush ()
     done
   with any ->   (* whatever the exception *)
-    let e = Errors.push any in
+    let e = Err.push any in
     Format.set_formatter_out_channel stdout;
     close_input in_chan input;    (* we must close the file first *)
     match e with
@@ -332,7 +332,7 @@ let load_vernac verb file =
     read_vernac_file verb file;
     if !Flags.beautify_file then close_out !chan_beautify;
   with any ->
-    let e = Errors.push any in
+    let e = Err.push any in
     if !Flags.beautify_file then close_out !chan_beautify;
     raise_with_file file (disable_drop e)
 

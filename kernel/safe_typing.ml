@@ -163,7 +163,7 @@ let set_engagement c senv =
 let check_engagement env c =
   match Environ.engagement env, c with
   | None, Some ImpredicativeSet ->
-    Errors.error "Needs option -impredicative-set."
+    Err.error "Needs option -impredicative-set."
   | _ -> ()
 
 
@@ -256,10 +256,10 @@ let check_imports current_libs needed =
     try
       let actual_stamp = List.assoc_f DirPath.equal id current_libs in
       if not (String.equal stamp actual_stamp) then
-	Errors.error
+	Err.error
           ("Inconsistent assumptions over module "^(DirPath.to_string id)^".")
     with Not_found ->
-      Errors.error ("Reference to unknown module "^(DirPath.to_string id)^".")
+      Err.error ("Reference to unknown module "^(DirPath.to_string id)^".")
   in
   Array.iter check needed
 
@@ -276,7 +276,7 @@ let safe_push_named (id,_,_ as d) env =
   let _ =
     try
       let _ = Environ.lookup_named id env in
-      Errors.error ("Identifier "^Id.to_string id^" already defined.")
+      Err.error ("Identifier "^Id.to_string id^" already defined.")
     with Not_found -> () in
   Environ.push_named d env
 
@@ -676,7 +676,7 @@ let export compilation_mode senv dir =
     try
       if compilation_mode = Flags.BuildVi then { senv with future_cst = [] }
       else join_safe_environment senv
-    with e -> Errors.errorlabstrm "export" (Errors.print e)
+    with e -> Err.errorlabstrm "export" (Err.print e)
   in
   assert(senv.future_cst = []);
   let () = check_current_library dir senv in
@@ -764,7 +764,7 @@ let register_inline kn senv =
   let open Environ in
   let open Pre_env in
   if not (evaluable_constant kn senv.env) then
-    Errors.error "Register inline: an evaluable constant is expected";
+    Err.error "Register inline: an evaluable constant is expected";
   let env = pre_env senv.env in
   let (cb,r) = Cmap_env.find kn env.env_globals.env_constants in
   let cb = {cb with const_inline_code = true} in

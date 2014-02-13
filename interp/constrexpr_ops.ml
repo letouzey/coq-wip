@@ -320,18 +320,18 @@ let rec prod_constr_expr c = function
 let coerce_reference_to_id = function
   | Ident (_,id) -> id
   | Qualid (loc,_) ->
-      Errors.user_err_loc (loc, "coerce_reference_to_id",
+      Err.user_err_loc (loc, "coerce_reference_to_id",
         str "This expression should be a simple identifier.")
 
 let coerce_to_id = function
   | CRef (Ident (loc,id)) -> (loc,id)
-  | a -> Errors.user_err_loc
+  | a -> Err.user_err_loc
         (constr_loc a,"coerce_to_id",
          str "This expression should be a simple identifier.")
 
 let coerce_to_name = function
   | CRef (Ident (loc,id)) -> (loc,Name id)
   | CHole (loc,_,_) -> (loc,Anonymous)
-  | a -> Errors.user_err_loc
+  | a -> Err.user_err_loc
         (constr_loc a,"coerce_to_name",
          str "This expression should be a name.")

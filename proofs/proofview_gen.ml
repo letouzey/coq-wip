@@ -52,13 +52,13 @@ module IOBase =
   let catch = fun s h -> ();
   fun () -> try s ()
   with Proof_errors.Exception e as src ->
-    let src = Errors.push src in
+    let src = Err.push src in
     let e = Backtrace.app_backtrace ~src ~dst:e in
     h e ()
   
   (** val read_line : string coq_T **)
   
-  let read_line = fun () -> try Pervasives.read_line () with e -> let e = Errors.push e in raise e ()
+  let read_line = fun () -> try Pervasives.read_line () with e -> let e = Err.push e in raise e ()
   
   (** val print_char : char -> unit coq_T **)
   
@@ -66,7 +66,7 @@ module IOBase =
   
   (** val print : Pp.std_ppcmds -> unit coq_T **)
   
-  let print = fun s -> (); fun () -> try Pp.pp s; Pp.pp_flush () with e -> let e = Errors.push e in raise e ()
+  let print = fun s -> (); fun () -> try Pp.pp s; Pp.pp_flush () with e -> let e = Err.push e in raise e ()
   
   (** val timeout : int -> 'a1 coq_T -> 'a1 coq_T **)
   
@@ -84,7 +84,7 @@ module IOBase =
       res
     with
     | e ->
-      let e = Errors.push e in
+      let e = Err.push e in
       restore_timeout ();
       Pervasives.raise e
  
@@ -174,7 +174,7 @@ module NonLogical =
   
   let run = fun x ->
   try x () with Proof_errors.Exception e as src ->
-    let src = Errors.push src in
+    let src = Err.push src in
     let e = Backtrace.app_backtrace ~src ~dst:e in
     Pervasives.raise e
  end

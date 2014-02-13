@@ -32,7 +32,7 @@ end
 module Pool = Map.Make(IntOT)
 
 let schedule_vi_checking j fs =
-  if j < 1 then Errors.error "The number of workers must be bigger than 0";
+  if j < 1 then Err.error "The number of workers must be bigger than 0";
   let jobs = ref [] in
   List.iter (fun f ->
     let f =
@@ -106,7 +106,7 @@ let schedule_vi_checking j fs =
   exit !rc
 
 let schedule_vi_compilation j fs =
-  if j < 1 then Errors.error "The number of workers must be bigger than 0";
+  if j < 1 then Err.error "The number of workers must be bigger than 0";
   let jobs = ref [] in
   List.iter (fun f ->
     let f =

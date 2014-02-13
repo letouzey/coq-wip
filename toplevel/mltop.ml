@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Errors
+open Err
 open Util
 open Pp
 open Flags
@@ -117,8 +117,8 @@ let dir_ml_load s =
     | WithTop t ->
       (try t.load_obj s
        with
-       | e when Errors.noncritical e ->
-        let e = Errors.push e in
+       | e when Err.noncritical e ->
+        let e = Err.push e in
         match e with
         | (UserError _ | Failure _ | Not_found as u) -> raise u
         | exc ->

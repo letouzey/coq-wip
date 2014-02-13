@@ -9,7 +9,7 @@
 open Pp
 open Compat
 open Tok
-open Errors
+open Err
 open Util
 open Names
 open Constrexpr

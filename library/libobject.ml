@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Util
-open Errors
+open Err
 open Libnames
 open Mod_subst
 

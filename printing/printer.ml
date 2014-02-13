@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -163,7 +163,7 @@ let safe_gen f env c =
   let orig_extern_ref = Constrextern.get_extern_reference () in
   let extern_ref loc vars r =
     try orig_extern_ref loc vars r
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       Libnames.Qualid (loc, qualid_of_global env r)
   in
   Constrextern.set_extern_reference extern_ref;
@@ -171,7 +171,7 @@ let safe_gen f env c =
     let p = f env c in
     Constrextern.set_extern_reference orig_extern_ref;
     p
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     Constrextern.set_extern_reference orig_extern_ref;
     str "??"
 
@@ -684,7 +684,7 @@ let pr_assumptionset env s =
     in
     let safe_pr_ltype typ =
       try str " : " ++ pr_ltype typ
-      with e when Errors.noncritical e -> mt ()
+      with e when Err.noncritical e -> mt ()
     in
     let fold t typ accu =
       let (v, a, o, tr) = accu in

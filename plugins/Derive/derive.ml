@@ -35,9 +35,9 @@ let start_deriving f init_def r lemma =
   let terminator com =
     let open Proof_global in
     match com with
-    | Admitted -> Errors.error"Admitted isn't supported in Derive."
+    | Admitted -> Err.error"Admitted isn't supported in Derive."
     | Proved (_,Some _,_) ->
-        Errors.error"Cannot save a proof of Derive with an explicit name."
+        Err.error"Cannot save a proof of Derive with an explicit name."
     | Proved (opaque, None, obj) ->
         let (f_def,lemma_def) =
           match Proof_global.(obj.entries) with

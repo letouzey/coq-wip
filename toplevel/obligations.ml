@@ -18,7 +18,7 @@ open Vars
 open Names
 open Evd
 open Pp
-open Errors
+open Err
 open Util
 open Proof_type
 
@@ -286,7 +286,7 @@ let safe_init_constant md name () =
   Coqlib.gen_constant "Obligations" md name
 let hide_obligation = safe_init_constant tactics_module "obligation"
 
-let pperror cmd = Errors.errorlabstrm "Program" cmd
+let pperror cmd = Err.errorlabstrm "Program" cmd
 let error s = pperror (str s)
 
 let reduce c =
@@ -401,7 +401,7 @@ let obl_substitution expand obls deps =
        let xobl = obls.(x) in
        let oblb =
 	 try get_obligation_body expand xobl
-	 with e when Errors.noncritical e -> assert false
+	 with e when Err.noncritical e -> assert false
        in (xobl.obl_name, (xobl.obl_type, oblb)) :: acc)
     deps []
 
@@ -804,8 +804,8 @@ let rec solve_obligation prg num tac =
 		let _ = obls.(num) <- obl in
 		let res =
                   try update_obls prg obls (pred rem)
-		  with e when Errors.noncritical e ->
-                    pperror (Errors.print (Cerrors.process_vernac_interp_error e))
+		  with e when Err.noncritical e ->
+                    pperror (Err.print (Cerrors.process_vernac_interp_error e))
 		in
 		  match res with
 		  | Remain n when n > 0 ->
@@ -852,8 +852,8 @@ and solve_obligation_by_tac prg obls i tac =
 	      obls.(i) <- declare_obligation prg obl t;
 	      true
 	  else false
-	with e when Errors.noncritical e ->
-          let e = Errors.push e in
+	with e when Err.noncritical e ->
+          let e = Err.push e in
           match e with
 	  | Refiner.FailError (_, s) ->
 	      user_err_loc (fst obl.obl_location, "solve_obligation", Lazy.force s)

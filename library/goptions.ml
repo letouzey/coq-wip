@@ -9,7 +9,7 @@
 (* This module manages customization parameters at the vernacular level     *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Libobject
 open Libnames

@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -384,10 +384,10 @@ let general_rewrite_ebindings_clause cls lft2rgt occs frzevars dep_proof_ok ?tac
             begin function
               | e ->
                   (* Try to see if there's an equality hidden *)
-                  (* spiwack: [Errors.push] here is unlikely to do
+                  (* spiwack: [Err.push] here is unlikely to do
                      what it's intended to, or anything meaningful for
                      that matter. *)
-                  let e = Errors.push e in
+                  let e = Err.push e in
 	          let env' = push_rel_context rels env in
 	          let rels',t' = splay_prod_assum env' sigma t in (* Search for underlying eq *)
 	          match match_with_equality_type t' with
@@ -447,7 +447,7 @@ let general_multi_rewrite l2r with_evars ?tac c cl =
 	(* Otherwise, if we are told to rewrite in all hypothesis via the
            syntax "* |-", we fail iff all the different rewrites fail *)
 	let rec do_hyps_atleastonce = function
-	  | [] -> Proofview.tclZERO (Errors.UserError ("",Pp.str"Nothing to rewrite."))
+	  | [] -> Proofview.tclZERO (Err.UserError ("",Pp.str"Nothing to rewrite."))
 	  | id :: l ->
 	    Tacticals.New.tclIFTHENTRYELSEMUST
 	     (general_rewrite_ebindings_in l2r AllOccurrences false true ?tac id c with_evars)
@@ -808,7 +808,7 @@ let gen_absurdity id =
   then
     simplest_elim (mkVar id)
   else
-    Proofview.tclZERO (Errors.UserError ("Equality.gen_absurdity" , str "Not the negation of an equality."))
+    Proofview.tclZERO (Err.UserError ("Equality.gen_absurdity" , str "Not the negation of an equality."))
   end
 
 (* Precondition: eq is leibniz equality
@@ -868,7 +868,7 @@ let discrEq (lbeq,_,(t,t1,t2) as u) eq_clause =
     let concl = Proofview.Goal.concl gl in
     match find_positions env sigma t1 t2 with
     | Inr _ ->
-	Proofview.tclZERO (Errors.UserError ("discr" , str"Not a discriminable equality."))
+	Proofview.tclZERO (Err.UserError ("discr" , str"Not a discriminable equality."))
     | Inl (cpath, (_,dirn), _) ->
 	let sort = Tacmach.New.pf_apply get_type_of gl concl in
 	discr_positions env sigma u eq_clause cpath dirn sort
@@ -907,7 +907,7 @@ let onNegatedEquality with_evars tac =
           (Tacticals.New.onLastHypId (fun id ->
             onEquality with_evars tac (mkVar id,NoBindings)))
     | _ ->
-        Proofview.tclZERO (Errors.UserError ("" , str "Not a negated primitive equality."))
+        Proofview.tclZERO (Err.UserError ("" , str "Not a negated primitive equality."))
   end
 
 let discrSimpleClause with_evars = function
@@ -1192,7 +1192,7 @@ let inject_at_positions env sigma l2r (eq,_,(t,t1,t2)) eq_clause posns tac =
   in
   let injectors = List.map_filter filter posns in
   if List.is_empty injectors then
-    Proofview.tclZERO (Errors.UserError ("Equality.inj" , str "Failed to decompose the equality."))
+    Proofview.tclZERO (Err.UserError ("Equality.inj" , str "Failed to decompose the equality."))
   else
     Proofview.tclBIND
       (Proofview.Monad.List.map
@@ -1243,16 +1243,16 @@ let injEqThen tac l2r (eq,_,(t,t1,t2) as u) eq_clause =
   let env = eq_clause.env in
   match find_positions env sigma t1 t2 with
     | Inl _ ->
-	Proofview.tclZERO (Errors.UserError ("Inj",str"Not a projectable equality but a discriminable one."))
+	Proofview.tclZERO (Err.UserError ("Inj",str"Not a projectable equality but a discriminable one."))
     | Inr [] ->
-	Proofview.tclZERO (Errors.UserError ("Equality.inj",str"Nothing to do, it is an equality between convertible terms."))
+	Proofview.tclZERO (Err.UserError ("Equality.inj",str"Nothing to do, it is an equality between convertible terms."))
     | Inr [([],_,_)] when Flags.version_strictly_greater Flags.V8_3 ->
-        Proofview.tclZERO (Errors.UserError ("Equality.inj" , str"Nothing to inject."))
+        Proofview.tclZERO (Err.UserError ("Equality.inj" , str"Nothing to inject."))
     | Inr posns ->
         Proofview.tclORELSE
           begin Proofview.V82.tactic (inject_if_homogenous_dependent_pair env sigma u) end
           begin function
-            | Not_dep_pair as e |e when Errors.noncritical e ->
+            | Not_dep_pair as e |e when Err.noncritical e ->
                 inject_at_positions env sigma l2r u eq_clause posns
                   (tac (clenv_value eq_clause))
             | reraise -> Proofview.tclZERO reraise

@@ -8,7 +8,7 @@
 
 open Compat
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Pcoq

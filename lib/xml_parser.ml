@@ -167,7 +167,7 @@ let error_of_exn xparser = function
   | Internal_error e -> e
   | Xml_lexer.Error e -> convert e
   | e ->
-    (*let e = Errors.push e in: We do not record backtrace here. *)
+    (*let e = Err.push e in: We do not record backtrace here. *)
     raise e
 
 let do_parse xparser =

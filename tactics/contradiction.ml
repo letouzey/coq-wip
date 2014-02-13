@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Errors
+open Err
 open Term
 open Hipattern
 open Tacmach
@@ -102,7 +102,7 @@ let contradiction_term (c,lbind as cl) =
 	      Proofview.tclZERO Not_found
           end
           begin function
-            | Not_found -> Proofview.tclZERO (Errors.UserError ("",Pp.str"Not a contradiction."))
+            | Not_found -> Proofview.tclZERO (Err.UserError ("",Pp.str"Not a contradiction."))
             | e -> Proofview.tclZERO e
           end
     with e when Proofview.V82.catchable_exception e -> Proofview.tclZERO e

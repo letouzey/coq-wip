@@ -215,7 +215,7 @@ endif
 LINKCMO:=$(CORECMA) $(STATICPLUGINS)
 LINKCMX:=$(CORECMA:.cma=.cmxa) $(STATICPLUGINS:.cma=.cmxa)
 
-IDEDEPS:=lib/clib.cma lib/xml_lexer.cmo lib/xml_parser.cmo lib/xml_printer.cmo lib/errors.cmo lib/spawn.cmo
+IDEDEPS:=lib/clib.cma lib/xml_lexer.cmo lib/xml_parser.cmo lib/xml_printer.cmo lib/err.cmo lib/spawn.cmo
 IDECMA:=ide/ide.cma
 
 LINKIDE:=$(IDEDEPS) $(IDECMA) ide/coqide_main.ml
@@ -229,7 +229,7 @@ IDEMOD:=$(shell cat ide/ide.mllib)
 
 # coqmktop, coqc
 
-COQENVCMO:=lib/clib.cma lib/loc.cmo lib/errors.cmo
+COQENVCMO:=lib/clib.cma lib/loc.cmo lib/err.cmo
 
 COQMKTOPCMO:=$(COQENVCMO) tools/tolink.cmo tools/coqmktop.cmo
 

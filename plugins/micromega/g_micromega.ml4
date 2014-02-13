@@ -16,7 +16,7 @@
 
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
-open Errors
+open Err
 open Misctypes
 
 let out_arg = function

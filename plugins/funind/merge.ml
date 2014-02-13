@@ -11,7 +11,7 @@
 open Globnames
 open Tactics
 open Indfun_common
-open Errors
+open Err
 open Util
 open Constrexpr
 open Vernacexpr
@@ -73,7 +73,7 @@ let ident_global_exist id =
     let ans = CRef (Libnames.Ident (Loc.ghost,id)) in
     let _ = ignore (Constrintern.intern_constr (Global.env()) ans) in
     true
-  with e when Errors.noncritical e -> false
+  with e when Err.noncritical e -> false
 
 (** [next_ident_fresh id] returns a fresh identifier (ie not linked in
     global env) with base [id]. *)
@@ -788,10 +788,10 @@ let merge_inductive_body (shift:merge_infos) avoid (oib1:one_inductive_body)
 
   let params1 =
     try fst (glob_decompose_prod_n shift.nrecprms1 (List.hd lcstr1))
-    with e when Errors.noncritical e -> [] in
+    with e when Err.noncritical e -> [] in
   let params2 =
     try fst (glob_decompose_prod_n shift.nrecprms2 (List.hd lcstr2))
-    with e when Errors.noncritical e -> [] in
+    with e when Err.noncritical e -> [] in
 
   let lcstr1 = List.combine (Array.to_list oib1.mind_consnames) lcstr1 in
   let lcstr2 = List.combine (Array.to_list oib2.mind_consnames) lcstr2 in

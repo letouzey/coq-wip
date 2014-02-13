@@ -507,11 +507,11 @@ let rec fourier gl=
 		        with NoIneq -> ())
               hyps;
     (* lineq = les inéquations découlant des hypothèses *)
-    if !lineq=[] then Errors.error "No inequalities";
+    if !lineq=[] then Err.error "No inequalities";
     let res=fourier_lineq (!lineq) in
     let tac=ref tclIDTAC in
     if res=[]
-    then Errors.error "fourier failed"
+    then Err.error "fourier failed"
     (* l'algorithme de Fourier a réussi: on va en tirer une preuve Coq *)
     else (match res with
         [(cres,sres,lc)]->

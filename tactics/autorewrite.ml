@@ -14,7 +14,7 @@ open Tacticals
 open Tactics
 open Term
 open Termops
-open Errors
+open Err
 open Util
 open Tacexpr
 open Mod_subst

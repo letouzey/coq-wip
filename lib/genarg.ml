@@ -182,7 +182,7 @@ let (arg0_map : Obj.t option String.Map.t ref) = ref String.Map.empty
 
 let create_arg opt name =
   if String.Map.mem name !arg0_map then
-    Errors.anomaly (str "generic argument already declared: " ++ str name)
+    Err.anomaly (str "generic argument already declared: " ++ str name)
   else
     let () = arg0_map := String.Map.add name (Obj.magic opt) !arg0_map in
     ExtraArgType name
@@ -222,7 +222,7 @@ struct
   | ExtraArgType s ->
     if String.Map.mem s !arg0_map then
       let msg = str M.name ++ str " function already registered: " ++ str s in
-      Errors.anomaly msg
+      Err.anomaly msg
     else
       arg0_map := String.Map.add s (Obj.magic f) !arg0_map
   | _ -> assert false
@@ -232,7 +232,7 @@ struct
     with Not_found ->
       match M.default (ExtraArgType name) with
       | None ->
-        Errors.anomaly (str M.name ++ str " function not found: " ++ str name)
+        Err.anomaly (str M.name ++ str " function not found: " ++ str name)
       | Some obj -> obj
 
   (** For now, the following function is quite dummy and should only be applied

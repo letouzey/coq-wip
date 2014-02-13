@@ -1,5 +1,5 @@
 open Printer
-open Errors
+open Err
 open Util
 open Term
 open Vars
@@ -367,7 +367,7 @@ let generate_functional_principle
      Don't forget to close the goal if an error is raised !!!!
   *)
   save false new_princ_name entry g_kind hook
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     begin
       begin
 	try
@@ -379,7 +379,7 @@ let generate_functional_principle
 	  then Pfedit.delete_current_proof ()
 	  else ()
 	  else ()
-	with e when Errors.noncritical e -> ()
+	with e when Err.noncritical e -> ()
       end;
       raise (Defining_principle e)
     end
@@ -520,7 +520,7 @@ let make_scheme (fas : (constant*glob_sort) list) : Entries.definition_entry lis
 	0
 	(prove_princ_for_struct false 0 (Array.of_list funs))
 	(fun _ _ _ -> ())
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     begin
       begin
 	try
@@ -532,7 +532,7 @@ let make_scheme (fas : (constant*glob_sort) list) : Entries.definition_entry lis
 	  then Pfedit.delete_current_proof ()
 	  else ()
 	  else ()
-	with e when Errors.noncritical e -> ()
+	with e when Err.noncritical e -> ()
       end;
       raise (Defining_principle e)
     end
@@ -620,9 +620,9 @@ let build_scheme fas =
 	      try
 		match Nametab.global f with
 		  | Globnames.ConstRef c -> c
-		  | _ -> Errors.error "Functional Scheme can only be used with functions"
+		  | _ -> Err.error "Functional Scheme can only be used with functions"
 	      with Not_found ->
-	      	Errors.error ("Cannot find "^ Libnames.string_of_reference f)
+	      	Err.error ("Cannot find "^ Libnames.string_of_reference f)
 	    in
 	    (f_as_constant,sort)
 	 )
@@ -652,7 +652,7 @@ let build_case_scheme fa =
   let funs =  (fun (_,f,_) ->
 		 try Globnames.constr_of_global (Nametab.global f)
 		 with Not_found ->
-		   Errors.error ("Cannot find "^ Libnames.string_of_reference f)) fa in
+		   Err.error ("Cannot find "^ Libnames.string_of_reference f)) fa in
   let first_fun = destConst  funs in
 
   let funs_mp,funs_dp,_ = Names.repr_con first_fun in

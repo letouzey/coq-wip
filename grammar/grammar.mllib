@@ -11,7 +11,7 @@ Pp_control
 Flags
 Pp
 Loc
-Errors
+Err
 Hashset
 Hashcons
 CList

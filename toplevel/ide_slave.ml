@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Vernacexpr
-open Errors
+open Err
 open Util
 open Pp
 open Printer
@@ -94,7 +94,7 @@ let is_undo cmd = match cmd with
 (** Check whether a command is forbidden by CoqIDE *)
 
 let coqide_cmd_checks (loc,ast) =
-  let user_error s = Errors.user_err_loc (loc, "CoqIde", str s) in
+  let user_error s = Err.user_err_loc (loc, "CoqIde", str s) in
   if is_debug ast then
     user_error "Debug mode not available within CoqIDE";
   if is_known_option ast then
@@ -292,10 +292,10 @@ let handle_exn e =
   let loc_of e = match Loc.get_loc e with
     | Some loc when not (Loc.is_ghost loc) -> Some (Loc.unloc loc)
     | _ -> None in
-  let mk_msg e = read_stdout ()^"\n"^string_of_ppcmds (Errors.print e) in
+  let mk_msg e = read_stdout ()^"\n"^string_of_ppcmds (Err.print e) in
   match e with
-  | Errors.Drop -> dummy, None, "Drop is not allowed by coqide!"
-  | Errors.Quit -> dummy, None, "Quit is not allowed by coqide!"
+  | Err.Drop -> dummy, None, "Drop is not allowed by coqide!"
+  | Err.Quit -> dummy, None, "Quit is not allowed by coqide!"
   | e ->
       match Stateid.get e with
       | Some (valid, _) -> valid, loc_of e, mk_msg e
@@ -369,7 +369,7 @@ let print_xml =
   fun oc xml ->
     Mutex.lock m;
     try Xml_printer.print oc xml; Mutex.unlock m
-    with e -> let e = Errors.push e in Mutex.unlock m; raise e
+    with e -> let e = Err.push e in Mutex.unlock m; raise e
   
 
 let slave_logger xml_oc level message =

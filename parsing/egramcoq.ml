@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Compat
-open Errors
+open Err
 open Util
 open Pcoq
 open Extend
@@ -342,7 +342,7 @@ let with_grammar_rule_protection f x =
   let fs = freeze false in
   try let a = f x in unfreeze fs; a
   with reraise ->
-    let reraise = Errors.push reraise in
+    let reraise = Err.push reraise in
     let () = unfreeze fs in
     raise reraise
 

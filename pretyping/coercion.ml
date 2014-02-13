@@ -14,7 +14,7 @@
    Corbineau, Feb 2008 *)
 (* Turned into an abstract compilation unit by Matthieu Sozeau, March 2006 *)
 
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -334,7 +334,7 @@ let apply_coercion env sigma p hj typ_cl =
 		   jres),
 	      jres.uj_type)
            (hj,typ_cl) p)
-  with e when Errors.noncritical e -> anomaly (Pp.str "apply_coercion")
+  with e when Err.noncritical e -> anomaly (Pp.str "apply_coercion")
 
 let inh_app_fun env evd j =
   let t = whd_betadeltaiota env evd j.uj_type in

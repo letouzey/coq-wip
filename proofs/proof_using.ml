@@ -44,7 +44,7 @@ let process_expr env e ty =
   | SsType ->
       match ty with
       | [ty] -> Id.Set.elements (global_vars_set env ty)
-      | _ -> Errors.error"Proof using on a multiple lemma is not supported"
+      | _ -> Err.error"Proof using on a multiple lemma is not supported"
 
 let minimize_hyps env ids =
   let rec aux ids =

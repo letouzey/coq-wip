@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 
 open Names
@@ -312,7 +312,7 @@ let fetch_table what dp (f,pos,digest) =
     if not (String.equal (Digest.channel ch' pos') digest') then raise Faulty;
     let () = close_in ch' in
     table
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     error
       ("The file "^f^" (bound to " ^ dir_path ^
       ") is inaccessible or corrupted,\n" ^
@@ -761,7 +761,7 @@ let save_library_to ?todo dir f =
       if not (Int.equal (Nativelibrary.compile_library dir ast lp fn) 0) then
         msg_error (str"Could not compile the library to native code. Skipping.")
    with reraise ->
-    let reraise = Errors.push reraise in
+    let reraise = Err.push reraise in
     let () = msg_warning (str ("Removed file "^f')) in
     let () = close_out ch in
     let () = Sys.remove f' in

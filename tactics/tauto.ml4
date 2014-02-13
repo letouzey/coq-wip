@@ -18,7 +18,7 @@ open Stdarg
 open Tacticals
 open Tacinterp
 open Tactics
-open Errors
+open Err
 open Util
 
 let assoc_var s ist =

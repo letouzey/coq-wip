@@ -8,7 +8,7 @@
 
 open Util
 open Names
-open Errors
+open Err
 open Evar_refiner
 open Tacmach
 open Tacexpr

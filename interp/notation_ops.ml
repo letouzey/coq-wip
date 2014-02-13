@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -23,7 +23,7 @@ open Decl_kinds
 (* Re-interpret a notation as a glob_constr, taking care of binders     *)
 
 let name_to_ident = function
-  | Anonymous -> Errors.error "This expression should be a simple identifier."
+  | Anonymous -> Err.error "This expression should be a simple identifier."
   | Name id -> id
 
 let to_id g e id = let e,na = g e (Name id) in e,name_to_ident na

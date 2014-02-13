@@ -12,7 +12,7 @@ open Pp
 open Genredexpr
 open Glob_term
 open Tacred
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -350,13 +350,13 @@ let dump_glob_red_expr = function
     try
       Dumpglob.add_glob (loc_of_or_by_notation Libnames.loc_of_reference r)
 	(Smartlocate.smart_global r)
-    with e when Errors.noncritical e -> ()) occs
+    with e when Err.noncritical e -> ()) occs
   | Cbv grf | Lazy grf ->
     List.iter (fun r ->
       try
         Dumpglob.add_glob (loc_of_or_by_notation Libnames.loc_of_reference r)
 	  (Smartlocate.smart_global r)
-      with e when Errors.noncritical e -> ()) grf.rConst
+      with e when Err.noncritical e -> ()) grf.rConst
   | _ -> ()
 
 let intern_red_expr ist = function

@@ -9,7 +9,7 @@
 open Pp
 open Names
 open Namegen
-open Errors
+open Err
 open Util
 open Constrexpr
 open Tacexpr

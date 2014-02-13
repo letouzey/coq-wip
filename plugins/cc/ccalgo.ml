@@ -9,7 +9,7 @@
 (* This file implements the basic congruence-closure algorithm by *)
 (* Downey,Sethi and Tarjan. *)
 
-open Errors
+open Err
 open Util
 open Pp
 open Goptions
@@ -432,7 +432,7 @@ let build_subst uf subst =
   Array.map
     (fun i ->
       try term uf i
-      with e when Errors.noncritical e ->
+      with e when Err.noncritical e ->
         anomaly (Pp.str "incomplete matching"))
     subst
 

@@ -1,4 +1,4 @@
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -242,12 +242,12 @@ let derive_inversion fix_names =
 	   (fun id -> destInd (Constrintern.global_reference (mk_rel_id id)))
 	   fix_names
 	)
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       let e' = Cerrors.process_vernac_interp_error e in
       msg_warning
 	(str "Cannot build inversion information" ++
-	   if do_observe () then (fnl() ++ Errors.print e') else mt ())
-  with e when Errors.noncritical e -> ()
+	   if do_observe () then (fnl() ++ Err.print e') else mt ())
+  with e when Err.noncritical e -> ()
 
 let warning_error names e =
   let e = Cerrors.process_vernac_interp_error e in
@@ -255,12 +255,12 @@ let warning_error names e =
     match e with
       | ToShow e -> 
 	let e = Cerrors.process_vernac_interp_error e in
-	spc () ++ Errors.print e
+	spc () ++ Err.print e
       | _ -> 
 	if do_observe () 
 	then 
 	  let e = Cerrors.process_vernac_interp_error e in 
-	  (spc () ++ Errors.print e) 
+	  (spc () ++ Err.print e) 
 	else mt ()
   in
   match e with
@@ -280,8 +280,8 @@ let error_error names e =
   let e = Cerrors.process_vernac_interp_error e in
   let e_explain e =
     match e with
-      | ToShow e -> spc () ++ Errors.print e
-      | _ -> if do_observe () then (spc () ++ Errors.print e) else mt ()
+      | ToShow e -> spc () ++ Err.print e
+      | _ -> if do_observe () then (spc () ++ Err.print e) else mt ()
   in
   match e with
     | Building_graph e ->
@@ -344,7 +344,7 @@ let generate_principle  on_error
 	Array.iter (add_Function is_general) funs_kn;
 	()
       end
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     on_error names e
 
 let register_struct is_rec (fixpoint_exprl:(Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list) list) =
@@ -407,7 +407,7 @@ let register_wf ?(is_mes=false) fname rec_impls wf_rel_expr wf_arg using_lemmas 
 	   functional_ref eq_ref rec_arg_num rec_arg_type nb_args relation
 	);
       derive_inversion [fname]
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       (* No proof done *)
       ()
   in

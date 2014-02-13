@@ -57,10 +57,10 @@ let new_focus_kind () =
     of just one, if anyone needs it *)
 
 exception CannotUnfocusThisWay
-let _ = Errors.register_handler begin function
+let _ = Err.register_handler begin function
   | CannotUnfocusThisWay ->
-    Errors.error "This proof is focused, but cannot be unfocused this way"
-  | _ -> raise Errors.Unhandled
+    Err.error "This proof is focused, but cannot be unfocused this way"
+  | _ -> raise Err.Unhandled
 end
 
 let check_cond_kind c k =
@@ -141,9 +141,9 @@ let push_focus cond inf context pr =
   { pr with focus_stack = (cond,inf,context)::pr.focus_stack }
 
 exception FullyUnfocused
-let _ = Errors.register_handler begin function
-  | FullyUnfocused -> Errors.error "The proof is not focused"
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | FullyUnfocused -> Err.error "The proof is not focused"
+  | _ -> raise Err.Unhandled
 end
 (* An auxiliary function to read the kind of the next focusing step *)
 let cond_of_focus pr =
@@ -246,12 +246,12 @@ exception UnfinishedProof
 exception HasShelvedGoals
 exception HasGivenUpGoals
 exception HasUnresolvedEvar
-let _ = Errors.register_handler begin function
-  | UnfinishedProof -> Errors.error "Some goals have not been solved."
-  | HasShelvedGoals -> Errors.error "Some goals have been left on the shelf."
-  | HasGivenUpGoals -> Errors.error "Some goals have been given up."
-  | HasUnresolvedEvar -> Errors.error "Some existential variables are uninstantiated."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | UnfinishedProof -> Err.error "Some goals have not been solved."
+  | HasShelvedGoals -> Err.error "Some goals have been left on the shelf."
+  | HasGivenUpGoals -> Err.error "Some goals have been given up."
+  | HasUnresolvedEvar -> Err.error "Some existential variables are uninstantiated."
+  | _ -> raise Err.Unhandled
 end
 
 let return p =

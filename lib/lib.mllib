@@ -1,7 +1,7 @@
 Xml_lexer
 Xml_parser
 Xml_printer
-Errors
+Err
 Bigint
 Dyn
 Segmenttree

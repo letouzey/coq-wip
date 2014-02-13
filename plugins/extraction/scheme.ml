@@ -9,7 +9,7 @@
 (*s Production of Scheme syntax. *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Miniml

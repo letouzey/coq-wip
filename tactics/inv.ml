@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -285,7 +285,7 @@ let generalizeRewriteIntros tac depids id =
 let rec tclMAP_i n tacfun = function
   | [] -> Tacticals.New.tclDO n (tacfun None)
   | a::l ->
-      if Int.equal n 0 then Proofview.tclZERO (Errors.UserError ("", Pp.str"Too many names."))
+      if Int.equal n 0 then Proofview.tclZERO (Err.UserError ("", Pp.str"Too many names."))
       else Tacticals.New.tclTHEN (tacfun (Some a)) (tclMAP_i (n-1) tacfun l)
 
 let remember_first_eq id x = if !x == MoveLast then x := MoveAfter id
@@ -468,7 +468,7 @@ let raw_inversion inv_kind id status names =
       try
         Proofview.tclUNIT (reduce_to_atomic_ind (type_of c))
       with UserError _ ->
-        Proofview.tclZERO (Errors.UserError ("raw_inversion" ,
+        Proofview.tclZERO (Err.UserError ("raw_inversion" ,
 	                                     str ("The type of "^(Id.to_string id)^" is not inductive.")))
     end >>= fun (ind,t) ->
     try
@@ -497,8 +497,8 @@ let raw_inversion inv_kind id status names =
                  (Proofview.V82.tactic (apply_term (mkVar id)
                                           (List.init neqns (fun _ -> Evarutil.mk_new_meta()))))
                  reflexivity))])
-    with e when Errors.noncritical e ->
-      let e = Errors.push e in
+    with e when Err.noncritical e ->
+      let e = Err.push e in
       Proofview.tclZERO e
   end
 
@@ -506,7 +506,7 @@ let raw_inversion inv_kind id status names =
 let wrap_inv_error id = function
   | Indrec.RecursionSchemeError
       (Indrec.NotAllowedCaseAnalysis (_,(Type _ | Prop Pos as k),i)) ->
-      Proofview.tclZERO (Errors.UserError ("",
+      Proofview.tclZERO (Err.UserError ("",
 	(strbrk "Inversion would require case analysis on sort " ++
 	pr_sort k ++
 	strbrk " which is not allowed for inductive definition " ++

@@ -255,7 +255,7 @@ and nf_fun env f typ =
     try decompose_prod env typ
     with DestKO ->
       (* 27/2/13: Turned this into an anomaly *)
-      Errors.anomaly
+      Err.anomaly
         (Pp.strbrk "Returned a functional value in a type not recognized as a product type.")
   in
   let body = nf_val (push_rel (name,None,dom) env) vb codom in

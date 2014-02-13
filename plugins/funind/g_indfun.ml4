@@ -187,12 +187,12 @@ let warning_error names e =
 	Pp.msg_warning
 	  (str "Cannot define graph(s) for " ++
 	     h 1 (pr_enum Libnames.pr_reference names) ++
-	     if do_observe () then (spc () ++ Errors.print e) else mt ())
+	     if do_observe () then (spc () ++ Err.print e) else mt ())
     | Defining_principle e ->
 	Pp.msg_warning
 	  (str "Cannot define principle(s) for "++
 	     h 1 (pr_enum Libnames.pr_reference names) ++
-	     if do_observe () then Errors.print e else mt ())
+	     if do_observe () then Err.print e else mt ())
     | _ -> raise e
 
 
@@ -215,15 +215,15 @@ VERNAC COMMAND EXTEND NewFunctionalScheme
 		    ;
 		    try Functional_principles_types.build_scheme fas
 		    with Functional_principles_types.No_graph_found ->
-		      Errors.error ("Cannot generate induction principle(s)")
-		      | e when Errors.noncritical e ->
+		      Err.error ("Cannot generate induction principle(s)")
+		      | e when Err.noncritical e ->
 			  let names = List.map (fun (_,na,_) -> na) fas in
 			  warning_error names e
 
 		  end
 	      | _ -> assert false (* we can only have non empty  list *)
 	  end
-	  | e when Errors.noncritical e ->
+	  | e when Err.noncritical e ->
 	      let names = List.map (fun (_,na,_) -> na) fas in
 	      warning_error names e
       end
@@ -384,7 +384,7 @@ let finduction (oid:Id.t option) (heuristic: fapp_info list -> fapp_info list)
   let info_list = find_fapp test g in
   let ordered_info_list = heuristic info_list in
   prlistconstr (List.map (fun x -> applist (x.fname,x.largs)) ordered_info_list);
-  if List.is_empty ordered_info_list then Errors.error "function not found in goal\n";
+  if List.is_empty ordered_info_list then Err.error "function not found in goal\n";
   let taclist: Proof_type.tactic list =
     List.map
       (fun info ->
@@ -426,7 +426,7 @@ TACTIC EXTEND finduction
     ["finduction" ident(id) natural_opt(oi)] ->
       [
 	match oi with
-	  | Some(n) when n<=0 -> Errors.error "numerical argument must be > 0"
+	  | Some(n) when n<=0 -> Err.error "numerical argument must be > 0"
 	  | _ ->
 	      let heuristic = chose_heuristic oi in
 	      Proofview.V82.tactic (finduction (Some id) heuristic tclIDTAC)
@@ -474,10 +474,10 @@ VERNAC COMMAND EXTEND MergeFunind CLASSIFIED AS SIDEFF
        let ar2 = List.length (fst (decompose_prod f2type)) in
        let _ =
 	 if not (Int.equal ar1 (List.length cl1)) then
-	   Errors.error ("not the right number of arguments for " ^ Id.to_string id1) in
+	   Err.error ("not the right number of arguments for " ^ Id.to_string id1) in
        let _ =
 	 if not (Int.equal ar2 (List.length cl2)) then
-	   Errors.error ("not the right number of arguments for " ^ Id.to_string id2) in
+	   Err.error ("not the right number of arguments for " ^ Id.to_string id2) in
        Merge.merge id1 id2 (Array.of_list cl1) (Array.of_list cl2)  id
      ]
 END

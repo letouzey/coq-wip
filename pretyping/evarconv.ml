@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -529,7 +529,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	       in Success evd'
 	     with Univ.UniverseInconsistency _ ->
                UnifFailure (evd,UnifUnivInconsistency)
-	     | e when Errors.noncritical e -> UnifFailure (evd,NotSameHead))
+	     | e when Err.noncritical e -> UnifFailure (evd,NotSameHead))
 
 	| Prod (n,c1,c'1), Prod (_,c2,c'2) when app_empty ->
             ise_and evd

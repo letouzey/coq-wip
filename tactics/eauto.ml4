@@ -9,7 +9,7 @@
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -196,7 +196,7 @@ module SearchProblem = struct
 (* 	    let gl = Proof_trees.db_pr_goal (List.hd (sig_it glls)) in *)
 (* 	      msg (hov 1 (pptac ++ str" gives: \n" ++ pr_goals lgls ++ str"\n")); *)
 	      (lgls,pptac) :: aux tacl
-	  with e when Errors.noncritical e ->
+	  with e when Err.noncritical e ->
             Refiner.catch_failerror e; aux tacl
     in aux l
 

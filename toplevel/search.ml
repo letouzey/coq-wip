@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -241,8 +241,8 @@ let interface_search flags =
   | (Interface.Name_Pattern s, b) :: l ->
     let regexp =
       try Str.regexp s
-      with e when Errors.noncritical e ->
-        Errors.error ("Invalid regexp: " ^ s)
+      with e when Err.noncritical e ->
+        Err.error ("Invalid regexp: " ^ s)
     in
     extract_flags ((regexp, b) :: name) tpe subtpe mods blacklist l
   | (Interface.Type_Pattern s, b) :: l ->
@@ -260,7 +260,7 @@ let interface_search flags =
     let id =
       try Nametab.full_name_module qid
       with Not_found ->
-        Errors.error ("Module " ^ path ^ " not found.")
+        Err.error ("Module " ^ path ^ " not found.")
     in
     extract_flags name tpe subtpe ((id, b) :: mods) blacklist l
   | (Interface.Include_Blacklist, b) :: l ->

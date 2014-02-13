@@ -8,7 +8,7 @@
 
 (* Reserved names *)
 
-open Errors
+open Err
 open Util
 open Pp
 open Names

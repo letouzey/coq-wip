@@ -24,7 +24,7 @@ let register_alias key dp tac =
 
 let interp_alias key =
   try KNmap.find key !alias_map
-  with Not_found -> Errors.anomaly (str "Unknown tactic alias: " ++ KerName.print key)
+  with Not_found -> Err.anomaly (str "Unknown tactic alias: " ++ KerName.print key)
 
 (** ML tactic extensions (TacExtend) *)
 
@@ -40,7 +40,7 @@ let register_ml_tactic ?(overwrite = false) s (t : ml_tactic) =
         let () = Hashtbl.remove tac_tab s in
         msg_warning (str ("Overwriting definition of tactic " ^ s))
       else
-        Errors.anomaly (str ("Cannot redeclare tactic " ^ s ^ "."))
+        Err.anomaly (str ("Cannot redeclare tactic " ^ s ^ "."))
   in
   Hashtbl.add tac_tab s t
 
@@ -48,7 +48,7 @@ let interp_ml_tactic s =
   try
     Hashtbl.find tac_tab s
   with Not_found ->
-    Errors.errorlabstrm ""
+    Err.errorlabstrm ""
       (str "The tactic " ++ str s ++ str " is not installed.")
 
 let () =
@@ -107,7 +107,7 @@ let is_primitive_ltac_ident id =
     match Pcoq.parse_string Pcoq.Tactic.tactic id with
      | Tacexpr.TacArg _ -> false
      | _ -> true (* most probably TacAtom, i.e. a primitive tactic ident *)
-  with e when Errors.noncritical e -> true (* prim tactics with args, e.g. "apply" *)
+  with e when Err.noncritical e -> true (* prim tactics with args, e.g. "apply" *)
 
 let is_atomic_kn kn =
   let (_,_,l) = repr_kn kn in
@@ -195,14 +195,14 @@ let make_absolute_name ident repl =
       if KNmap.mem kn !mactab then
         if repl then id, kn
         else
-          Errors.user_err_loc (loc, "",
+          Err.user_err_loc (loc, "",
                        str "There is already an Ltac named " ++ pr_reference ident ++ str".")
       else if is_atomic_kn kn then
-        Errors.user_err_loc (loc, "",
+        Err.user_err_loc (loc, "",
                      str "Reserved Ltac name " ++ pr_reference ident ++ str".")
       else id, kn
   with Not_found ->
-    Errors.user_err_loc (loc, "",
+    Err.user_err_loc (loc, "",
                  str "There is no Ltac named " ++ pr_reference ident ++ str ".")
 
 let register_ltac local isrec tacl =

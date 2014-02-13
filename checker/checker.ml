@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open System
 open Flags
@@ -70,7 +70,7 @@ let add_path ~unix_path:dir ~coq_root:coq_dirpath =
 
 let convert_string d =
   try Id.of_string d
-  with Errors.UserError _ ->
+  with Err.UserError _ ->
     if_verbose msg_warning
       (str ("Directory "^d^" cannot be used as a Coq identifier (skipped)"));
     raise Exit
@@ -293,7 +293,7 @@ let rec explain_exn = function
 		   str ", characters " ++ int e ++ str "-" ++
 		   int (e+6) ++ str ")")) ++
 	       report ())
-  | e -> Errors.print e (* for anomalies and other uncaught exceptions *)
+  | e -> Err.print e (* for anomalies and other uncaught exceptions *)
 
 let parse_args argv =
   let rec parse = function
@@ -321,7 +321,7 @@ let parse_args argv =
     | "-debug" :: rem -> set_debug (); parse rem
 
     | "-where" :: _ ->
-        Envars.set_coqlib ~fail:Errors.error;
+        Envars.set_coqlib ~fail:Err.error;
         print_endline (Envars.coqlib ());
         exit 0
 
@@ -358,7 +358,7 @@ let init_with_argv argv =
     Sys.catch_break false; (* Ctrl-C is fatal during the initialisation *)
     try
       parse_args argv;
-      Envars.set_coqlib ~fail:Errors.error;
+      Envars.set_coqlib ~fail:Err.error;
       if_verbose print_header ();
       init_load_path ();
       engage ();

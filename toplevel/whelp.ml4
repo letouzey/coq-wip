@@ -10,7 +10,7 @@
 
 open Flags
 open Pp
-open Errors
+open Err
 open Names
 open Term
 open Glob_term

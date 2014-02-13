@@ -20,10 +20,10 @@ type opaque =
 
 (* hooks *)
 let default_get_opaque dp _ =
-  Errors.error
+  Err.error
     ("Cannot access opaque proofs in library " ^ DirPath.to_string dp)
 let default_get_univ dp _ =
-  Errors.error
+  Err.error
     ("Cannot access universe constraints of opaque proofs in library " ^
     DirPath.to_string dp)
 let default_mk_indirect _ = None
@@ -48,7 +48,7 @@ let create cu = Direct ([],cu)
 
 let turn_indirect o = match o with
   | Indirect _
-  | NoIndirect _ -> Errors.anomaly (Pp.str "Already an indirect opaque")
+  | NoIndirect _ -> Err.anomaly (Pp.str "Already an indirect opaque")
   | Direct (d,cu) ->
       let cu = Future.chain ~pure:true cu (fun (c, u) -> hcons_constr c, u) in
       match !mk_indirect (d,cu) with
@@ -58,17 +58,17 @@ let turn_indirect o = match o with
 let subst_opaque sub = function
   | Indirect (s,dp,i) -> Indirect (sub::s,dp,i)
   | NoIndirect (s,uc) -> NoIndirect (sub::s,uc)
-  | Direct _ -> Errors.anomaly (Pp.str "Substituting a Direct opaque")
+  | Direct _ -> Err.anomaly (Pp.str "Substituting a Direct opaque")
 
 let iter_direct_opaque f = function
   | Indirect _
-  | NoIndirect _ -> Errors.anomaly (Pp.str "Not a direct opaque")
+  | NoIndirect _ -> Err.anomaly (Pp.str "Not a direct opaque")
   | Direct (d,cu) ->
       Direct (d,Future.chain ~pure:true cu (fun (c, u) -> f c; c, u))
 
 let discharge_direct_opaque ~cook_constr ci = function
   | Indirect _
-  | NoIndirect _ -> Errors.anomaly (Pp.str "Not a direct opaque")
+  | NoIndirect _ -> Err.anomaly (Pp.str "Not a direct opaque")
   | Direct (d,cu) ->
       Direct (ci::d,Future.chain ~pure:true cu (fun (c, u) -> cook_constr c, u))
 

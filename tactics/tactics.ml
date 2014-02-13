@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -482,7 +482,7 @@ let rec intro_then_gen loc name_flag move_flag force_flag dep_flag tac =
 	     (intro_then_gen loc name_flag move_flag false dep_flag tac))
           begin function
             | RefinerError IntroNeedsProduct ->
-                Proofview.tclZERO (Loc.add_loc (Errors.UserError("Intro",str "No product even after head-reduction.")) loc)
+                Proofview.tclZERO (Loc.add_loc (Err.UserError("Intro",str "No product even after head-reduction.")) loc)
             | e -> Proofview.tclZERO e
           end
   end
@@ -1115,8 +1115,8 @@ let apply_in_once_main flags innerclause (d,lbind) gl =
   let thm = nf_betaiota gl.sigma (pf_type_of gl d) in
   let rec aux clause =
     try progress_with_clause flags innerclause clause
-    with e when Errors.noncritical e ->
-    let e = Errors.push e in
+    with e when Err.noncritical e ->
+    let e = Err.push e in
     try aux (clenv_push_prod clause)
     with NotExtensibleClause -> raise e
   in
@@ -1132,7 +1132,7 @@ let apply_in_once sidecond_first with_delta with_destruct with_evars id
       let clause = apply_in_once_main flags innerclause (c,lbind) gl in
       clenv_refine_in ~sidecond_first with_evars id clause gl
     with e when with_destruct ->
-      let e = Errors.push e in
+      let e = Err.push e in
       descend_in_conjunctions aux (fun _ -> raise e) c gl
   in
   aux with_destruct d gl0
@@ -1343,7 +1343,7 @@ let one_constructor i lbind = constructor_tac false None i lbind
  *)
 
 let rec tclANY tac = function
-| [] -> Proofview.tclZERO (Errors.UserError ("", str "No applicable tactic."))
+| [] -> Proofview.tclZERO (Err.UserError ("", str "No applicable tactic."))
 | arg :: l ->
   Proofview.tclOR (tac arg) (fun _ -> tclANY tac l)
 
@@ -1474,7 +1474,7 @@ let rewrite_hyp l2r id =
           else
 	    Tacticals.New.tclTHEN (rew_on l2r onConcl) (Proofview.V82.tactic (tclTRY (clear [id])))
       | _ ->
-          Proofview.tclZERO (Errors.UserError ("",Pp.str"Cannot find a known equation."))
+          Proofview.tclZERO (Err.UserError ("",Pp.str"Cannot find a known equation."))
     with e when Proofview.V82.catchable_exception e -> Proofview.tclZERO e
   end
 
@@ -1623,7 +1623,7 @@ let assert_as first ipat c =
       Tacticals.New.tclTHENS
 	(Proofview.V82.tactic ((if first then internal_cut_gen else internal_cut_rev_gen) repl id c))
 	(if first then [Proofview.tclUNIT (); tac] else [tac; Proofview.tclUNIT ()])
-  | _  -> Proofview.tclZERO (Errors.UserError ("",str"Not a proposition or a type."))
+  | _  -> Proofview.tclZERO (Err.UserError ("",str"Not a proposition or a type."))
   end
 
 let assert_tac na = assert_as true (ipat_of_name na)
@@ -1902,7 +1902,7 @@ let make_pattern_test env sigma0 (sigma,c) =
   let flags = default_matching_flags sigma0 in
   let matching_fun t =
     try let sigma = w_unify env sigma Reduction.CONV ~flags c t in Some(sigma,t)
-    with e when Errors.noncritical e -> raise NotUnifiable in
+    with e when Err.noncritical e -> raise NotUnifiable in
   let merge_fun c1 c2 =
     match c1, c2 with
     | Some (_,c1), Some (_,c2) when not (is_fconv Reduction.CONV env sigma0 c1 c2) ->
@@ -1962,7 +1962,7 @@ let letin_tac_gen with_eq name (sigmac,c) test ty occs =
             | IntroAnonymous -> Tacmach.New.of_old (fresh_id [id] (add_prefix "Heq" id)) gl
 	    | IntroFresh heq_base -> Tacmach.New.of_old (fresh_id [id] heq_base) gl
             | IntroIdentifier id -> id
-	    | _ -> Errors.error "Expect an introduction pattern naming one hypothesis." in
+	    | _ -> Err.error "Expect an introduction pattern naming one hypothesis." in
             let eqdata = build_coq_eq_data () in
             let args = if lr then [t;mkVar id;c] else [t;c;mkVar id]in
             let eq = applist (eqdata.eq,args) in
@@ -2800,7 +2800,7 @@ let specialize_eqs id gl =
 let specialize_eqs id gl =
   if
     (try ignore(clear [id] gl); false
-     with e when Errors.noncritical e -> true)
+     with e when Err.noncritical e -> true)
   then
     tclFAIL 0 (str "Specialization not allowed on dependent hypotheses") gl
   else specialize_eqs id gl
@@ -2962,7 +2962,7 @@ let compute_elim_sig ?elimc elimt =
       | Some ( _,None,ind) ->
 	  let indhd,indargs = decompose_app ind in
 	  try {!res with indref = Some (global_of_constr indhd) }
-	  with e when Errors.noncritical e ->
+	  with e when Err.noncritical e ->
             error "Cannot find the inductive type of the inductive scheme.";;
 
 let compute_scheme_signature scheme names_info ind_type_guess =
@@ -3305,7 +3305,7 @@ let induction_without_atomization isrec with_evars elim names lid =
   in
   let nlid = List.length lid in
   if not (Int.equal nlid awaited_nargs)
-  then Proofview.tclZERO (Errors.UserError ("", str"Not the right number of induction arguments."))
+  then Proofview.tclZERO (Err.UserError ("", str"Not the right number of induction arguments."))
   else induction_from_context_l with_evars elim_info lid names
   end
 
@@ -3559,7 +3559,7 @@ let andE id =
   if is_conjunction (hnf_constr t) then
     (Tacticals.New.tclTHEN (simplest_elim (mkVar id)) (Tacticals.New.tclDO 2 intro))
   else
-    Proofview.tclZERO (Errors.UserError (
+    Proofview.tclZERO (Err.UserError (
       "andE" , (str("Tactic andE expects "^(Id.to_string id)^" is a conjunction."))))
   end
 
@@ -3577,7 +3577,7 @@ let orE id =
   if is_disjunction (hnf_constr t) then
     (Tacticals.New.tclTHEN (simplest_elim (mkVar id)) intro)
   else
-    Proofview.tclZERO (Errors.UserError (
+    Proofview.tclZERO (Err.UserError (
       "orE" , (str("Tactic orE expects "^(Id.to_string id)^" is a disjunction."))))
   end
 
@@ -3598,7 +3598,7 @@ let impE id =
       (cut_intro rng)
       (Proofview.V82.tactic (apply_term (mkVar id) [mkMeta (new_meta())]))
   else
-    Proofview.tclZERO (Errors.UserError (
+    Proofview.tclZERO (Err.UserError (
       "impE" , (str("Tactic impE expects "^(Id.to_string id)^
 	      " is a an implication."))))
   end
@@ -3805,7 +3805,7 @@ let transitivity_red allowred t =
       end
   | None,eq,eq_kind ->
       match t with
-      | None -> Proofview.tclZERO (Errors.UserError ("",str"etransitivity not supported for this relation."))
+      | None -> Proofview.tclZERO (Err.UserError ("",str"etransitivity not supported for this relation."))
       | Some t -> prove_transitivity eq eq_kind t
   end
 
@@ -3898,7 +3898,7 @@ let unify ?(state=full_transparent_state) x y gl =
     in
     let evd = w_unify (pf_env gl) (project gl) Reduction.CONV ~flags x y
     in tclEVARS evd gl
-  with e when Errors.noncritical e -> tclFAIL 0 (str"Not unifiable") gl
+  with e when Err.noncritical e -> tclFAIL 0 (str"Not unifiable") gl
 
 let emit_side_effects eff gl =
 (* Declareops.iter_side_effects (fun e ->

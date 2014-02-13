@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open System
 open Flags
@@ -30,7 +30,7 @@ let get_version_date () =
     let rev = input_line ch in
     let () = close_in ch in
     (ver,rev)
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     (Coq_config.version,Coq_config.date)
 
 let print_header () =
@@ -423,8 +423,8 @@ let parse_args arglist =
   with
     | UserError(_, s) as e ->
       if is_empty s then exit 1
-      else fatal_error (Errors.print e)
-    | any -> fatal_error (Errors.print any)
+      else fatal_error (Err.print e)
+    | any -> fatal_error (Err.print any)
 
 let init arglist =
   init_gc ();
@@ -443,7 +443,7 @@ let init arglist =
       (* If we have been spawned by the Spawn module, this has to be done
        * early since the master waits us to connect back *)
       Spawned.init_channels ();
-      Envars.set_coqlib Errors.error;
+      Envars.set_coqlib Err.error;
       if !print_where then (print_endline (Envars.coqlib ()); exit (exitcode ()));
       if !print_config then (Usage.print_config (); exit (exitcode ()));
       if !filter_opts then (print_string (String.concat "\n" extras); exit 0);

@@ -9,7 +9,7 @@
 (*i camlp4deps: "grammar/grammar.cma grammar/q_constr.cmo" i*)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -372,7 +372,7 @@ let coq_jmeq_pattern = lazy PATTERN [ %coq_jmeq_ref ?X1 ?X2 ?X3 ?X4 ]
 let match_eq eqn eq_pat =
   let pat =
     try Lazy.force eq_pat
-    with e when Errors.noncritical e -> raise PatternMatchingFailure
+    with e when Err.noncritical e -> raise PatternMatchingFailure
   in
   match Id.Map.bindings (matches pat eqn) with
     | [(m1,t);(m2,x);(m3,y)] ->

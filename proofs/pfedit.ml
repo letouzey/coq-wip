@@ -42,7 +42,7 @@ let cook_this_proof p =
   match p with
   | { Proof_global.id;entries=[constr];persistence } ->
       (id,(constr,persistence))
-  | _ -> Errors.anomaly ~label:"Pfedit.cook_proof" (Pp.str "more than one proof term.")
+  | _ -> Err.anomaly ~label:"Pfedit.cook_proof" (Pp.str "more than one proof term.")
 
 let cook_proof () =
   cook_this_proof (fst (Proof_global.close_proof (fun x -> x)))
@@ -58,9 +58,9 @@ let get_used_variables () =
   Proof_global.get_used_variables ()
 
 exception NoSuchGoal
-let _ = Errors.register_handler begin function
-  | NoSuchGoal -> Errors.error "No such goal."
-  | _ -> raise Errors.Unhandled
+let _ = Err.register_handler begin function
+  | NoSuchGoal -> Err.error "No such goal."
+  | _ -> raise Err.Unhandled
 end
 let get_nth_V82_goal i =
   let p = Proof_global.give_me_the_proof () in
@@ -73,11 +73,11 @@ let get_goal_context_gen i =
   try
 let { it=goal ; sigma=sigma; } =  get_nth_V82_goal i in
 (sigma, Refiner.pf_env { it=goal ; sigma=sigma; })
-  with Proof_global.NoCurrentProof -> Errors.error "No focused proof."
+  with Proof_global.NoCurrentProof -> Err.error "No focused proof."
 
 let get_goal_context i =
   try get_goal_context_gen i
-  with NoSuchGoal -> Errors.error "No such goal."
+  with NoSuchGoal -> Err.error "No such goal."
 
 let get_current_goal_context () =
   try get_goal_context_gen 1
@@ -89,7 +89,7 @@ let get_current_goal_context () =
 let current_proof_statement () =
   match Proof_global.V82.get_current_initial_conclusions () with
     | (id,([concl],strength)) -> id,strength,concl
-    | _ -> Errors.anomaly ~label:"Pfedit.current_proof_statement" (Pp.str "more than one statement")
+    | _ -> Err.anomaly ~label:"Pfedit.current_proof_statement" (Pp.str "more than one statement")
 
 let solve ?with_end_tac gi tac pr =
   try 
@@ -102,11 +102,11 @@ let solve ?with_end_tac gi tac pr =
     in
     Proof.run_tactic (Global.env ()) tac pr
   with
-    | Proof_global.NoCurrentProof  -> Errors.error "No focused proof"
+    | Proof_global.NoCurrentProof  -> Err.error "No focused proof"
     | Proofview.IndexOutOfRange -> 
         match gi with
 	| Vernacexpr.SelectNth i -> let msg = str "No such goal: " ++ int i ++ str "." in
-	                            Errors.errorlabstrm "" msg
+	                            Err.errorlabstrm "" msg
         | _ -> assert false
 
 let by tac = Proof_global.with_current_proof (fun _ -> solve (Vernacexpr.SelectNth 1) tac)
@@ -164,6 +164,6 @@ let solve_by_implicit_tactic env sigma evk =
       when
 	Context.named_context_equal (Environ.named_context_of_val evi.evar_hyps)
 	(Environ.named_context env) ->
-      (try fst (build_by_tactic env evi.evar_concl (Proofview.tclTHEN tac (Proofview.tclEXTEND [] (Proofview.tclZERO (Errors.UserError ("",Pp.str"Proof is not complete."))) [])))
+      (try fst (build_by_tactic env evi.evar_concl (Proofview.tclTHEN tac (Proofview.tclEXTEND [] (Proofview.tclZERO (Err.UserError ("",Pp.str"Proof is not complete."))) [])))
        with e when Logic.catchable_exception e -> raise Exit)
   | _ -> raise Exit

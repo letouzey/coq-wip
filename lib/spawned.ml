@@ -58,13 +58,13 @@ let control_channel = ref None
 let channels = ref None
 
 let init_channels () =
-  if !channels <> None then Errors.anomaly(Pp.str "init_channels called twice");
+  if !channels <> None then Err.anomaly(Pp.str "init_channels called twice");
   match !main_channel, !control_channel with
   | None, None -> ()
   | None, Some _ | Some _, None ->
-      Errors.anomaly (Pp.str "incomplete channels options")
+      Err.anomaly (Pp.str "incomplete channels options")
   | _, Some AnonPipe ->
-      Errors.anomaly (Pp.str "control channel cannot be a pipe")
+      Err.anomaly (Pp.str "control channel cannot be a pipe")
   | Some (Socket(mh,mp)), Some (Socket(ch,cp)) ->
       channels := Some (open_bin_connection mh mp);
       controller ch cp
@@ -80,6 +80,6 @@ let init_channels () =
 
 let get_channels () =
   match !channels with
-  | None -> Errors.anomaly(Pp.str "init_channels not called")
+  | None -> Err.anomaly(Pp.str "init_channels not called")
   | Some(ic, oc) -> ic, oc
 

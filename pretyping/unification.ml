@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -435,7 +435,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 		 then Evd.set_leq_sort sigma s1 s2 
 		 else Evd.set_eq_sort sigma s1 s2 
 	       in (sigma', metasubst, evarsubst)
-	     with e when Errors.noncritical e ->
+	     with e when Err.noncritical e ->
                error_cannot_unify curenv sigma (m,n))
 
 	| Lambda (na,t1,c1), Lambda (_,t2,c2) ->
@@ -720,11 +720,11 @@ let merge_instances env sigma flags st1 st2 c1 c2 =
       else (right, st2, res)
   | (IsSuperType,IsSubType) ->
     (try (left, IsSubType, unify_0 env sigma CUMUL flags c2 c1)
-     with e when Errors.noncritical e ->
+     with e when Err.noncritical e ->
        (right, IsSubType, unify_0 env sigma CUMUL flags c1 c2))
   | (IsSubType,IsSuperType) ->
     (try (left, IsSuperType, unify_0 env sigma CUMUL flags c1 c2)
-     with e when Errors.noncritical e ->
+     with e when Err.noncritical e ->
        (right, IsSuperType, unify_0 env sigma CUMUL flags c2 c1))
     
 (* Unification
@@ -931,7 +931,7 @@ let w_merge env with_types flags (evd,metas,evars) =
 	let rec process_eqns failures = function
 	  | (mv,status,c)::eqns ->
               (match (try Inl (unify_type env evd flags mv status c)
-		      with e when Errors.noncritical e -> Inr e)
+		      with e when Err.noncritical e -> Inr e)
 	       with 
 	       | Inr e -> process_eqns (((mv,status,c),e)::failures) eqns
 	       | Inl (evd,metas,evars) ->

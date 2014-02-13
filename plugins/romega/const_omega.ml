@@ -39,7 +39,7 @@ let destructurate t =
     | Term.Var id,[] -> Kvar(Names.Id.to_string id)
     | Term.Prod (Names.Anonymous,typ,body), [] -> Kimp(typ,body)
     | Term.Prod (Names.Name _,_,_),[] ->
-	Errors.error "Omega: Not a quantifier-free goal"
+	Err.error "Omega: Not a quantifier-free goal"
     | _ -> Kufo
 
 exception Destruct
@@ -334,7 +334,7 @@ let parse_term t =
     | Kapp("Z.succ",[t]) -> Tsucc t
     | Kapp("Z.pred",[t]) -> Tplus(t, mk_Z (Bigint.neg Bigint.one))
     | Kapp(("Zpos"|"Zneg"|"Z0"),_) ->
-	(try Tnum (recognize t) with e when Errors.noncritical e -> Tother)
+	(try Tnum (recognize t) with e when Err.noncritical e -> Tother)
     | _ -> Tother
   with e when Logic.catchable_exception e -> Tother
 
@@ -356,6 +356,6 @@ let is_scalar t =
     | Kapp(("Z.opp"|"Z.succ"|"Z.pred"),[t]) -> aux t
     | Kapp(("Zpos"|"Zneg"|"Z0"),_) -> let _ = recognize t in true
     | _ -> false in
-  try aux t with e when Errors.noncritical e -> false
+  try aux t with e when Err.noncritical e -> false
 
 end

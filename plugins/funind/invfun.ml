@@ -7,7 +7,7 @@
 (************************************************************************)
 open Tacexpr
 open Declarations
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -62,7 +62,7 @@ let observe strm =
 let do_observe_tac s tac g =
   let goal =
     try Printer.pr_goal g
-    with e when Errors.noncritical e -> assert false
+    with e when Err.noncritical e -> assert false
   in
   try
     let v = tac g in
@@ -70,7 +70,7 @@ let do_observe_tac s tac g =
   with reraise ->
     let e = Cerrors.process_vernac_interp_error reraise in
     msgnl (str "observation "++ s++str " raised exception " ++
-	     Errors.print e ++ str " on goal " ++ goal );
+	     Err.print e ++ str " on goal " ++ goal );
     raise reraise;;
 
 
@@ -828,7 +828,7 @@ let rec reflexivity_with_destruct_cases g =
 	      observe_tac "reflexivity_with_destruct_cases" reflexivity_with_destruct_cases
 	    ]
         | _ -> Proofview.V82.of_tactic reflexivity
-    with e when Errors.noncritical e -> Proofview.V82.of_tactic reflexivity
+    with e when Err.noncritical e -> Proofview.V82.of_tactic reflexivity
   in
   let eq_ind =     Coqlib.build_coq_eq () in
   let discr_inject =
@@ -1220,7 +1220,7 @@ let invfun qhyp f  =
   let f =
     match f with
       | ConstRef f -> f
-      | _ -> raise (Errors.UserError("",str "Not a function"))
+      | _ -> raise (Err.UserError("",str "Not a function"))
   in
   try
     let finfos = find_Function_infos f in

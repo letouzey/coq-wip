@@ -8,7 +8,7 @@
 
 open Util
 open Pp
-open Errors
+open Err
 open Names
 open Context
 open Vars

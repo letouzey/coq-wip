@@ -108,7 +108,7 @@ let dest_class_arity env c =
 
 let class_of_constr c =
   try Some (dest_class_arity (Global.env ()) c)
-  with e when Errors.noncritical e -> None
+  with e when Err.noncritical e -> None
 
 let rec is_class_type evd c =
   match kind_of_term c with
@@ -195,7 +195,7 @@ let rebuild_class cl =
   try 
     let cst = Tacred.evaluable_of_global_reference (Global.env ()) cl.cl_impl in
       set_typeclass_transparency cst false false; cl
-  with e when Errors.noncritical e -> cl
+  with e when Err.noncritical e -> cl
 
 let class_input : typeclass -> obj =
   declare_object
@@ -218,7 +218,7 @@ let check_instance env sigma c =
     let (evd, c) = resolve_one_typeclass env sigma
       (Retyping.get_type_of env sigma c) in
       Evd.has_undefined evd
-  with e when Errors.noncritical e -> false
+  with e when Err.noncritical e -> false
 
 let build_subclasses ~check env sigma glob pri =
   let _id = Nametab.basename_of_global glob in
@@ -360,7 +360,7 @@ let add_class cl =
 	     match inst with
 	     | Some (Backward, pri) ->
 	       (match body with
-	       | None -> Errors.error "Non-definable projection can not be declared as a subinstance"
+	       | None -> Err.error "Non-definable projection can not be declared as a subinstance"
 	       | Some b -> declare_instance pri false (ConstRef b))
 	     | _ -> ())
   cl.cl_projs

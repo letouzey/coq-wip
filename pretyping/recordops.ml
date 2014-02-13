@@ -13,7 +13,7 @@
 (* This file registers properties of records: projections and
    canonical structures *)
 
-open Errors
+open Err
 open Util
 open Pp
 open Names
@@ -176,7 +176,7 @@ let cs_pattern_of_constr t =
       App (f,vargs) ->
 	begin
 	  try Const_cs (global_of_constr f) , -1, Array.to_list vargs
-          with e when Errors.noncritical e -> raise Not_found
+          with e when Err.noncritical e -> raise Not_found
 	end
     | Rel n -> Default_cs, pred n, []
     | Prod (_,a,b) when not (Termops.dependent (mkRel 1) b) -> Prod_cs, -1, [a; Termops.pop b]
@@ -184,7 +184,7 @@ let cs_pattern_of_constr t =
     | _ ->
 	begin
 	  try Const_cs (global_of_constr t) , -1, []
-          with e when Errors.noncritical e -> raise Not_found
+          with e when Err.noncritical e -> raise Not_found
 	end
 
 (* Intended to always succeed *)

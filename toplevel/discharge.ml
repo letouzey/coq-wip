@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Names
-open Errors
+open Err
 open Util
 open Context
 open Term

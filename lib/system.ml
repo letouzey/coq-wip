@@ -9,7 +9,7 @@
 (* $Id$ *)
 
 open Pp
-open Errors
+open Err
 open Util
 open Unix
 
@@ -106,11 +106,11 @@ let is_in_system_path filename =
 
 let open_trapping_failure name =
   try open_out_bin name
-  with e when Errors.noncritical e -> error ("Can't open " ^ name)
+  with e when Err.noncritical e -> error ("Can't open " ^ name)
 
 let try_remove filename =
   try Sys.remove filename
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     msg_warning
       (str"Could not remove file " ++ str filename ++ str" which is corrupted!")
 
@@ -186,7 +186,7 @@ let extern_intern ?(warn=true) magic =
         marshal_out channel val_0;
         close_out channel
       with reraise ->
-	let reraise = Errors.push reraise in
+	let reraise = Err.push reraise in
         let () = try_remove filename in
         raise reraise
     with Sys_error s -> error ("System error: " ^ s)

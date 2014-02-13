@@ -8,7 +8,7 @@
 
 open Util
 open Pp
-open Errors
+open Err
 open Indtypes
 open Type_errors
 open Pretype_errors
@@ -24,7 +24,7 @@ let print_loc loc =
 let guill s = "\""^s^"\""
 
 (** Invariant : exceptions embedded in EvaluatedError satisfy
-    Errors.noncritical *)
+    Err.noncritical *)
 
 exception EvaluatedError of std_ppcmds * exn option
 
@@ -44,11 +44,11 @@ let explain_exn_default = function
   | Sys.Break -> hov 0 (fnl () ++ str "User interrupt.")
   (* Exceptions with pre-evaluated error messages *)
   | EvaluatedError (msg,None) -> msg
-  | EvaluatedError (msg,Some reraise) -> msg ++ Errors.print reraise
+  | EvaluatedError (msg,Some reraise) -> msg ++ Err.print reraise
   (* Otherwise, not handled here *)
-  | _ -> raise Errors.Unhandled
+  | _ -> raise Err.Unhandled
 
-let _ = Errors.register_handler explain_exn_default
+let _ = Err.register_handler explain_exn_default
 
 
 (** Pre-explain a vernac interpretation error *)
@@ -136,7 +136,7 @@ let process_vernac_interp_error exc =
     | Some msg, loc -> Loc.add_loc (EvaluatedError (msg, Some e)) loc
 
 let _ = Tactic_debug.explain_logic_error :=
-  (fun e -> Errors.print (process_vernac_interp_error e))
+  (fun e -> Err.print (process_vernac_interp_error e))
 
 let _ = Tactic_debug.explain_logic_error_no_anomaly :=
-  (fun e -> Errors.print_no_report (process_vernac_interp_error e))
+  (fun e -> Err.print_no_report (process_vernac_interp_error e))

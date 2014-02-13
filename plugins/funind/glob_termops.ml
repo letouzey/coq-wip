@@ -1,6 +1,6 @@
 open Pp
 open Glob_term
-open Errors
+open Err
 open Util
 open Names
 open Decl_kinds

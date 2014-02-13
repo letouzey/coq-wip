@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -58,7 +58,7 @@ let is_unification_error = function
 | _ -> false
 
 let rec catchable_exception = function
-  | Errors.UserError _ | TypeError _
+  | Err.UserError _ | TypeError _
   | RefinerError _ | Indrec.RecursionSchemeError _
   | Nametab.GlobalizationError _
   (* reduction errors *)
@@ -111,7 +111,7 @@ let clear_hyps sigma ids sign cl =
 
 let recheck_typability (what,id) env sigma t =
   try check_typability env sigma t
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     let s = match what with
       | None -> "the conclusion"
       | Some id -> "hypothesis "^(Id.to_string id) in

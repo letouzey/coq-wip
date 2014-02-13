@@ -15,7 +15,7 @@ val print_loc : Loc.t -> Pp.std_ppcmds
 val process_vernac_interp_error : exn -> exn
 
 (** General explain function. Should not be used directly now,
-    see instead function [Errors.print] and variants *)
+    see instead function [Err.print] and variants *)
 
 val explain_exn_default : exn -> Pp.std_ppcmds
 

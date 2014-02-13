@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Flags
 open Vernac
@@ -175,7 +175,7 @@ let print_location_in_file {outer=s;inner=fname} loc =
            str", line " ++ int line ++ str", characters " ++
            Cerrors.print_loc (Loc.make_loc (bp-bol,ep-bol))) ++ str":" ++
         fnl ()
-    with e when Errors.noncritical e ->
+    with e when Err.noncritical e ->
       (close_in ic;
        hov 1 (errstrm ++ spc() ++ str"(invalid location):") ++ fnl ())
 
@@ -265,7 +265,7 @@ let print_toplevel_error e =
         print_highlight_location top_buffer loc
       else mt ()
   in
-  locmsg ++ Errors.print e
+  locmsg ++ Err.print e
 
 (* Read the input stream until a dot is encountered *)
 let parse_to_dot =
@@ -286,7 +286,7 @@ let rec discard_to_dot () =
   with
     | Compat.Token.Error _ | Lexer.Error.E _ -> discard_to_dot ()
     | End_of_input -> raise End_of_input
-    | e when Errors.noncritical e -> ()
+    | e when Err.noncritical e -> ()
 
 let read_sentence () =
   try Vernac.parse_sentence (top_buffer.tokens, None)
@@ -309,10 +309,10 @@ let do_vernac () =
   try
     Vernac.eval_expr (read_sentence ())
   with
-    | End_of_input | Errors.Quit ->
-        msgerrnl (mt ()); pp_flush(); raise Errors.Quit
-    | Errors.Drop ->  (* Last chance *)
-        if Mltop.is_ocaml_top() then raise Errors.Drop
+    | End_of_input | Err.Quit ->
+        msgerrnl (mt ()); pp_flush(); raise Err.Quit
+    | Err.Drop ->  (* Last chance *)
+        if Mltop.is_ocaml_top() then raise Err.Drop
         else ppnl (str"Error: There is no ML toplevel." ++ fnl ())
     | any ->
         Format.set_formatter_out_channel stdout;
@@ -346,8 +346,8 @@ let rec loop () =
     reset_input_buffer stdin top_buffer;
     while true do do_vernac(); flush_all() done
   with
-    | Errors.Drop -> ()
-    | Errors.Quit -> exit 0
+    | Err.Drop -> ()
+    | Err.Quit -> exit 0
     | any ->
       msgerrnl (str"Anomaly: main loop exited with exception: " ++
                 str (Printexc.to_string any) ++

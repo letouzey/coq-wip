@@ -22,7 +22,7 @@
 
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Evd
@@ -71,7 +71,7 @@ let search_guard loc env possible_indexes fixdefs =
     let fix = ((indexes, 0),fixdefs) in
     (try check_fix env fix
      with reraise ->
-       let e = Errors.push reraise in Loc.raise loc e);
+       let e = Err.push reraise in Loc.raise loc e);
     indexes
   else
     (* we now search recursively amoungst all combinations *)
@@ -137,8 +137,8 @@ let apply_heuristics env evdref fail_evar =
   (* Resolve eagerly, potentially making wrong choices *)
   try evdref := consider_remaining_unif_problems
 	~ts:(Typeclasses.classes_transparent_state ()) env !evdref
-  with e when Errors.noncritical e ->
-    let e = Errors.push e in if fail_evar then raise e
+  with e when Err.noncritical e ->
+    let e = Err.push e in if fail_evar then raise e
 
 let check_typeclasses_instances_are_solved env sigma =
   (* Naive way, call resolution again with failure flag *)
@@ -418,7 +418,7 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
 	      let cofix = (i,(names,ftys,fdefs)) in
 	      (try check_cofix env cofix
                with reraise ->
-                 let e = Errors.push reraise in Loc.raise loc e);
+                 let e = Err.push reraise in Loc.raise loc e);
 	      make_judge (mkCoFix cofix) ftys.(i)
         in
 	inh_conv_coerce_to_tycon loc env evdref fixj tycon
@@ -530,7 +530,7 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
       in
       let resj =
 	try judge_of_product env name j j'
-	with TypeError _ as e -> let e = Errors.push e in Loc.raise loc e in
+	with TypeError _ as e -> let e = Err.push e in Loc.raise loc e in
 	inh_conv_coerce_to_tycon loc env evdref resj tycon
 
   | GLetIn(loc,name,c1,c2)      ->

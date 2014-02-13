@@ -7,7 +7,7 @@
 (************************************************************************)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Term
@@ -277,7 +277,7 @@ let is_nondep_branch c n =
   try
     let sign,ccl = decompose_lam_n_assum n c in
     noccur_between 1 (rel_context_length sign) ccl
-  with e when Errors.noncritical e -> (* Not eta-expanded or not reduced *)
+  with e when Err.noncritical e -> (* Not eta-expanded or not reduced *)
     false
 
 let extract_nondep_branches test c b n =
@@ -507,7 +507,7 @@ and detype_eqns isgoal avoid env ci computable constructs consnargsl bl =
     let mat = build_tree Anonymous isgoal (avoid,env) ci bl in
     List.map (fun (pat,((avoid,env),c)) -> (dl,[],[pat],detype isgoal avoid env c))
       mat
-  with e when Errors.noncritical e ->
+  with e when Err.noncritical e ->
     Array.to_list
       (Array.map3 (detype_eqn isgoal avoid env) constructs consnargsl bl)
 

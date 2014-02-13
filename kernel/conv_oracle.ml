@@ -52,7 +52,7 @@ let set_strategy ({ var_opacity; cst_opacity } as oracle) k l =
       { oracle with cst_opacity =
           if is_default l then Cmap.remove c cst_opacity
           else Cmap.add c l cst_opacity }
-  | RelKey _ -> Errors.error "set_strategy: RelKey"
+  | RelKey _ -> Err.error "set_strategy: RelKey"
 
 let get_transp_state { var_opacity; cst_opacity } =
   (Id.Map.fold

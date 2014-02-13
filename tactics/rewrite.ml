@@ -9,7 +9,7 @@
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
 open Pp
-open Errors
+open Err
 open Util
 open Names
 open Nameops
@@ -120,7 +120,7 @@ let split_head = function
 
 let evd_convertible env evd x y =
   try ignore(Evarconv.the_conv_x env x y evd); true
-  with e when Errors.noncritical e -> false
+  with e when Err.noncritical e -> false
 
 let convertible env evd x y =
   Reductionops.is_conv env evd x y
@@ -230,7 +230,7 @@ let is_applied_rewrite_relation env sigma rels t =
 	      let inst = mkApp (Lazy.force rewrite_relation_class, [| evar; mkApp (c, params) |]) in
 	      let _ = Typeclasses.resolve_one_typeclass env' evd inst in
 		Some (it_mkProd_or_LetIn t rels)
-	  with e when Errors.noncritical e -> None)
+	  with e when Err.noncritical e -> None)
   | _ -> None
 
 let _ =
@@ -1058,7 +1058,7 @@ module Strategies =
 	let sigma, c = Constrintern.interp_open_constr (goalevars evars) env c in
 	let unfolded =
 	  try Tacred.try_red_product env sigma c
-	  with e when Errors.noncritical e ->
+	  with e when Err.noncritical e ->
             error "fold: the term is not unfoldable !"
 	in
 	  try
@@ -1067,7 +1067,7 @@ module Strategies =
 	      state, Info { rew_car = ty; rew_from = t; rew_to = c';
 			   rew_prf = RewCast DEFAULTcast;
 			   rew_evars = sigma, cstrevars evars }
-	  with e when Errors.noncritical e -> state, Fail
+	  with e when Err.noncritical e -> state, Fail
 
     let fold_glob c : 'a pure_strategy =
       fun state env avoid t ty cstr evars ->
@@ -1075,7 +1075,7 @@ module Strategies =
 	let sigma, c = Pretyping.understand_tcc (goalevars evars) env c in
 	let unfolded =
 	  try Tacred.try_red_product env sigma c
-	  with e when Errors.noncritical e ->
+	  with e when Err.noncritical e ->
             error "fold: the term is not unfoldable !"
 	in
 	  try
@@ -1084,7 +1084,7 @@ module Strategies =
 	      state, Info { rew_car = ty; rew_from = t; rew_to = c';
 			   rew_prf = RewCast DEFAULTcast;
 			   rew_evars = sigma, cstrevars evars }
-	  with e when Errors.noncritical e -> state, Fail
+	  with e when Err.noncritical e -> state, Fail
 
 
 end
@@ -1309,7 +1309,7 @@ let cl_rewrite_clause_newtac ?abs strat clause =
 
 let newtactic_init_setoid () =
   try init_setoid (); Proofview.tclUNIT ()
-  with e when Errors.noncritical e -> Proofview.tclZERO e
+  with e when Err.noncritical e -> Proofview.tclZERO e
 
 let tactic_init_setoid () =
   init_setoid (); tclIDTAC
@@ -1759,10 +1759,10 @@ let setoid_proof ty fn fallback =
               fallback
               begin function
                 | Hipattern.NoEquationFound ->
-                (* spiwack: [Errors.push] here is unlikely to do what
+                (* spiwack: [Err.push] here is unlikely to do what
                    it's intended to, or anything meaningful for that
                    matter. *)
-                    let e = Errors.push e in
+                    let e = Err.push e in
 	            begin match e with
 	            | Not_found ->
 	                let rel, args = decompose_app_rel env sigma concl in

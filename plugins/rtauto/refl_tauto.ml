@@ -8,7 +8,7 @@
 
 module Search = Explore.Make(Proof_search)
 
-open Errors
+open Err
 open Util
 open Term
 open Tacmach

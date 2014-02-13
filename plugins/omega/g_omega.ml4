@@ -25,7 +25,7 @@ let omega_tactic l =
        | "positive" -> Tacinterp.interp <:tactic<zify_positive>>
        | "N" -> Tacinterp.interp <:tactic<zify_N>>
        | "Z" -> Tacinterp.interp <:tactic<zify_op>>
-       | s -> Errors.error ("No Omega knowledge base for type "^s))
+       | s -> Err.error ("No Omega knowledge base for type "^s))
     (Util.List.sort_uniquize String.compare l)
   in
   Tacticals.New.tclTHEN
