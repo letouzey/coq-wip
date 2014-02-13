@@ -120,7 +120,7 @@ grammar/tacextend.ml
 grammar/vernacextend.ml
 grammar/argextend.ml
 parsing/pcoq.ml
-parsing/lexer.ml
+parsing/cLexer.ml
 plugins/xml/proofTree2Xml.ml
 plugins/xml/acic2Xml.ml
 plugins/xml/xml.ml

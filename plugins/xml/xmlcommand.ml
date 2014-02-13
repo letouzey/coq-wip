@@ -507,7 +507,7 @@ let _ =
        ofn)
 ;;
 
-let _ = Hook.set Lexer.xml_output_comment (theory_output_string ~do_not_quote:true) ;;
+let _ = Hook.set CLexer.xml_output_comment (theory_output_string ~do_not_quote:true) ;;
 
 let uri_of_dirpath dir =
   "/" ^ String.concat "/"

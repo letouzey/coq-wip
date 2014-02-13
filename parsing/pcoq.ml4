@@ -19,7 +19,7 @@ open Tacexpr
 
 (** The parser of Coq *)
 
-module G = GrammarMake (Lexer)
+module G = GrammarMake (CLexer)
 
 (* TODO: this is a workaround, since there isn't such
    [warning_verbose] in new camlp4. In camlp5, this ref
@@ -52,7 +52,7 @@ ELSE
   | tok -> Stoken ((=) tok, to_string tok)
 END
 
-let gram_token_of_string s = gram_token_of_token (Lexer.terminal s)
+let gram_token_of_string s = gram_token_of_token (CLexer.terminal s)
 
 let camlp4_verbosity silent f x =
   let a = !warning_verbose in
