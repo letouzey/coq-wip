@@ -232,25 +232,31 @@ let do_Dfix rv c =
   let terms = Array.to_list (Array.map (do_expr [] []) c) in
   names, List.combine names terms
 
-let rec do_elems names = function
-  |[] -> mkblock 0 (List.rev_map (fun id -> Lvar id) names)
+let rec do_elems names cont = function
+  |[] -> cont names
   |(_,(SEmodule _ | SEmodtype _)) :: _ -> failwith "unsupported inner modules"
-  |(_,SEdecl (Dind _ | Dtype _)) :: elems -> do_elems names elems
+  |(_,SEdecl (Dind _ | Dtype _)) :: elems -> do_elems names cont elems
   |(_,SEdecl (Dterm (r,t,_))) :: elems ->
     let id = id_of_global r in
-    Llet (Alias, id, do_expr [] [] t, do_elems (id::names) elems)
+    Llet (Alias, id, do_expr [] [] t, do_elems (id::names) cont elems)
   |(_,SEdecl (Dfix (rv,c,_))) :: elems ->
     let ids, defs = do_Dfix rv c in
-    Lletrec (defs, do_elems (List.rev_append ids names) elems)
+    Lletrec (defs, do_elems (List.rev_append ids names) cont elems)
 
-let do_structure s = do_elems [] (List.flatten (List.map snd s))
+let do_structure_mod s =
+  let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
+  do_elems [] cont (List.flatten (List.map snd s))
+
+let do_structure_phrase s =
+  let cont names = Lvar (List.hd names) in
+  do_elems [] cont (List.flatten (List.map snd s))
 
 let debug_struct q =
   let r = ConstRef (Nametab.locate_constant q) in
   Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
 
 let debug_all q =
-  Printlambda.lambda Format.std_formatter (do_structure (debug_struct q))
+  Printlambda.lambda Format.std_formatter (do_structure_mod (debug_struct q))
 
 let make_cmo modulename (structure:ml_structure) =
   reset_tables ();
@@ -258,7 +264,8 @@ let make_cmo modulename (structure:ml_structure) =
   Translmod.primitive_declarations := [];
   Env.reset_cache ();
   let mod_id = Ident.create_persistent modulename in
-  let lambda = Lprim (Psetglobal mod_id,[do_structure structure]) in
+  let lambda = Lprim (Psetglobal mod_id,[do_structure_mod structure]) in
+  (* borrowed from drivers/compile.ml *)
   let lambda' = Simplif.simplify_lambda lambda in
   Printlambda.lambda Format.std_formatter lambda';
   let bytecode = Bytegen.compile_implementation modulename lambda' in
@@ -266,3 +273,29 @@ let make_cmo modulename (structure:ml_structure) =
   let oc = open_out_bin (modulename^".cmo") in
   let () = Emitcode.to_file oc modulename bytecode in
   close_out oc
+
+let direct_eval (structure:ml_structure) =
+  let lam = do_structure_phrase structure in
+  (* borrowed from toplevel/toploop.ml *)
+  let slam = Simplif.simplify_lambda lam in
+  let (init_code, fun_code) = Bytegen.compile_phrase slam in
+  let (code, code_size, reloc) = Emitcode.to_memory init_code fun_code in
+  let can_free = (fun_code = []) in
+  let initial_symtable = Symtable.current_state() in
+  Symtable.patch_object code reloc;
+  Symtable.check_global_initialized reloc;
+  Symtable.update_global_table();
+  try
+    let retval = (Meta.reify_bytecode code code_size) () in
+    if can_free then begin
+      Meta.static_release_bytecode code code_size;
+      Meta.static_free code;
+    end;
+    retval
+  with x ->
+    if can_free then begin
+      Meta.static_release_bytecode code code_size;
+      Meta.static_free code;
+    end;
+    Symtable.restore_state initial_symtable;
+    raise x
