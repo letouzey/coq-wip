@@ -8,17 +8,10 @@
 
 (*s From MiniML to ocaml internal Lambda AST *)
 
-open Pp
-open Err
 open Util
 open Names
-open Nameops
 open Globnames
-open Table
 open Miniml
-open Mlutil
-open Modutil
-open Common
 
 open Lambda (* in compiler-libs *)
 
@@ -34,7 +27,7 @@ let id_of_mlid id = id_of_id (Mlutil.id_of_mlid id)
 let global_table = (Hashtbl.create 47 : (global_reference, Ident.t) Hashtbl.t)
 
 let id_of_global r =
-  if is_inline_custom r then failwith "Custom : unsupported";
+  if Table.is_inline_custom r then failwith "Custom : unsupported";
   try Hashtbl.find global_table r
   with Not_found ->
     assert (isConstRef r);
@@ -156,7 +149,7 @@ let rec do_expr env args = function
     let stl = List.map (do_expr env []) args' in
     do_expr env (stl @ args) f
   |MLlam _ as a ->
-    let fl,a' = collect_lams a in
+    let fl,a' = Mlutil.collect_lams a in
     let fl = List.map id_of_mlid fl in
     let env' = push_vars fl env in
     let st = Lfunction (Curried, List.rev fl, do_expr env' [] a') in
@@ -180,8 +173,8 @@ let rec do_expr env args = function
   |MLcons (_,r,a) as c ->
     assert (List.is_empty args);
     begin match a with
-    | _ when is_native_char c -> mkchar (get_native_char c)
-    | _ when is_coinductive r -> failwith "coinductive unsupported"
+    | _ when Common.is_native_char c -> mkchar (Common.get_native_char c)
+    | _ when Table.is_coinductive r -> failwith "coinductive unsupported"
     | [] ->
       (match get_cons_tag r with
       | Types.Cstr_constant n -> mkint n
@@ -198,8 +191,8 @@ let rec do_expr env args = function
       | _ -> assert false
     end
   |MLcase (typ, t, pv) ->
-    if is_custom_match pv then failwith "unsupported custom match";
-    if is_coinductive_type typ then failwith "unsupported coinductive";
+    if Table.is_custom_match pv then failwith "unsupported custom match";
+    if Table.is_coinductive_type typ then failwith "unsupported coinductive";
     let head = do_expr env [] t in
     (* TODO: handle the match that are mere record projection ... *)
     let branches = List.map (do_one_pat env) (Array.to_list pv) in
@@ -227,7 +220,8 @@ and do_one_pat env (ids,p,t) =
 
 let do_Dfix rv c =
   let names = Array.to_list (Array.map id_of_global rv) in
-  Array.iter (fun r -> if is_custom r then failwith "Custom : unsupported") rv;
+  Array.iter
+    (fun r -> if Table.is_custom r then failwith "Custom : unsupported") rv;
   (* Normally, no hack (MLexn "UNUSED") here, since no custom extraction *)
   let terms = Array.to_list (Array.map (do_expr [] []) c) in
   names, List.combine names terms
