@@ -17,7 +17,19 @@ open Lambda (* in compiler-libs *)
 
 let mkint n = Lconst (Const_base (Asttypes.Const_int n))
 let mkchar c = Lconst (Const_base (Asttypes.Const_char c))
-let mkblock tag args = Lprim (Pmakeblock (tag,Asttypes.Immutable), args)
+let mkstring str = Lconst (Const_base (Asttypes.Const_string str))
+let mkblock tag args = Lprim (Pmakeblock (tag, Asttypes.Immutable), args)
+let mkexn str = mkblock 0 [mkstring str]
+
+(* (lazy t) is a block with (fun _ -> t) as first field *)
+let mklazy t =
+  mkblock Obj.lazy_tag [Lfunction (Curried, [Ident.create "lazy"], t)]
+
+(* For Lazy.force, we avoid the Plazyforce primitive which seems
+   almost unused in the OCaml compiler, and use directly [inline_lazy_force]
+   instead. NB: for native code, beware of the Clflags.native_code used
+   in inline_lazy_force *)
+let mkforce t = Matching.inline_lazy_force t Location.none
 
 let id_of_id id = Ident.create (Id.to_string id)
 let id_of_mlid id = id_of_id (Mlutil.id_of_mlid id)
@@ -45,8 +57,8 @@ type ind_info =
 let ind_table = (Hashtbl.create 47 : (inductive, ind_info) Hashtbl.t)
 
 let get_mlind (kn,i) =
-  try (snd (Table.lookup_ind kn)).ind_packets.(i)
-  with _ -> assert false
+  let mi = Extraction.extract_inductive (Global.env ()) kn in
+  mi.ind_packets.(i)
 
 let get_ind_info ind =
   try Hashtbl.find ind_table ind
@@ -101,6 +113,18 @@ let reset_tables () =
   Hashtbl.clear global_table;
   Hashtbl.clear ind_table;
   Hashtbl.clear cons_table
+
+(** Record fields *)
+
+let projection_rank ind r =
+  let fields = Table.get_record_fields (IndRef ind) in
+  let rec search i = function
+    | [] -> raise Not_found
+    | Some f :: _ when Globnames.eq_gr f r -> i
+    | _ :: l -> search (i+1) l
+  in
+  search 0 fields
+
 
 (** Local environment for variables *)
 
@@ -159,43 +183,37 @@ let rec do_expr env args = function
     let env' = push_vars [id'] env in
     let e1 = do_expr env [] a1 in
     let e2 = do_expr env' [] a2 in
+    (* Warning: "Alias" below only holds for pure extraction *)
     apply (Llet (Alias, id', e1, e2)) args
-    (* TODO: Alias is only true for pure extr*)
   |MLglob r ->
-    (* TODO : handle records as getfield...
     (try
-       let args = List.skipn (projection_arity r) args in
-       let record = List.hd args in
-       pp_apply (record ++ str "." ++ pp_global Term r) par (List.tl args)
-     with e when Err.noncritical e ->
-    *)
-    apply (Lvar (id_of_global r)) args
+       let ind, arity = Table.projection_info r in
+       if List.length args < arity then raise Not_found;
+       match List.skipn arity args with
+       | [] -> raise Not_found
+       | blk::args -> apply (Lprim (Pfield (projection_rank ind r),[blk])) args
+     with Not_found -> apply (Lvar (id_of_global r)) args)
   |MLcons (_,r,a) as c ->
     assert (List.is_empty args);
-    begin match a with
-    | _ when Common.is_native_char c -> mkchar (Common.get_native_char c)
-    | _ when Table.is_coinductive r -> failwith "coinductive unsupported"
-    | [] ->
-      (match get_cons_tag r with
-      | Types.Cstr_constant n -> mkint n
-      | _ -> assert false)
-    | _ ->
-      (* TODO : support records ...
-      let fds = get_record_fields r in
-      if not (List.is_empty fds) then
-	pp_record_pat (pp_fields r fds, List.map (pp_expr true env []) a)
-      else *)
-      let a' = List.map (do_expr env []) a in
-      match get_cons_tag r with
-      | Types.Cstr_block tag -> mkblock tag a'
-      | _ -> assert false
-    end
+    if Common.is_native_char c then mkchar (Common.get_native_char c)
+    else
+      let t = match get_cons_tag r with
+        | Types.Cstr_constant n -> assert (List.is_empty a); mkint n
+        | Types.Cstr_block tag -> mkblock tag (List.map (do_expr env []) a)
+        | _ -> assert false
+      in
+      if Table.is_coinductive r then mklazy t else t
   |MLcase (typ, t, pv) ->
     if Table.is_custom_match pv then failwith "unsupported custom match";
-    if Table.is_coinductive_type typ then failwith "unsupported coinductive";
     let head = do_expr env [] t in
-    (* TODO: handle the match that are mere record projection ... *)
-    let branches = List.map (do_one_pat env) (Array.to_list pv) in
+    let head = if Table.is_coinductive_type typ then mkforce head else head in
+    (* NB: the matching compilation below will optimize the matchs
+       that are mere record projections. *)
+    let do_one_pat (ids,p,t) =
+      let env' = push_vars (List.rev_map id_of_mlid ids) env in
+      (do_pattern env' p, do_expr env' [] t)
+    in
+    let branches = List.map do_one_pat (Array.to_list pv) in
     Matching.for_function Location.none None head branches Typedtree.Total
   |MLfix (i,ids,defs) ->
     let rev_ids = List.rev_map id_of_id (Array.to_list ids) in
@@ -204,19 +222,13 @@ let rec do_expr env args = function
     Lletrec
       (List.map2 (fun id t -> id, do_expr env' [] t) ids' (Array.to_list defs),
        apply (Lvar (List.nth ids' i)) args)
-  |MLexn s -> failwith "MLexn TODO"
+  |MLexn s -> Lprim (Praise, [mkblock 0 [mkexn s]])
   |MLdummy -> mkint 0 (* TODO put someday the real __ *)
   |MLmagic a -> do_expr env args a
   |MLaxiom -> failwith "An axiom must be realized first"
   |MLtuple l ->
     assert (List.is_empty args);
     mkblock 0 (List.map (do_expr env []) l)
-
-and do_one_pat env (ids,p,t) =
-  let env' = push_vars (List.rev_map id_of_mlid ids) env in
-  let p' = do_pattern env' p in
-  let e = do_expr env' [] t in
-  (p',e)
 
 let do_Dfix rv c =
   let names = Array.to_list (Array.map id_of_global rv) in
@@ -232,10 +244,13 @@ let rec do_elems names cont = function
   |(_,SEdecl (Dind _ | Dtype _)) :: elems -> do_elems names cont elems
   |(_,SEdecl (Dterm (r,t,_))) :: elems ->
     let id = id_of_global r in
-    Llet (Alias, id, do_expr [] [] t, do_elems (id::names) cont elems)
+    let e = do_expr [] [] t in
+    let rest = do_elems (id::names) cont elems in
+    Llet (Alias, id, e, rest)
   |(_,SEdecl (Dfix (rv,c,_))) :: elems ->
     let ids, defs = do_Dfix rv c in
-    Lletrec (defs, do_elems (List.rev_append ids names) cont elems)
+    let rest = do_elems (List.rev_append ids names) cont elems in
+    Lletrec (defs, rest)
 
 let do_structure_mod s =
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
@@ -252,7 +267,7 @@ let debug_struct q =
 let debug_all q =
   Printlambda.lambda Format.std_formatter (do_structure_mod (debug_struct q))
 
-let make_cmo modulename (structure:ml_structure) =
+let make_cmo ?(debug=false) modulename (structure:ml_structure) =
   reset_tables ();
   Translobj.reset_labels ();
   Translmod.primitive_declarations := [];
@@ -261,17 +276,18 @@ let make_cmo modulename (structure:ml_structure) =
   let lambda = Lprim (Psetglobal mod_id,[do_structure_mod structure]) in
   (* borrowed from drivers/compile.ml *)
   let lambda' = Simplif.simplify_lambda lambda in
-  Printlambda.lambda Format.std_formatter lambda';
+  if debug then Printlambda.lambda Format.std_formatter lambda';
   let bytecode = Bytegen.compile_implementation modulename lambda' in
-  Printinstr.instrlist Format.std_formatter bytecode;
+  if debug then Printinstr.instrlist Format.std_formatter bytecode;
   let oc = open_out_bin (modulename^".cmo") in
   let () = Emitcode.to_file oc modulename bytecode in
   close_out oc
 
-let direct_eval (structure:ml_structure) =
+let direct_eval ?(debug=false) (structure:ml_structure) =
   let lam = do_structure_phrase structure in
   (* borrowed from toplevel/toploop.ml *)
   let slam = Simplif.simplify_lambda lam in
+  if debug then Printlambda.lambda Format.std_formatter slam;
   let (init_code, fun_code) = Bytegen.compile_phrase slam in
   let (code, code_size, reloc) = Emitcode.to_memory init_code fun_code in
   let can_free = (fun_code = []) in
@@ -293,3 +309,16 @@ let direct_eval (structure:ml_structure) =
     end;
     Symtable.restore_state initial_symtable;
     raise x
+
+(* TODO:
+   X MLexn ...
+   - MLdummy as __ rather than ()
+   X Better extraction of MLcase when mere projection ? Really useful ? NO
+   X Coinductives
+   - Tests : rec mutuels, modules, records, avec dummy, ...
+   - Reconstruction of constr when possible
+   - Extraction to native code ...
+
+   Beware: in extraction of Coq's bool, true comes first, hence mapped to
+   OCaml's 0 = false !!!
+*)
