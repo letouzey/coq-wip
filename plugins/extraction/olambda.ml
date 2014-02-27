@@ -51,8 +51,8 @@ let id_of_global r =
 
 type ind_info =
   { ind_tags : Types.constructor_tag array;
-    ind_consts : int; (* number of constant constructors *)
-    ind_nonconsts : int } (* number of non-constant constructors *)
+    ind_consts : constructor array; (* constant constructors, by index *)
+    ind_nonconsts : constructor array } (* non-csts constructors, by tags *)
 
 let ind_table = (Hashtbl.create 47 : (inductive, ind_info) Hashtbl.t)
 
@@ -70,10 +70,19 @@ let get_ind_info ind =
       | _ -> let n = !nb_block in incr nb_block; Types.Cstr_block n)
       (get_mlind ind).ip_types
     in
+    let consts = Array.make !nb_const (ind,0) in
+    let nonconsts = Array.make !nb_block (ind,0) in
+    let () = Array.iteri
+      (fun i tag -> match tag with
+      | Types.Cstr_constant n -> consts.(n) <- (ind,i+1)
+      | Types.Cstr_block n -> nonconsts.(n) <- (ind,i+1)
+      | _ -> assert false)
+      tags
+    in
     let info = {
       ind_tags = tags;
-      ind_consts = !nb_const;
-      ind_nonconsts = !nb_block }
+      ind_consts = consts;
+      ind_nonconsts = nonconsts }
     in
     Hashtbl.add ind_table ind info;
     info
@@ -95,8 +104,8 @@ let get_cons_desc = function
          { Types.cstr_name = Id.to_string (mlind.ip_consnames.(j-1));
            Types.cstr_arity = List.length (mlind.ip_types.(j-1));
            Types.cstr_tag = info.ind_tags.(j-1);
-           Types.cstr_consts = info.ind_consts;
-           Types.cstr_nonconsts = info.ind_nonconsts;
+           Types.cstr_consts = Array.length info.ind_consts;
+           Types.cstr_nonconsts = Array.length info.ind_nonconsts;
            (* All other fields aren't used by Matching.ml : *)
            Types.cstr_res = Ctype.none;
            Types.cstr_existentials = [];
@@ -252,20 +261,70 @@ let rec do_elems names cont = function
     let rest = do_elems (List.rev_append ids names) cont elems in
     Lletrec (defs, rest)
 
-let do_structure_mod s =
+let do_structure_mod (s:ml_structure) =
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
   do_elems [] cont (List.flatten (List.map snd s))
 
-let do_structure_phrase s =
+let do_structure_phrase (s:ml_structure) =
   let cont names = Lvar (List.hd names) in
   do_elems [] cont (List.flatten (List.map snd s))
 
-let debug_struct q =
+let get_struct q =
   let r = ConstRef (Nametab.locate_constant q) in
   Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
 
-let debug_all q =
-  Printlambda.lambda Format.std_formatter (do_structure_mod (debug_struct q))
+let struct_last_type (s:ml_structure) =
+  try
+    match List.last (snd (List.last s)) with
+    | (_,SEdecl (Dterm (_,_,ty))) -> ty
+    | _ -> raise Not_found
+  with Failure _ | Not_found -> failwith "struct_last_type"
+
+type reconstruction_failure =
+| FunctionalValue
+| ProofOrTypeValue
+| MlUntypableValue
+
+exception CannotReconstruct of reconstruction_failure
+
+let rec reconstruct typ o = match typ with
+  |Tarr _ -> raise (CannotReconstruct FunctionalValue)
+  |Tdummy _ -> raise (CannotReconstruct ProofOrTypeValue)
+  |Tunknown -> raise (CannotReconstruct MlUntypableValue)
+  |Tmeta {contents = Some typ' } -> reconstruct typ' o
+  |Tmeta _ | Tvar _ | Tvar' _ | Taxiom -> assert false
+  |Tglob (r,typ_args) ->
+    match r with
+    |ConstRef cst ->
+      let arity,typ = Table.lookup_type cst in
+      assert (List.length typ_args = arity); (* TODO : is this sure ? *)
+      reconstruct (Mlutil.type_subst_list typ_args typ) o
+    |IndRef ind -> reconstruct_ind ind typ_args o
+    |_ -> assert false
+
+and reconstruct_ind ((kn,i) as ind) typ_args o =
+  if Table.is_coinductive (IndRef ind)
+  then failwith "Cannot print coinductives";
+  (* unlike extract_inductive, the types in lookup_ind still
+     includes Tdummy :-) *)
+  let ml_ind =
+    try (snd (Table.lookup_ind kn)).ind_packets.(i)
+    with _ -> assert false
+  in
+  let info = get_ind_info ind in
+  let cons, args =
+    if Obj.is_block o then
+      info.ind_nonconsts.(Obj.tag o), (Obj.obj o : Obj.t array)
+    else
+      info.ind_consts.(Obj.obj o), [||]
+  in
+  let typs = Array.of_list ml_ind.ip_types.(snd cons - 1) in
+  if Array.length typs <> Array.length args
+  then raise (CannotReconstruct ProofOrTypeValue);
+  assert (List.length typ_args = List.length ml_ind.ip_vars);
+  let typs' = Array.map (Mlutil.type_subst_list typ_args) typs in
+  let args = Array.map2 reconstruct typs' args in
+  Term.mkApp (Term.mkConstruct cons, args)
 
 let make_cmo ?(debug=false) modulename (structure:ml_structure) =
   reset_tables ();
@@ -310,14 +369,22 @@ let direct_eval ?(debug=false) (structure:ml_structure) =
     Symtable.restore_state initial_symtable;
     raise x
 
+let extraction_compute q =
+  let s = get_struct q in
+  reconstruct (struct_last_type s) (direct_eval s)
+
 (* TODO:
    X MLexn ...
    - MLdummy as __ rather than ()
    X Better extraction of MLcase when mere projection ? Really useful ? NO
    X Coinductives
    - Tests : rec mutuels, modules, records, avec dummy, ...
-   - Reconstruction of constr when possible
+   X Reconstruction of constr when possible
+   - Or rather to glob_constr with retyping (e.g. for lists)
+     Cf. Pretyping.understand ...
    - Extraction to native code ...
+   - Avoid the need to define a temp constant as "main"
+   - Disable the Obj.magic production (no need to type-check :-)
 
    Beware: in extraction of Coq's bool, true comes first, hence mapped to
    OCaml's 0 = false !!!
