@@ -261,11 +261,20 @@ let rec do_elems names cont = function
     let rest = do_elems (List.rev_append ids names) cont elems in
     Lletrec (defs, rest)
 
-let do_structure_mod (s:ml_flat_structure) =
+(** Build a lambda expression aimed at creating a .cmo or .cmx
+    It is made of a block with all toplevel definitions
+    of the structure. *)
+
+let lambda_for_compunit (s:ml_flat_structure) =
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
   do_elems [] cont s
 
-let do_structure_phrase (s:ml_flat_structure) ot =
+(** Build a lambda expression aimed at behind directly
+    loaded in the toplevel (or dynlinked in the native coqtop).
+    The "main" code might be given separately, if not we use
+    the last declaration of the structure. *)
+
+let lambda_for_eval (s:ml_flat_structure) (ot:ml_ast option) =
   let cont names =
     match ot with
     | None -> Lvar (List.hd names) (* no final code, we pick the last one *)
@@ -273,21 +282,7 @@ let do_structure_phrase (s:ml_flat_structure) ot =
   in
   do_elems [] cont s
 
-let flatten_structure s =
-  List.map snd (List.flatten (List.map snd s))
 
-let get_struct q =
-  let r = ConstRef (Nametab.locate_constant q) in
-  let s =
-    Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
-  in flatten_structure s
-
-let struct_last_type (s:ml_flat_structure) =
-  try
-    match List.last s with
-    | SEdecl (Dterm (_,_,ty)) -> ty
-    | _ -> raise Not_found
-  with Failure _ | Not_found -> failwith "struct_last_type"
 
 type reconstruction_failure =
 | FunctionalValue
@@ -336,56 +331,26 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
   Term.mkApp (Term.mkConstruct cons, args)
 
 let make_cmo ?(debug=false) modulename (structure:ml_flat_structure) =
-  reset_tables ();
-  Translobj.reset_labels ();
-  Translmod.primitive_declarations := [];
-  Env.reset_cache ();
-  let mod_id = Ident.create_persistent modulename in
-  let lambda = Lprim (Psetglobal mod_id,[do_structure_mod structure]) in
-  (* borrowed from drivers/compile.ml *)
-  let lambda' = Simplif.simplify_lambda lambda in
-  if debug then Printlambda.lambda Format.std_formatter lambda';
-  let bytecode = Bytegen.compile_implementation modulename lambda' in
-  if debug then Printinstr.instrlist Format.std_formatter bytecode;
-  let oc = open_out_bin (modulename^".cmo") in
-  let () = Emitcode.to_file oc modulename bytecode in
-  close_out oc
-
-let direct_eval ?(debug=false) (structure:ml_flat_structure) ot =
-  let lam = do_structure_phrase structure ot in
-  (* borrowed from toplevel/toploop.ml *)
-  let slam = Simplif.simplify_lambda lam in
-  if debug then Printlambda.lambda Format.std_formatter slam;
-  let (init_code, fun_code) = Bytegen.compile_phrase slam in
-  let (code, code_size, reloc) = Emitcode.to_memory init_code fun_code in
-  let can_free = (fun_code = []) in
-  let initial_symtable = Symtable.current_state() in
-  Symtable.patch_object code reloc;
-  Symtable.check_global_initialized reloc;
-  Symtable.update_global_table();
-  try
-    let retval = (Meta.reify_bytecode code code_size) () in
-    if can_free then begin
-      Meta.static_release_bytecode code code_size;
-      Meta.static_free code;
-    end;
-    retval
-  with x ->
-    if can_free then begin
-      Meta.static_release_bytecode code code_size;
-      Meta.static_free code;
-    end;
-    Symtable.restore_state initial_symtable;
-    raise x
-
-let extraction_compute_debug q =
-  let s = get_struct q in
-  reconstruct (struct_last_type s) (direct_eval s None)
+  Olambda_byte.reset_compiler ();
+  Olambda_byte.compile_lambda ~debug modulename
+    (lambda_for_compunit structure)
 
 let cannot_reconstruct_msg = function
 | FunctionalValue -> "function encountered"
 | ProofOrTypeValue -> "proof part or type encountered"
 | MlUntypableValue -> "ML untypable term encountered"
+
+let flatten_structure s =
+  List.map snd (List.flatten (List.map snd s))
+
+let get_struct q =
+  let r = ConstRef (Nametab.locate_constant q) in
+  let s =
+    Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
+  in flatten_structure s
+
+let direct_eval ?(debug=false) (s:ml_flat_structure) ot =
+  Olambda_byte.eval_lambda ~debug (lambda_for_eval s ot)
 
 let extraction_compute c =
   try
