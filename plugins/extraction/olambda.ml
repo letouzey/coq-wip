@@ -249,34 +249,43 @@ let do_Dfix rv c =
 
 let rec do_elems names cont = function
   |[] -> cont names
-  |(_,(SEmodule _ | SEmodtype _)) :: _ -> failwith "unsupported inner modules"
-  |(_,SEdecl (Dind _ | Dtype _)) :: elems -> do_elems names cont elems
-  |(_,SEdecl (Dterm (r,t,_))) :: elems ->
+  |(SEmodule _ | SEmodtype _) :: _ -> failwith "unsupported inner modules"
+  |SEdecl (Dind _ | Dtype _) :: elems -> do_elems names cont elems
+  |SEdecl (Dterm (r,t,_)) :: elems ->
     let id = id_of_global r in
     let e = do_expr [] [] t in
     let rest = do_elems (id::names) cont elems in
     Llet (Alias, id, e, rest)
-  |(_,SEdecl (Dfix (rv,c,_))) :: elems ->
+  |SEdecl (Dfix (rv,c,_)) :: elems ->
     let ids, defs = do_Dfix rv c in
     let rest = do_elems (List.rev_append ids names) cont elems in
     Lletrec (defs, rest)
 
-let do_structure_mod (s:ml_structure) =
+let do_structure_mod (s:ml_flat_structure) =
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
-  do_elems [] cont (List.flatten (List.map snd s))
+  do_elems [] cont s
 
-let do_structure_phrase (s:ml_structure) =
-  let cont names = Lvar (List.hd names) in
-  do_elems [] cont (List.flatten (List.map snd s))
+let do_structure_phrase (s:ml_flat_structure) ot =
+  let cont names =
+    match ot with
+    | None -> Lvar (List.hd names) (* no final code, we pick the last one *)
+    | Some t -> do_expr [] [] t
+  in
+  do_elems [] cont s
+
+let flatten_structure s =
+  List.map snd (List.flatten (List.map snd s))
 
 let get_struct q =
   let r = ConstRef (Nametab.locate_constant q) in
-  Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
+  let s =
+    Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
+  in flatten_structure s
 
-let struct_last_type (s:ml_structure) =
+let struct_last_type (s:ml_flat_structure) =
   try
-    match List.last (snd (List.last s)) with
-    | (_,SEdecl (Dterm (_,_,ty))) -> ty
+    match List.last s with
+    | SEdecl (Dterm (_,_,ty)) -> ty
     | _ -> raise Not_found
   with Failure _ | Not_found -> failwith "struct_last_type"
 
@@ -326,7 +335,7 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
   let args = Array.map2 reconstruct typs' args in
   Term.mkApp (Term.mkConstruct cons, args)
 
-let make_cmo ?(debug=false) modulename (structure:ml_structure) =
+let make_cmo ?(debug=false) modulename (structure:ml_flat_structure) =
   reset_tables ();
   Translobj.reset_labels ();
   Translmod.primitive_declarations := [];
@@ -342,8 +351,8 @@ let make_cmo ?(debug=false) modulename (structure:ml_structure) =
   let () = Emitcode.to_file oc modulename bytecode in
   close_out oc
 
-let direct_eval ?(debug=false) (structure:ml_structure) =
-  let lam = do_structure_phrase structure in
+let direct_eval ?(debug=false) (structure:ml_flat_structure) ot =
+  let lam = do_structure_phrase structure ot in
   (* borrowed from toplevel/toploop.ml *)
   let slam = Simplif.simplify_lambda lam in
   if debug then Printlambda.lambda Format.std_formatter slam;
@@ -369,9 +378,22 @@ let direct_eval ?(debug=false) (structure:ml_structure) =
     Symtable.restore_state initial_symtable;
     raise x
 
-let extraction_compute q =
+let extraction_compute_debug q =
   let s = get_struct q in
-  reconstruct (struct_last_type s) (direct_eval s)
+  reconstruct (struct_last_type s) (direct_eval s None)
+
+let cannot_reconstruct_msg = function
+| FunctionalValue -> "function encountered"
+| ProofOrTypeValue -> "proof part or type encountered"
+| MlUntypableValue -> "ML untypable term encountered"
+
+let extraction_compute c =
+  try
+    let s,t,ty = Extract_env.structure_for_compute c in
+    reconstruct ty (direct_eval s (Some t))
+  with CannotReconstruct r ->
+    Errors.error ("Cannot reconstruct a Coq value : " ^
+                  cannot_reconstruct_msg r)
 
 (* TODO:
    X MLexn ...
@@ -383,7 +405,7 @@ let extraction_compute q =
    - Or rather to glob_constr with retyping (e.g. for lists)
      Cf. Pretyping.understand ...
    - Extraction to native code ...
-   - Avoid the need to define a temp constant as "main"
+   X Avoid the need to define a temp constant as "main"
    - Disable the Obj.magic production (no need to type-check :-)
 
    Beware: in extraction of Coq's bool, true comes first, hence mapped to
