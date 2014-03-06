@@ -330,11 +330,6 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
   let args = Array.map2 reconstruct typs' args in
   Term.mkApp (Term.mkConstruct cons, args)
 
-let make_cmo ?(debug=false) modulename (structure:ml_flat_structure) =
-  Olambda_byte.reset_compiler ();
-  Olambda_byte.compile_lambda ~debug modulename
-    (lambda_for_compunit structure)
-
 let cannot_reconstruct_msg = function
 | FunctionalValue -> "function encountered"
 | ProofOrTypeValue -> "proof part or type encountered"
@@ -348,17 +343,6 @@ let get_struct q =
   let s =
     Modutil.optimize_struct ([r],[]) (Extract_env.mono_environment [r] [])
   in flatten_structure s
-
-let direct_eval ?(debug=false) (s:ml_flat_structure) ot =
-  Olambda_byte.eval_lambda ~debug (lambda_for_eval s ot)
-
-let extraction_compute c =
-  try
-    let s,t,ty = Extract_env.structure_for_compute c in
-    reconstruct ty (direct_eval s (Some t))
-  with CannotReconstruct r ->
-    Errors.error ("Cannot reconstruct a Coq value : " ^
-                  cannot_reconstruct_msg r)
 
 (* TODO:
    X MLexn ...
