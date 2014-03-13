@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(*i camlp4deps: "grammar/grammar.cma" i*)
-
 open Flags
 open Pp
 open Errors
@@ -18,10 +16,7 @@ open Libnames
 open Globnames
 open Nametab
 open Detyping
-open Constrintern
 open Dischargedhypsmap
-open Pfedit
-open Tacmach
 open Misctypes
 
 (* Coq interface to the Whelp query engine developed at
@@ -180,21 +175,11 @@ let whelp_constr req c =
   let c = detype false [whelm_special] [] c in
   send_whelp req (make_string uri_of_constr c)
 
-let whelp_constr_expr req c =
-  let (sigma,env)= Lemmas.get_current_context () in
-  let _,c = interp_open_constr sigma env c in
-  whelp_constr req c
-
 let whelp_locate s =
   send_whelp "locate" s
 
 let whelp_elim ind =
   send_whelp "elim" (make_string uri_of_global (IndRef ind))
-
-let on_goal f =
-  let gls = Proof.V82.subgoals (get_pftreestate ()) in
-  let gls = { gls with Evd.it = List.hd gls.Evd.it }  in
-  f (Termops.it_mkNamedProd_or_LetIn (pf_concl gls) (pf_hyps gls))
 
 type whelp_request =
   | Locate of string
@@ -205,21 +190,3 @@ let whelp = function
   | Locate s -> whelp_locate s
   | Elim ind -> whelp_elim ind
   | Constr (s,c) -> whelp_constr s c
-
-VERNAC ARGUMENT EXTEND whelp_constr_request
-| [ "Match" ] -> [ "match" ]
-| [ "Instance" ] -> [ "instance" ]
-END
-
-VERNAC COMMAND EXTEND Whelp CLASSIFIED AS QUERY
-| [ "Whelp" "Locate" string(s) ] -> [ whelp_locate s ]
-| [ "Whelp" "Locate" preident(s) ] -> [ whelp_locate s ]
-| [ "Whelp" "Elim" global(r) ] -> [ whelp_elim (Smartlocate.global_inductive_with_alias r) ]
-| [ "Whelp" whelp_constr_request(req) constr(c) ] -> [ whelp_constr_expr req c]
-END
-
-VERNAC COMMAND EXTEND WhelpHint CLASSIFIED AS QUERY
-| [ "Whelp" "Hint" constr(c) ] -> [ whelp_constr_expr "hint" c ]
-| [ "Whelp" "Hint" ] => [ Vernacexpr.VtProofStep, Vernacexpr.VtLater ] ->
-  [ on_goal (whelp_constr "hint") ]
-END

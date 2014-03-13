@@ -5,3 +5,7 @@ Pcoq
 Egramml
 Egramcoq
 G_xml
+G_prim
+G_constr
+G_tactic
+G_ltac
