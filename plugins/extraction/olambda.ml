@@ -286,14 +286,20 @@ let lambda_for_eval (s:ml_flat_structure) (ot:ml_ast option) =
 
 type reconstruction_failure =
 | FunctionalValue
-| ProofOrTypeValue
+| ProofOrTypeValue (* unused, we now produce an evar instead *)
 | MlUntypableValue
 
 exception CannotReconstruct of reconstruction_failure
 
+let mk_hole = Glob_term.GHole (Loc.ghost, Evar_kinds.InternalHole, None)
+
+let mk_construct cons args =
+  let head = Glob_term.GRef (Loc.ghost, ConstructRef cons) in
+  Glob_term.GApp (Loc.ghost, head, args)
+
 let rec reconstruct typ o = match typ with
   |Tarr _ -> raise (CannotReconstruct FunctionalValue)
-  |Tdummy _ -> raise (CannotReconstruct ProofOrTypeValue)
+  |Tdummy _ -> mk_hole (*raise (CannotReconstruct ProofOrTypeValue)*)
   |Tunknown -> raise (CannotReconstruct MlUntypableValue)
   |Tmeta {contents = Some typ' } -> reconstruct typ' o
   |Tmeta _ | Tvar _ | Tvar' _ | Taxiom -> assert false
@@ -322,13 +328,25 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
     else
       info.ind_consts.(Obj.obj o), [||]
   in
-  let typs = Array.of_list ml_ind.ip_types.(snd cons - 1) in
-  if Array.length typs <> Array.length args
-  then raise (CannotReconstruct ProofOrTypeValue);
   assert (List.length typ_args = List.length ml_ind.ip_vars);
+  let typs = Array.of_list ml_ind.ip_types.(snd cons - 1) in
   let typs' = Array.map (Mlutil.type_subst_list typ_args) typs in
-  let args = Array.map2 reconstruct typs' args in
-  Term.mkApp (Term.mkConstruct cons, args)
+  let nparams = List.length ml_ind.ip_sign in
+  mk_construct cons (reconstruct_ind_args nparams typs' args)
+
+(** Insert holes at the right place in constructor arguments *)
+
+and reconstruct_ind_args nparams typs args =
+  let size = nparams + Array.length typs in
+  let res = Array.make size mk_hole in
+  let a = ref (Array.to_list args) in
+  let next_arg () = match !a with [] -> assert false | t::l -> a:=l; t in
+  let no_more_arg () = List.is_empty !a in
+  Array.iteri (fun i ty ->
+    if not (Mlutil.isDummy ty) then
+      res.(nparams+i) <- reconstruct ty (next_arg ())) typs;
+  assert (no_more_arg ());
+  Array.to_list res
 
 let cannot_reconstruct_msg = function
 | FunctionalValue -> "function encountered"
@@ -351,8 +369,7 @@ let get_struct q =
    X Coinductives
    - Tests : rec mutuels, modules, records, avec dummy, ...
    X Reconstruction of constr when possible
-   - Or rather to glob_constr with retyping (e.g. for lists)
-     Cf. Pretyping.understand ...
+   X Or rather to glob_constr with retyping (e.g. for lists)
    - Extraction to native code ...
    X Avoid the need to define a temp constant as "main"
    - Disable the Obj.magic production (no need to type-check :-)
