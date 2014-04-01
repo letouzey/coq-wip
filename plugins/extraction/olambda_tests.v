@@ -57,3 +57,13 @@ CoFixpoint seq n := Cons _ n (seq (S n)).
 Definition nats := seq O.
 
 Definition test_stream := nth 10 (map S nats).
+
+
+(*
+Declare ML Module "extrcompute_byte_plugin".
+Extraction Compute testeven.
+Extraction Compute test_reco.
+Extraction Compute test_stream.
+Require List.
+Extraction Compute (List.map S (List.seq 10 10 ++ List.seq 50 10))%list.
+*)
