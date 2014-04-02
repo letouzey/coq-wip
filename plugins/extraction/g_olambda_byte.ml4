@@ -8,12 +8,12 @@
 
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
-let make_cmo ?(debug=false) modulename (structure:Miniml.ml_flat_structure) =
+let make_cmo ?(debug=false) modulename (structure:Miniml.ml_decl list) =
   Olambda_byte.reset_compiler ();
   Olambda_byte.compile_lambda ~debug modulename
     (Olambda.lambda_for_compunit structure)
 
-let direct_eval ?(debug=false) (s:Miniml.ml_flat_structure) ot =
+let direct_eval ?(debug=false) (s:Miniml.ml_decl list) ot =
   Olambda_byte.eval_lambda ~debug (Olambda.lambda_for_eval s ot)
 
 let compute_constr env c =

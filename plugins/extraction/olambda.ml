@@ -261,23 +261,21 @@ let do_Dfix rv c =
 
 let rec do_elems names cont = function
   |[] -> cont names
-  |(SEmodule _ | SEmodtype _) :: _ -> failwith "unsupported inner modules"
-  |SEdecl (Dind _ | Dtype _) :: elems -> do_elems names cont elems
-  |SEdecl (Dterm (r,t,_)) :: elems ->
+  |(Dind _ | Dtype _) :: elems -> do_elems names cont elems
+  |Dterm (r,t,_) :: elems ->
     let id = id_of_global r in
     let e = do_expr [] [] t in
     let rest = do_elems (id::names) cont elems in
     Llet (Alias, id, e, rest)
-  |SEdecl (Dfix (rv,c,_)) :: elems ->
+  |Dfix (rv,c,_) :: elems ->
     let ids, defs = do_Dfix rv c in
     let rest = do_elems (List.rev_append ids names) cont elems in
     Lletrec (defs, rest)
 
 (** Build a lambda expression aimed at creating a .cmo or .cmx
-    It is made of a block with all toplevel definitions
-    of the structure. *)
+    It is made of a block with all definitions of the structure. *)
 
-let lambda_for_compunit (s:ml_flat_structure) =
+let lambda_for_compunit (s:ml_decl list) =
   reset_dummy ();
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
   let t = do_elems [] cont s in
@@ -288,7 +286,7 @@ let lambda_for_compunit (s:ml_flat_structure) =
     The "main" code might be given separately, if not we use
     the last declaration of the structure. *)
 
-let lambda_for_eval (s:ml_flat_structure) (ot:ml_ast option) =
+let lambda_for_eval (s:ml_decl list) (ot:ml_ast option) =
   reset_dummy ();
   let cont names =
     match ot with
