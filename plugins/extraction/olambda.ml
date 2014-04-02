@@ -34,6 +34,18 @@ let mkforce t = Matching.inline_lazy_force t Location.none
 let id_of_id id = Ident.create (Id.to_string id)
 let id_of_mlid id = id_of_id (Mlutil.id_of_mlid id)
 
+(** Implementation of dummy *)
+
+let reset_dummy, get_dummy_name, add_dummy_def =
+  let var = ref (Ident.create "dummy") in
+  let used = ref false in
+  (fun () -> var := Ident.create "dummy"; used := false),
+  (fun () -> used := true; !var),
+  (fun t ->
+    if not !used then t
+    else
+      Lletrec ([!var,Lfunction (Curried,[Ident.create "x"],Lvar !var)],t))
+
 (** Table of global names *)
 
 let global_table = (Hashtbl.create 47 : (global_reference, Ident.t) Hashtbl.t)
@@ -232,7 +244,7 @@ let rec do_expr env args = function
       (List.map2 (fun id t -> id, do_expr env' [] t) ids' (Array.to_list defs),
        apply (Lvar (List.nth ids' i)) args)
   |MLexn s -> Lprim (Praise, [mkblock 0 [mkexn s]])
-  |MLdummy -> mkint 0 (* TODO put someday the real __ *)
+  |MLdummy -> Lvar (get_dummy_name ()) (* TODO: could frequently be () *)
   |MLmagic a -> do_expr env args a
   |MLaxiom -> failwith "An axiom must be realized first"
   |MLtuple l ->
@@ -266,8 +278,10 @@ let rec do_elems names cont = function
     of the structure. *)
 
 let lambda_for_compunit (s:ml_flat_structure) =
+  reset_dummy ();
   let cont names = mkblock 0 (List.rev_map (fun id -> Lvar id) names) in
-  do_elems [] cont s
+  let t = do_elems [] cont s in
+  add_dummy_def t
 
 (** Build a lambda expression aimed at behind directly
     loaded in the toplevel (or dynlinked in the native coqtop).
@@ -275,13 +289,14 @@ let lambda_for_compunit (s:ml_flat_structure) =
     the last declaration of the structure. *)
 
 let lambda_for_eval (s:ml_flat_structure) (ot:ml_ast option) =
+  reset_dummy ();
   let cont names =
     match ot with
     | None -> Lvar (List.hd names) (* no final code, we pick the last one *)
     | Some t -> do_expr [] [] t
   in
-  do_elems [] cont s
-
+  let t = do_elems [] cont s in
+  add_dummy_def t
 
 
 type reconstruction_failure =
@@ -324,9 +339,13 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
   let info = get_ind_info ind in
   let cons, args =
     if Obj.is_block o then
-      info.ind_nonconsts.(Obj.tag o), (Obj.obj o : Obj.t array)
+      let n = Obj.tag o in
+      assert (n < Array.length info.ind_nonconsts);
+      info.ind_nonconsts.(n), (Obj.obj o : Obj.t array)
     else
-      info.ind_consts.(Obj.obj o), [||]
+      let n = Obj.obj o in
+      assert (n < Array.length info.ind_consts);
+      info.ind_consts.(n), [||]
   in
   assert (List.length typ_args = List.length ml_ind.ip_vars);
   let typs = Array.of_list ml_ind.ip_types.(snd cons - 1) in
@@ -364,9 +383,10 @@ let get_struct q =
 
 (* TODO:
    X MLexn ...
-   - MLdummy as __ rather than ()
+   X MLdummy as __ rather than ()
    X Better extraction of MLcase when mere projection ? Really useful ? NO
    X Coinductives
+   - Modules
    - Tests : rec mutuels, modules, records, avec dummy, ...
    X Reconstruction of constr when possible
    X Or rather to glob_constr with retyping (e.g. for lists)
