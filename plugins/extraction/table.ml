@@ -245,6 +245,11 @@ let modular () = !modular_ref
 let set_library b = library_ref := b
 let library () = !library_ref
 
+let extrcompute = ref false
+
+let set_extrcompute b = extrcompute := b
+let is_extrcompute () = !extrcompute
+
 (*s Printing. *)
 
 (* The following functions work even on objects not in [Global.env ()].
