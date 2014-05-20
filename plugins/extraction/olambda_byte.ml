@@ -20,6 +20,8 @@ let reset_compiler () =
 let compile_lambda ?(debug=false) modulename lam =
   let mod_id = Ident.create_persistent modulename in
   let lambda = Lambda.Lprim (Lambda.Psetglobal mod_id,[lam]) in
+  if debug then Printlambda.lambda Format.std_formatter lambda;
+  if debug then Printf.printf "=======\n%!";
   let lambda' = Simplif.simplify_lambda lambda in
   if debug then Printlambda.lambda Format.std_formatter lambda';
   let bytecode = Bytegen.compile_implementation modulename lambda' in
@@ -33,9 +35,12 @@ let compile_lambda ?(debug=false) modulename lam =
     Code borrowed from toplevel/toploop.ml *)
 
 let eval_lambda ?(debug=false) lam =
+  if debug then Printlambda.lambda Format.std_formatter lam;
+  if debug then Printf.printf "\n\n=======\n\n%!";
   let slam = Simplif.simplify_lambda lam in
   if debug then Printlambda.lambda Format.std_formatter slam;
   let (init_code, fun_code) = Bytegen.compile_phrase slam in
+  if debug then Printinstr.instrlist Format.std_formatter fun_code;
   let (code, code_size, reloc) = Emitcode.to_memory init_code fun_code in
   let can_free = (fun_code = []) in
   let initial_symtable = Symtable.current_state() in
