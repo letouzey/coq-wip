@@ -99,41 +99,13 @@ let get_ind_info ind =
     Hashtbl.add ind_table ind info;
     info
 
-let cons_table = (Hashtbl.create 47 :
-                    (constructor, Types.constructor_description) Hashtbl.t)
-
 let get_cons_tag = function
   |ConstructRef (ind,j) -> (get_ind_info ind).ind_tags.(j-1)
   |_ -> assert false
 
-let get_cons_desc = function
-  |ConstructRef (ind,j) ->
-    (try Hashtbl.find cons_table (ind,j)
-     with Not_found ->
-       let mlind = get_mlind ind in
-       let info = get_ind_info ind in
-       let desc =
-         { Types.cstr_name = Id.to_string (mlind.ip_consnames.(j-1));
-           Types.cstr_arity = List.length (mlind.ip_types.(j-1));
-           Types.cstr_tag = info.ind_tags.(j-1);
-           Types.cstr_consts = Array.length info.ind_consts;
-           Types.cstr_nonconsts = Array.length info.ind_nonconsts;
-           (* All other fields aren't used by Matching.ml : *)
-           Types.cstr_res = Ctype.none;
-           Types.cstr_existentials = [];
-           Types.cstr_args = [];
-           Types.cstr_normal = 0;
-           Types.cstr_generalized = true;
-           Types.cstr_private = Asttypes.Public }
-       in
-       Hashtbl.add cons_table (ind,j) desc;
-       desc)
-  |_ -> assert false
-
 let reset_tables () =
   Hashtbl.clear global_table;
-  Hashtbl.clear ind_table;
-  Hashtbl.clear cons_table
+  Hashtbl.clear ind_table
 
 (** Record fields *)
 
@@ -158,29 +130,38 @@ let push_vars ids db = ids @ db
 
 (** Patterns *)
 
-let rec gen_usual_args n = (* Prel n; ... ; Prel 1 *)
-  if n = 0 then [] else Prel n :: (gen_usual_args (n-1))
+type env = Ident.t list
 
-let rec do_pattern env pat = (* fake pattern with just enough for Matching.ml *)
-  { Parmatch.omega with Typedtree.pat_desc = do_pat_desc env pat }
+let rec push_branch id_head env k (cont:env->lambda) = function
+  | [] -> cont env
+  | id::ids ->
+    let id' = id_of_mlid id in
+    let env' = push_vars [id'] env in
+    Llet (Alias, id', Lprim (Pfield k, [Lvar id_head]),
+          push_branch id_head env' (k+1) cont ids)
 
-and do_pat_desc env = function
-  |Pwild -> Typedtree.Tpat_any
-  |Prel n ->
-    let id = get_db_name n env in
-    Typedtree.Tpat_var (id,Location.mknoloc (Ident.name id))
-  |Ptuple l -> Typedtree.Tpat_tuple (List.map (do_pattern env) l)
-  |Pcons (r,l) ->
-    let desc = get_cons_desc r in
-    let args = List.map (do_pattern env) l in
-    let consname = Location.mknoloc (Longident.Lident desc.Types.cstr_name) in
-    Typedtree.Tpat_construct (consname,desc,args,false)
-  |Pusual r ->
-    let desc = get_cons_desc r in
-    let arity = desc.Types.cstr_arity in
-    let args = List.map (do_pattern env) (gen_usual_args arity) in
-    let consname = Location.mknoloc (Longident.Lident desc.Types.cstr_name) in
-    Typedtree.Tpat_construct (consname,desc,args,false)
+let do_branches id_head env (cont:env->ml_ast->lambda) br =
+  let csts = ref [] and blks = ref [] and ends = ref None in
+  let do_branch (ids,patt,trm) = match patt with
+    |Pusual r ->
+      let code = push_branch id_head env 0 (fun e -> cont e trm) ids in
+      (match get_cons_tag r with
+      | Types.Cstr_constant i -> csts := (i,code) :: !csts
+      | Types.Cstr_block i -> blks := (i,code) :: !blks
+      | _ -> assert false)
+    |Pwild ->
+      assert (List.is_empty ids);
+      assert (Option.is_empty !ends);
+      ends := Some (cont env trm)
+    |Prel 1 ->
+      assert (List.length ids = 1);
+      assert (Option.is_empty !ends);
+      let env' = push_vars [id_head] env in (* hack : we reuse id_head *)
+      ends := Some (cont env' trm)
+    |_ -> failwith "Pattern currently unsupported"
+  in
+  Array.iter do_branch br;
+  (List.rev !csts, List.rev !blks, !ends)
 
 (** Terms *)
 
@@ -226,16 +207,24 @@ let rec do_expr env args = function
       if Table.is_coinductive r then mklazy t else t
   |MLcase (typ, t, pv) ->
     if Table.is_custom_match pv then failwith "unsupported custom match";
+    let ind = match Mlutil.type_simpl typ with
+      | Tglob (IndRef i,_) -> i
+      | _ -> assert false
+    in
+    let info = get_ind_info ind in
     let head = do_expr env [] t in
     let head = if Table.is_coinductive_type typ then mkforce head else head in
-    (* NB: the matching compilation below will optimize the matchs
-       that are mere record projections. *)
-    let do_one_pat (ids,p,t) =
-      let env' = push_vars (List.rev_map id_of_mlid ids) env in
-      (do_pattern env' p, do_expr env' [] t)
-    in
-    let branches = List.map do_one_pat (Array.to_list pv) in
-    Matching.for_function Location.none None head branches Typedtree.Total
+    (* TODO: restore optimization of matchs that are mere record projections. *)
+    (* TODO: what about args ? *)
+    let id = Ident.create "sw" in
+    let (csts,blks,last) = do_branches id env (fun e -> do_expr e []) pv in
+    Llet (Alias, id, head,
+          Lswitch (Lvar id,
+                   {sw_numconsts = Array.length info.ind_consts;
+                    sw_consts = csts;
+                    sw_numblocks = Array.length info.ind_nonconsts;
+                    sw_blocks = blks;
+                    sw_failaction = last}))
   |MLfix (i,ids,defs) ->
     let rev_ids = List.rev_map id_of_id (Array.to_list ids) in
     let env' = push_vars rev_ids env in
