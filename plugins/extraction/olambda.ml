@@ -163,6 +163,36 @@ let do_branches id_head env (cont:env->ml_ast->lambda) br =
   Array.iter do_branch br;
   (List.rev !csts, List.rev !blks, !ends)
 
+(** Build a Lswitch or an optimized form (e.g. Lifthenelse) in a few nice
+    cases *)
+
+let mkswitch ind_info id_head = function
+  (* zero branch *)
+  | [], [], None -> assert false (* this case should have become a MLexn *)
+  (* one branch *)
+  | [(_,e)], [], None
+  | [], [(_,e)], None
+  | [], [], Some e -> e
+  (* two branches with at least a constant one *)
+  | [(i1,e1);(_,e2)], [], None
+  | [(i1,e1)], [_,e2], None
+  | [(i1,e1)], [], Some e2 ->
+    if Int.equal i1 0 then
+      Lifthenelse (Lvar id_head, e2, e1) (* NB: default test is non-nullity *)
+    else
+      let test = Lprim (Pintcomp Ceq,[Lvar id_head; mkint i1]) in
+      Lifthenelse (test, e1, e2)
+  (* otherwise a general switch *)
+  | csts,blks,last ->
+    let sw =
+      {sw_numconsts = Array.length ind_info.ind_consts;
+       sw_consts = csts;
+       sw_numblocks = Array.length ind_info.ind_nonconsts;
+       sw_blocks = blks;
+       sw_failaction = last}
+    in
+    Lswitch (Lvar id_head, sw)
+
 (** Terms *)
 
 let apply e = function
@@ -214,17 +244,9 @@ let rec do_expr env args = function
     let info = get_ind_info ind in
     let head = do_expr env [] t in
     let head = if Table.is_coinductive_type typ then mkforce head else head in
-    (* TODO: restore optimization of matchs that are mere record projections. *)
-    (* TODO: what about args ? *)
     let id = Ident.create "sw" in
-    let (csts,blks,last) = do_branches id env (fun e -> do_expr e []) pv in
-    Llet (Alias, id, head,
-          Lswitch (Lvar id,
-                   {sw_numconsts = Array.length info.ind_consts;
-                    sw_consts = csts;
-                    sw_numblocks = Array.length info.ind_nonconsts;
-                    sw_blocks = blks;
-                    sw_failaction = last}))
+    let branches = do_branches id env (fun e -> do_expr e []) pv in
+    Llet (Alias, id, head, apply (mkswitch info id branches) args)
   |MLfix (i,ids,defs) ->
     let rev_ids = List.rev_map id_of_id (Array.to_list ids) in
     let env' = push_vars rev_ids env in
