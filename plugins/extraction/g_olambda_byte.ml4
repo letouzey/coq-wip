@@ -13,7 +13,7 @@ let make_cmo ?(debug=false) modulename (structure:Miniml.ml_decl list) =
   Olambda_byte.compile_lambda ~debug modulename
     (Olambda.lambda_for_compunit structure)
 
-let direct_eval ?(debug=true) (s:Miniml.ml_decl list) ot =
+let direct_eval ?(debug=false) (s:Miniml.ml_decl list) ot =
   Olambda_byte.eval_lambda ~debug (Olambda.lambda_for_eval s ot)
 
 let compute_constr env c =

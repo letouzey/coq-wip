@@ -15,6 +15,8 @@ open Miniml
 
 open Lambda (* in compiler-libs *)
 
+(** Basic data representation *)
+
 let mkint n = Lconst (Const_base (Asttypes.Const_int n))
 let mkchar c = Lconst (Const_base (Asttypes.Const_char c))
 let mkstring str = Lconst (Const_base (Asttypes.Const_string str))
@@ -34,6 +36,7 @@ let mkforce t = Matching.inline_lazy_force t Location.none
 let id_of_id id = Ident.create (Id.to_string id)
 let id_of_mlid id = id_of_id (Mlutil.id_of_mlid id)
 
+
 (** Implementation of dummy *)
 
 let reset_dummy, get_dummy_name, add_dummy_def =
@@ -46,18 +49,20 @@ let reset_dummy, get_dummy_name, add_dummy_def =
     else
       Lletrec ([!var,Lfunction (Curried,[Ident.create "x"],Lvar !var)],t))
 
+
 (** Table of global names *)
 
-let global_table = (Hashtbl.create 47 : (global_reference, Ident.t) Hashtbl.t)
+let global_table = ref (Refmap_env.empty : Ident.t Refmap_env.t)
 
 let id_of_global r =
   if Table.is_inline_custom r then failwith "Custom : unsupported";
-  try Hashtbl.find global_table r
+  try Refmap_env.find r !global_table
   with Not_found ->
     assert (isConstRef r);
     let id = Ident.create (Constant.to_string (destConstRef r)) in
-    Hashtbl.add global_table r id;
+    global_table := Refmap_env.add r id !global_table;
     id
+
 
 (** Table of inductives and constructors *)
 
@@ -66,14 +71,14 @@ type ind_info =
     ind_consts : constructor array; (* constant constructors, by index *)
     ind_nonconsts : constructor array } (* non-csts constructors, by tags *)
 
-let ind_table = (Hashtbl.create 47 : (inductive, ind_info) Hashtbl.t)
+let ind_table = ref (Indmap_env.empty : ind_info Indmap_env.t)
 
 let get_mlind (kn,i) =
   let mi = Extraction.extract_inductive (Global.env ()) kn in
   mi.ind_packets.(i)
 
 let get_ind_info ind =
-  try Hashtbl.find ind_table ind
+  try Indmap_env.find ind !ind_table
   with Not_found ->
     let nb_const = ref 0 and nb_block = ref 0 in
     let tags = Array.map
@@ -96,7 +101,7 @@ let get_ind_info ind =
       ind_consts = consts;
       ind_nonconsts = nonconsts }
     in
-    Hashtbl.add ind_table ind info;
+    ind_table := Indmap_env.add ind info !ind_table;
     info
 
 let get_cons_tag = function
@@ -104,8 +109,8 @@ let get_cons_tag = function
   |_ -> assert false
 
 let reset_tables () =
-  Hashtbl.clear global_table;
-  Hashtbl.clear ind_table
+  global_table := Refmap_env.empty;
+  ind_table := Indmap_env.empty
 
 (** Record fields *)
 
@@ -128,23 +133,35 @@ let get_db_name n db =
 
 let push_vars ids db = ids @ db
 
-(** Patterns *)
+
+(** Compilation of patterns *)
 
 type env = Ident.t list
 
-let rec push_branch id_head env k (cont:env->lambda) = function
-  | [] -> cont env
-  | id::ids ->
-    let id' = id_of_mlid id in
-    let env' = push_vars [id'] env in
-    Llet (Alias, id', Lprim (Pfield k, [Lvar id_head]),
-          push_branch id_head env' (k+1) cont ids)
+(** [finalize_branch] adapts a branch [C x1...xn => t]
+    (where [t] is lifted by [n]) to a code such as
+    [let x1 = proj1 head in ... let xn = projn head in (cont t)] *)
 
-let do_branches id_head env (cont:env->ml_ast->lambda) br =
+let finalize_branch env (cont:env->ml_ast->lambda) id_head (ids,_,trm) =
+  let rec loop env k = function
+    | [] -> cont env trm
+    | id::ids ->
+      let id' = id_of_mlid id in
+      let env' = push_vars [id'] env in
+      Llet (Alias, id', Lprim (Pfield k, [Lvar id_head]),
+            loop env' (k+1) ids)
+  in
+  loop env 0 ids
+
+(** [do_branches] turns all the branches of a MLcase into lambda codes,
+    that are organized as lists of constant branches, block branches, and
+    an optional failaction. *)
+
+let do_branches env (cont:env->ml_ast->lambda) id_head br =
   let csts = ref [] and blks = ref [] and ends = ref None in
-  let do_branch (ids,patt,trm) = match patt with
+  let do_branch ((ids,patt,trm) as branch) = match patt with
     |Pusual r ->
-      let code = push_branch id_head env 0 (fun e -> cont e trm) ids in
+      let code = finalize_branch env cont id_head branch in
       (match get_cons_tag r with
       | Types.Cstr_constant i -> csts := (i,code) :: !csts
       | Types.Cstr_block i -> blks := (i,code) :: !blks
@@ -163,8 +180,9 @@ let do_branches id_head env (cont:env->ml_ast->lambda) br =
   Array.iter do_branch br;
   (List.rev !csts, List.rev !blks, !ends)
 
-(** Build a Lswitch or an optimized form (e.g. Lifthenelse) in a few nice
-    cases *)
+(** [mkswitch] builds a [Lswitch] out of lists of constant branches,
+    block branches and optional failaction. It also tries to produce
+    shorter code when possible (e.g. Lifthenelse). *)
 
 let mkswitch ind_info id_head = function
   (* zero branch *)
@@ -193,7 +211,8 @@ let mkswitch ind_info id_head = function
     in
     Lswitch (Lvar id_head, sw)
 
-(** Terms *)
+
+(** Compilation of terms *)
 
 let apply e = function
   | [] -> e
@@ -245,7 +264,7 @@ let rec do_expr env args = function
     let head = do_expr env [] t in
     let head = if Table.is_coinductive_type typ then mkforce head else head in
     let id = Ident.create "sw" in
-    let branches = do_branches id env (fun e -> do_expr e []) pv in
+    let branches = do_branches env (fun e -> do_expr e []) id pv in
     Llet (Alias, id, head, apply (mkswitch info id branches) args)
   |MLfix (i,ids,defs) ->
     let rev_ids = List.rev_map id_of_id (Array.to_list ids) in
@@ -292,7 +311,7 @@ let lambda_for_compunit (s:ml_decl list) =
   let t = do_elems [] cont s in
   add_dummy_def t
 
-(** Build a lambda expression aimed at behind directly
+(** Build a lambda expression aimed at being directly
     loaded in the toplevel (or dynlinked in the native coqtop).
     The "main" code might be given separately, if not we use
     the last declaration of the structure. *)
@@ -307,6 +326,8 @@ let lambda_for_eval (s:ml_decl list) (ot:ml_ast option) =
   let t = do_elems [] cont s in
   add_dummy_def t
 
+
+(** Reconstruction of a Coq value from the computation result *)
 
 type reconstruction_failure =
 | FunctionalValue
@@ -381,6 +402,9 @@ let cannot_reconstruct_msg = function
 | ProofOrTypeValue -> "proof part or type encountered"
 | MlUntypableValue -> "ML untypable term encountered"
 
+
+(** Utility functions concerning [ml_struct] *)
+
 let flatten_structure s =
   List.map snd (List.flatten (List.map snd s))
 
@@ -402,6 +426,8 @@ let get_struct q =
    - Extraction to native code ...
    X Avoid the need to define a temp constant as "main"
    - Disable the Obj.magic production (no need to type-check :-)
+
+   - get_db_name and __ ??
 
    Beware: in extraction of Coq's bool, true comes first, hence mapped to
    OCaml's 0 = false !!!
