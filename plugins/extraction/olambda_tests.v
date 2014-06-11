@@ -66,4 +66,25 @@ Extraction Compute test_reco.
 Extraction Compute test_stream.
 Require List.
 Extraction Compute (List.map S (List.seq 10 10 ++ List.seq 50 10))%list.
+Require Import ZArith.
+Extraction Compute (Z.sqrt (2^400)).
+*)
+
+Fixpoint nArrow n : Type :=
+  match n with
+    | 0 => nat
+    | S n => nat -> nArrow n
+  end.
+
+Fixpoint nSum_acc n acc : nArrow n :=
+  match n with
+    | 0 => acc
+    | S m => (fun a => nSum_acc m (acc+a))
+  end.
+
+Definition nSum n : nArrow n := nSum_acc n 0.
+
+(*
+Extraction Compute (nSum 2) 1 3. (* computes 1+3=4 *)
+Extraction Compute (nSum 5) 1 3 5 7 9. (* computes 1+3+5+7+9=25 *)
 *)
