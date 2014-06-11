@@ -419,13 +419,13 @@ let get_struct q =
    X MLdummy as __ rather than ()
    X Better extraction of MLcase when mere projection ? Really useful ? NO
    X Coinductives
-   - Modules
-   - Tests : rec mutuels, modules, records, avec dummy, ...
+   X Modules
+   X Tests : rec mutuels, modules, records, avec dummy, ...
    X Reconstruction of constr when possible
    X Or rather to glob_constr with retyping (e.g. for lists)
    - Extraction to native code ...
    X Avoid the need to define a temp constant as "main"
-   - Disable the Obj.magic production (no need to type-check :-)
+   X Disable the Obj.magic production (no need to type-check :-)
 
    - get_db_name and __ ??
 
