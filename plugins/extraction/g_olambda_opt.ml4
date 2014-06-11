@@ -8,13 +8,18 @@
 
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
-let direct_eval ?(debug=false) (s:Miniml.ml_flat_structure) ot =
+let direct_eval ?(debug=false) (s:Miniml.ml_decl list) ot =
   Olambda_opt.eval_lambda ~debug (Olambda.lambda_for_eval s ot)
 
-let compute_constr c =
+let compute_constr env c =
   try
-    let s,t,ty = Extract_env.structure_for_compute c in
-    Olambda.reconstruct ty (direct_eval s (Some t))
+    let ty = Retyping.get_type_of env Evd.empty c in
+    let s,mlt,mlty = Extract_env.structure_for_compute c in
+    let gterm = Olambda.reconstruct mlty (direct_eval s (Some mlt)) in
+    Pretyping.understand
+      ~flags:Pretyping.all_no_fail_flags
+      ~expected_type:(Pretyping.OfType ty)
+      Evd.empty env gterm
   with Olambda.CannotReconstruct r ->
     Errors.error ("Cannot reconstruct a Coq value : " ^
                   Olambda.cannot_reconstruct_msg r)
@@ -22,7 +27,7 @@ let compute_constr c =
 let compute_constr_expr cexpr =
   let env = Global.env () in
   let c = Constrintern.interp_constr Evd.empty env cexpr in
-  let res = compute_constr c in
+  let res = compute_constr env c in
   Pp.msg_notice (Printer.pr_lconstr res)
 
 VERNAC COMMAND EXTEND ExtractionCompute CLASSIFIED AS QUERY
