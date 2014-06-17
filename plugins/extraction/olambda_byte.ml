@@ -35,12 +35,16 @@ let compile_lambda ?(debug=false) modulename lam =
     Code borrowed from toplevel/toploop.ml *)
 
 let eval_lambda ?(debug=false) lam =
-  if debug then Printlambda.lambda Format.std_formatter lam;
-  if debug then Printf.printf "\n\n=======\n\n%!";
+  let ppf = Format.std_formatter in
+  if debug then Format.fprintf ppf "\n====== RAW LAMBDA ======\n\n";
+  if debug then Printlambda.lambda ppf lam;
+  if debug then Format.fprintf ppf "\n\n====== SIMPLIFIED LAMBDA ======\n";
   let slam = Simplif.simplify_lambda lam in
-  if debug then Printlambda.lambda Format.std_formatter slam;
+  if debug then Printlambda.lambda ppf slam;
   let (init_code, fun_code) = Bytegen.compile_phrase slam in
-  if debug then Printinstr.instrlist Format.std_formatter fun_code;
+  if debug then Format.fprintf ppf "\n\n====== BYTECODE ======\n";
+  if debug then Printinstr.instrlist ppf fun_code;
+  if debug then Format.fprintf ppf "\n====== RESULT ======\n\n";
   let (code, code_size, reloc) = Emitcode.to_memory init_code fun_code in
   let can_free = (fun_code = []) in
   let initial_symtable = Symtable.current_state() in
