@@ -204,7 +204,7 @@ Proof.
 unfold Z.eq; simpl. now nzsimpl'.
 Qed.
 
-Theorem opp_0 : -(0) == 0.
+Theorem opp_0 : - 0 == 0.
 Proof.
 unfold Z.opp, Z.eq; simpl. now nzsimpl.
 Qed.

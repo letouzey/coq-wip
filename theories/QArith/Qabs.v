@@ -113,7 +113,7 @@ intros a.
 apply Qabs_case; auto with *.
 intros H.
 apply Qle_trans with 0; try assumption.
-change 0 with (-(0)).
+change 0 with (-0).
 apply Qopp_le_compat.
 assumption.
 Qed.

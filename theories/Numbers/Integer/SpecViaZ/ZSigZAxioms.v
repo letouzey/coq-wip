@@ -236,7 +236,7 @@ Qed.
 
 Program Instance opp_wd : Proper (eq ==> eq) opp.
 
-Theorem opp_0 : - (0) == 0.
+Theorem opp_0 : - 0 == 0.
 Proof.
 intros. zify. auto with zarith.
 Qed.

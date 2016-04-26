@@ -1072,6 +1072,11 @@ let message_redundant_alias id1 id2 =
 
 *)
 
+let is_zero s =
+  let rec aux i =
+    Int.equal (String.length s) i || (s.[i] == '0' && aux (i+1))
+  in aux 0
+
 let rec subst_pat_iterator y t p = match p with
   | RCPatAtom (_,id) ->
     begin match id with Some x when Id.equal x y -> t | _ -> p end
@@ -1162,9 +1167,12 @@ let drop_notations_pattern looked_for =
         (* but not scopes in expl_pl *)
         let (argscs1,_) = find_remaining_scopes expl_pl pl g in
         RCPatCstr (loc, g, List.map2 (in_pat_sc env) argscs1 expl_pl @ List.map (in_pat false env) pl, [])
-    | CPatNotation (loc,"- _",([CPatPrim(_,Numeral (p,true))],[]),[]) ->
-      fst (Notation.interp_prim_token_cases_pattern_expr loc (ensure_kind false loc) (Numeral (p,false))
-	     (env.tmp_scope,env.scopes))
+    | CPatNotation (loc,"- _",([CPatPrim(_,Numeral (p,true))],[]),[])
+         when not (is_zero p) ->
+      fst (Notation.interp_prim_token_cases_pattern_expr loc
+             (ensure_kind false loc)
+             (Numeral (p,false))
+             (env.tmp_scope,env.scopes))
     | CPatNotation (_,"( _ )",([a],[]),[]) ->
       in_pat top env a
     | CPatNotation (loc, ntn, fullargs,extrargs) ->
@@ -1447,8 +1455,9 @@ let internalize globalenv env allow_patvar lvar c =
 	let inc1 = intern (reset_tmp_scope env) c1 in
 	GLetIn (loc, snd na, inc1,
           intern (push_name_env lvar (impls_term_list inc1) env na) c2)
-    | CNotation (loc,"- _",([CPrim (_,Numeral (p,true))],[],[])) ->
-	intern env (CPrim (loc,Numeral (p,false)))
+    | CNotation (loc,"- _",([CPrim (_,Numeral (p,true))],[],[]))
+         when not (is_zero p) ->
+       intern env (CPrim (loc,Numeral (p,false)))
     | CNotation (_,"( _ )",([a],[],[])) -> intern env a
     | CNotation (loc,ntn,args) ->
         intern_notation intern env lvar loc ntn args

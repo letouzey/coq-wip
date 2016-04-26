@@ -236,12 +236,17 @@ let is_number s =
     match s.[i] with '0'..'9' -> aux (i+1) | _ -> false
   in aux 0
 
+let is_zero s =
+  let rec aux i =
+    Int.equal (String.length s) i || (s.[i] == '0' && aux (i+1))
+  in aux 0
+
 let make_notation_gen loc ntn mknot mkprim destprim l =
   if has_curly_brackets ntn
   then expand_curly_brackets loc mknot ntn l
   else match ntn,List.map destprim l with
     (* Special case to avoid writing "- 3" for e.g. (Z.opp 3) *)
-    | "- _", [Some (Numeral (p,true))] ->
+    | "- _", [Some (Numeral (p,true))] when not (is_zero p) ->
         mknot (loc,ntn,([mknot (loc,"( _ )",l)]))
     | _ ->
 	match decompose_notation_key ntn, l with
