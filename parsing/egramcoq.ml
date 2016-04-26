@@ -60,6 +60,10 @@ type grammar_constr_prod_item =
     (* tells action rule to make a list of the n previous parsed items;
        concat with last parsed list if true *)
 
+let mkNumeral n =
+  if Bigint.is_pos_or_zero n then Numeral (Bigint.to_string n, true)
+  else Numeral (Bigint.to_string (Bigint.neg n), false)
+
 let make_constr_action
   (f : Loc.t -> constr_notation_substitution -> constr_expr) pil =
   let rec make (constrs,constrlists,binders as fullsubst) = function
@@ -82,7 +86,7 @@ let make_constr_action
 	  make (constr_expr_of_name na :: constrs, constrlists, binders) tl)
     | ETBigint ->
         Gram.action (fun (v:Bigint.bigint) ->
-	  make (CPrim(Loc.ghost,Numeral v) :: constrs, constrlists, binders) tl)
+	  make (CPrim(Loc.ghost,mkNumeral v) :: constrs, constrlists, binders) tl)
     | ETConstrList (_,n) ->
 	Gram.action (fun (v:constr_expr list) ->
 	  make (constrs, v::constrlists, binders) tl)
@@ -133,7 +137,7 @@ let make_cases_pattern_action
 	  make (cases_pattern_expr_of_name na :: env, envlist, hasbinders) tl)
     | ETBigint ->
         Gram.action (fun (v:Bigint.bigint) ->
-	  make (CPatPrim (Loc.ghost,Numeral v) :: env, envlist, hasbinders) tl)
+	  make (CPatPrim (Loc.ghost,mkNumeral v) :: env, envlist, hasbinders) tl)
     | ETConstrList (_,_) ->
         Gram.action  (fun (vl:cases_pattern_expr list) ->
 	  make (env, vl :: envlist, hasbinders) tl)

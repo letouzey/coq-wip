@@ -149,13 +149,15 @@ let induction_arg_of_constr (c,lbind as clbind) = match lbind with
     end
   | _ -> ElimOnConstr clbind
 
+let mkNumeral n = Numeral (string_of_int (abs n), 0<=n)
+
 let mkTacCase with_evar = function
   | [(clear,ElimOnConstr cl),(None,None),None],None ->
       TacCase (with_evar,(clear,cl))
   (* Reinterpret numbers as a notation for terms *)
   | [(clear,ElimOnAnonHyp n),(None,None),None],None ->
       TacCase (with_evar,
-        (clear,(CPrim (Loc.ghost, Numeral (Bigint.of_int n)),
+        (clear,(CPrim (Loc.ghost, mkNumeral n), (* TODO ugly *)
 	 NoBindings)))
   (* Reinterpret ident as notations for variables in the context *)
   (* because we don't know if they are quantified or not *)

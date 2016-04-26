@@ -367,7 +367,7 @@ Qed.
 
 Theorem Ropp_pos_neg : forall n : R, 0 < - n <-> n < 0.
 Proof.
-intro n; rewrite (Ropp_lt_mono n 0). now setoid_replace (- 0) with 0 by ring.
+intro n; rewrite (Ropp_lt_mono n 0). now setoid_replace (-(0)) with 0 by ring.
 Qed.
 
 (* Times and order *)

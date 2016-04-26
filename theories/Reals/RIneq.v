@@ -642,7 +642,7 @@ Qed.
 Hint Resolve Ropp_eq_compat: real.
 
 (**********)
-Lemma Ropp_0 : -0 = 0.
+Lemma Ropp_0 : -(0) = 0.
 Proof.
   ring.
 Qed.
@@ -1131,13 +1131,13 @@ Proof. auto using Ropp_le_contravar with real. Qed.
 (**********)
 Lemma Ropp_0_lt_gt_contravar : forall r, 0 < r -> 0 > - r.
 Proof.
-  intros; replace 0 with (-0); auto with real.
+  intros; replace 0 with (-(0)); auto with real.
 Qed.
 Hint Resolve Ropp_0_lt_gt_contravar: real.
 
 Lemma Ropp_0_gt_lt_contravar : forall r, 0 > r -> 0 < - r.
 Proof.
-  intros; replace 0 with (-0); auto with real.
+  intros; replace 0 with (-(0)); auto with real.
 Qed.
 Hint Resolve Ropp_0_gt_lt_contravar: real.
 
@@ -1157,13 +1157,13 @@ Hint Resolve Ropp_gt_lt_0_contravar: real.
 (**********)
 Lemma Ropp_0_le_ge_contravar : forall r, 0 <= r -> 0 >= - r.
 Proof.
-  intros; replace 0 with (-0); auto with real.
+  intros; replace 0 with (-(0)); auto with real.
 Qed.
 Hint Resolve Ropp_0_le_ge_contravar: real.
 
 Lemma Ropp_0_ge_le_contravar : forall r, 0 >= r -> 0 <= - r.
 Proof.
-  intros; replace 0 with (-0); auto with real.
+  intros; replace 0 with (-(0)); auto with real.
 Qed.
 Hint Resolve Ropp_0_ge_le_contravar: real.
 

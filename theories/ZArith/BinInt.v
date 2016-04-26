@@ -309,7 +309,7 @@ Qed.
 
 (** ** Specification of opposite *)
 
-Lemma opp_0 : -0 = 0.
+Lemma opp_0 : -(0) = 0.
 Proof.
  reflexivity.
 Qed.

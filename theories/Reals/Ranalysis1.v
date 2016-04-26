@@ -1576,7 +1576,7 @@ Proof.
       intro; cut (l / 2 < 0).
   intro; elim (Rlt_irrefl 0 (Rlt_trans 0 (l / 2) 0 H15 H16)).
   rewrite <- Ropp_0 in H5;
-    generalize (Ropp_lt_gt_contravar (-0) (- (l / 2)) H5);
+    generalize (Ropp_lt_gt_contravar (-(0)) (- (l / 2)) H5);
       repeat rewrite Ropp_involutive; intro; assumption.
   pattern l at 3; rewrite double_var.
   ring.

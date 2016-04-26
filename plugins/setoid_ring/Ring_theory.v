@@ -499,7 +499,7 @@ Qed.
   now apply (ARmul_comm ARth).
  Qed.
 
- Lemma ARopp_zero : -0 == 0.
+ Lemma ARopp_zero : -(0) == 0.
  Proof.
   now rewrite <- (ARmul_0_r 0), (ARopp_mul_l ARth), !ARmul_0_r.
  Qed.

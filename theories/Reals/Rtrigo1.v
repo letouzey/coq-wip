@@ -597,7 +597,7 @@ Proof.
         generalize (Rplus_lt_compat_l (-1) 1 (1 + - Rsqr (cos x)) H0);
           repeat rewrite <- Rplus_assoc; repeat rewrite Rplus_opp_l;
             rewrite Rplus_0_l; intro; rewrite <- Ropp_0 in H1;
-              generalize (Ropp_lt_gt_contravar (-0) (- Rsqr (cos x)) H1);
+              generalize (Ropp_lt_gt_contravar (-(0)) (- Rsqr (cos x)) H1);
                 repeat rewrite Ropp_involutive; intro; generalize (Rle_0_sqr (cos x));
                   intro; elim (Rlt_irrefl 0 (Rle_lt_trans 0 (Rsqr (cos x)) 0 H3 H2)).
   auto with real.
@@ -612,7 +612,7 @@ Proof.
             generalize (Rplus_lt_compat_l (-1) 1 (1 + - Rsqr (cos x)) H0);
               repeat rewrite <- Rplus_assoc; repeat rewrite Rplus_opp_l;
                 rewrite Rplus_0_l; intro; rewrite <- Ropp_0 in H1;
-                  generalize (Ropp_lt_gt_contravar (-0) (- Rsqr (cos x)) H1);
+                  generalize (Ropp_lt_gt_contravar (-(0)) (- Rsqr (cos x)) H1);
                     repeat rewrite Ropp_involutive; intro; generalize (Rle_0_sqr (cos x));
                       intro; elim (Rlt_irrefl 0 (Rle_lt_trans 0 (Rsqr (cos x)) 0 H3 H2)).
   auto with real.

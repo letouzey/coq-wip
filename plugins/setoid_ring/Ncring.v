@@ -267,7 +267,7 @@ Lemma ring_opp_mul_r : forall x y, -(x * y) == x * -y.
    rewrite (ring_add_comm x); reflexivity.
  Qed.
 
- Lemma ring_opp_zero : -0 == 0.
+ Lemma ring_opp_zero : -(0) == 0.
  Proof.
   rewrite <- (ring_mul_0_r 0). rewrite ring_opp_mul_l.
   repeat rewrite ring_mul_0_r. reflexivity.

@@ -34,7 +34,7 @@ Module Type Opp' (T:Typ) := Opp T <+ OppNotation T.
 
 Module Type IsOpp (Import Z : NZAxiomsSig')(Import O : Opp' Z).
  Declare Instance opp_wd : Proper (eq==>eq) opp.
- Axiom opp_0 : - 0 == 0.
+ Axiom opp_0 : -(0) == 0.
  Axiom opp_succ : forall n, - (S n) == P (- n).
 End IsOpp.
 

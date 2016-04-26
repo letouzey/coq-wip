@@ -311,7 +311,13 @@ let declare_prim_token_interpreter sc interp (patl,uninterp,b) =
         (glob_prim_constr_key pat) (sc,uninterp,b) !prim_token_key_table)
     patl
 
-let mkNumeral n = Numeral n
+let mkNumeral n =
+  if Bigint.is_pos_or_zero n then Numeral (Bigint.to_string n, true)
+  else Numeral (Bigint.to_string (Bigint.neg n), false)
+
+let ofNumeral n s =
+  if s then Bigint.of_string n else Bigint.neg (Bigint.of_string n)
+
 let mkString = function
 | None -> None
 | Some s -> if Unicode.is_utf8 s then Some (String s) else None
@@ -319,8 +325,10 @@ let mkString = function
 let delay dir int loc x = (dir, (fun () -> int loc x))
 
 let declare_numeral_interpreter sc dir interp (patl,uninterp,inpat) =
+  let interp' loc (n,s) = interp loc (ofNumeral n s) in
   declare_prim_token_interpreter sc
-    (fun cont loc -> function Numeral n-> delay dir interp loc n | p -> cont loc p)
+    (fun cont loc -> function Numeral (n,s) -> delay dir interp' loc (n,s)
+                            | p -> cont loc p)
     (patl, (fun r -> Option.map mkNumeral (uninterp r)), inpat)
 
 let declare_string_interpreter sc dir interp (patl,uninterp,inpat) =
@@ -419,8 +427,8 @@ let find_notation ntn sc =
   String.Map.find ntn (find_scope sc).notations
 
 let notation_of_prim_token = function
-  | Numeral n when is_pos_or_zero n -> to_string n
-  | Numeral n -> "- "^(to_string (neg n))
+  | Numeral (n,true) -> n
+  | Numeral (n,false) -> "- "^n
   | String _ -> raise Not_found
 
 let find_prim_token g loc p sc =
@@ -441,7 +449,8 @@ let interp_prim_token_gen g loc p local_scopes =
   with Not_found ->
     user_err_loc (loc,"interp_prim_token",
     (match p with
-      | Numeral n -> str "No interpretation for numeral " ++ str (to_string n)
+      | Numeral (n,s) ->
+         str "No interpretation for numeral " ++ str (notation_of_prim_token p)
       | String s -> str "No interpretation for string " ++ qs s) ++ str ".")
 
 let interp_prim_token =
