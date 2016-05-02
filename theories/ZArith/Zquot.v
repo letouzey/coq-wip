@@ -261,7 +261,7 @@ Theorem Zquot_sgn: forall a b,
   0 <= Z.sgn (a÷b) * Z.sgn a * Z.sgn b.
 Proof.
   destruct a as [ |a|a]; destruct b as [ |b|b]; simpl; auto with zarith;
-  unfold Z.quot; simpl; destruct N.pos_div_eucl; simpl; destruct n; simpl; auto with zarith.
+  unfold Z.quot; simpl; destruct Pos.div_eucl; simpl; destruct n; simpl; auto with zarith.
 Qed.
 
 (** * Relations between usual operations and Zmod and Zdiv *)

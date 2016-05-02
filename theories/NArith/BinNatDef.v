@@ -9,10 +9,7 @@
 Require Export BinNums.
 Require Import BinPos.
 
-Local Notation "1" := xH : positive_scope.
 Local Open Scope N_scope.
-Local Notation "0" := N0 : N_scope.
-Local Notation "1" := (Npos 1) : N_scope.
 
 (**********************************************************************)
 (** * Binary natural numbers, definitions of operations *)
@@ -30,7 +27,11 @@ Notation pos := Npos.
 
 Definition zero := N0.
 Definition one := Npos 1.
-Definition two := Npos 1~0.
+Definition two := Npos 2.
+
+Local Notation "0" := N0 : N_scope.
+Local Notation "1" := (Npos 1) : N_scope.
+Local Notation "2" := (Npos 2) : N_scope.
 
 (** ** Operation [x -> 2*x+1] *)
 
@@ -220,27 +221,11 @@ Definition size_nat n :=
 
 (** Euclidean division *)
 
-Fixpoint pos_div_eucl (a:positive)(b:N) : N * N :=
-  match a with
-    | xH =>
-       match b with 1 => (1,0) | _ => (0,1) end
-    | xO a' =>
-       let (q, r) := pos_div_eucl a' b in
-       let r' := double r in
-       if b <=? r' then (succ_double q, r' - b)
-        else (double q, r')
-    | xI a' =>
-       let (q, r) := pos_div_eucl a' b in
-       let r' := succ_double r in
-       if b <=? r' then (succ_double q, r' - b)
-        else  (double q, r')
-  end.
-
 Definition div_eucl (a b:N) : N * N :=
   match a, b with
    | 0,  _ => (0, 0)
    | _, 0  => (0, a)
-   | pos na, _ => pos_div_eucl na b
+   | pos na, pos nb => Pos.div_eucl na nb
   end.
 
 Definition div a b := fst (div_eucl a b).
@@ -248,6 +233,14 @@ Definition modulo a b := snd (div_eucl a b).
 
 Infix "/" := div : N_scope.
 Infix "mod" := modulo (at level 40, no associativity) : N_scope.
+
+(** For compatibility with a previous definition of [div_eucl] : *)
+
+Definition pos_div_eucl a b :=
+  match b with
+  | N0 => (0, Npos a)
+  | Npos b => Pos.div_eucl a b
+  end.
 
 (** Greatest common divisor *)
 
@@ -381,4 +374,26 @@ Definition iter (n:N) {A} (f:A->A) (x:A) : A :=
     | pos p => Pos.iter f x p
   end.
 
+(** Conversion with a decimal representation for printing/parsing *)
+
+Definition of_uint (d:Decimal.uint) := Pos.of_uint d.
+
+Definition of_int (d:Decimal.int) :=
+  match Decimal.norm d with
+  | Decimal.Pos d => Some (Pos.of_uint d)
+  | Decimal.Neg _ => None
+  end.
+
+Definition to_uint n :=
+  match n with
+  | 0 => nil
+  | pos p => Pos.to_uint p
+  end.
+
+Definition to_int n := Decimal.Pos (to_uint n).
+
+Definition to_int_opt n := Some (to_int n).
+
 End N.
+
+Numeral Notation N N.of_int N.to_int_opt : N_scope.

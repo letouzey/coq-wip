@@ -30,7 +30,7 @@ Notation "p ~ 0" := (xO p)
  (at level 7, left associativity, format "p '~' '0'") : positive_scope.
 
 Local Open Scope positive_scope.
-Local Notation "1" := xH.
+Local Notation "1" := xH : positive_scope.
 
 Module Pos.
 
@@ -340,7 +340,11 @@ Fixpoint div_eucl (a b:positive) : N * N :=
     | xI a' =>
        let (q, r) := div_eucl a' b in
        match r with
-         | N0 => (Ndouble q, N0)
+         | N0 =>
+           match b with
+           | 1 => (Nsucc_double q, N0)
+           | _ => (Ndouble q, Npos 1)
+           end
          | Npos r =>
            let r' := r~1 in
            match sub_mask r' b with
@@ -425,7 +429,7 @@ Fixpoint gcdn (n : nat) (a b : positive) : positive :=
 Definition gcd (a b : positive) := gcdn (size_nat a + size_nat b)%nat a b.
 
 (** Generalized Gcd, also computing the division of a and b by the gcd *)
-Set Printing Universes.
+
 Fixpoint ggcdn (n : nat) (a b : positive) : (positive*(positive*positive)) :=
   match n with
     | O => (1,(a,b))
@@ -574,6 +578,7 @@ Definition iter_op {A}(op:A->A->A) :=
 
 Definition to_nat (x:positive) : nat := iter_op plus x (S O).
 Arguments to_nat x: simpl never.
+
 (** ** From Peano natural numbers to binary positive numbers *)
 
 (** A version preserving positive numbers, and sending 0 to 1. *)
@@ -593,4 +598,101 @@ Fixpoint of_succ_nat (n:nat) : positive :=
     | S x => succ (of_succ_nat x)
   end.
 
+(** ** Conversion with a decimal representation for printing/parsing *)
+
+Definition of_digit (d:Decimal.digit) : N :=
+  match d with
+  | Decimal.D0 => N0
+  | Decimal.D1 => Npos 1
+  | Decimal.D2 => Npos 1~0
+  | Decimal.D3 => Npos 1~1
+  | Decimal.D4 => Npos 1~0~0
+  | Decimal.D5 => Npos 1~0~1
+  | Decimal.D6 => Npos 1~1~0
+  | Decimal.D7 => Npos 1~1~1
+  | Decimal.D8 => Npos 1~0~0~0
+  | Decimal.D9 => Npos 1~0~0~1
+  end.
+
+Local Notation ten := 1~0~1~0.
+Local Open Scope list_scope.
+
+Fixpoint of_uint_acc (d:Decimal.uint)(acc:positive) :=
+  match d with
+  | nil => acc
+  | Decimal.D0 :: l => of_uint_acc l (mul ten acc)
+  | Decimal.D1 :: l => of_uint_acc l (add 1 (mul ten acc))
+  | Decimal.D2 :: l => of_uint_acc l (add 1~0 (mul ten acc))
+  | Decimal.D3 :: l => of_uint_acc l (add 1~1 (mul ten acc))
+  | Decimal.D4 :: l => of_uint_acc l (add 1~0~0 (mul ten acc))
+  | Decimal.D5 :: l => of_uint_acc l (add 1~0~1 (mul ten acc))
+  | Decimal.D6 :: l => of_uint_acc l (add 1~1~0 (mul ten acc))
+  | Decimal.D7 :: l => of_uint_acc l (add 1~1~1 (mul ten acc))
+  | Decimal.D8 :: l => of_uint_acc l (add 1~0~0~0 (mul ten acc))
+  | Decimal.D9 :: l => of_uint_acc l (add 1~0~0~1 (mul ten acc))
+  end.
+
+Fixpoint of_uint (d:Decimal.uint) : N :=
+  match d with
+  | nil => N0
+  | Decimal.D0 :: l => of_uint l
+  | Decimal.D1 :: l => Npos (of_uint_acc l 1)
+  | Decimal.D2 :: l => Npos (of_uint_acc l 1~0)
+  | Decimal.D3 :: l => Npos (of_uint_acc l 1~1)
+  | Decimal.D4 :: l => Npos (of_uint_acc l 1~0~0)
+  | Decimal.D5 :: l => Npos (of_uint_acc l 1~0~1)
+  | Decimal.D6 :: l => Npos (of_uint_acc l 1~1~0)
+  | Decimal.D7 :: l => Npos (of_uint_acc l 1~1~1)
+  | Decimal.D8 :: l => Npos (of_uint_acc l 1~0~0~0)
+  | Decimal.D9 :: l => Npos (of_uint_acc l 1~0~0~1)
+  end.
+
+Definition of_int (d:Decimal.int) : option positive :=
+  match d with
+  | Decimal.Pos d =>
+    match of_uint d with
+    | N0 => None
+    | Npos p => Some p
+    end
+  | Decimal.Neg _ => None
+  end.
+
+Definition to_digit (p:positive) : Decimal.digit :=
+  match p with
+  | 1 => Decimal.D1
+  | 1~0 => Decimal.D2
+  | 1~1 => Decimal.D3
+  | 1~0~0 => Decimal.D4
+  | 1~0~1 => Decimal.D5
+  | 1~1~0 => Decimal.D6
+  | 1~1~1 => Decimal.D7
+  | 1~0~0~0 => Decimal.D8
+  | _ => Decimal.D9 (* n>9 shouldn't happen *)
+  end.
+
+Definition N_to_digit (n:N) : Decimal.digit :=
+  match n with
+  | N0 => Decimal.D0
+  | Npos p => to_digit p
+  end.
+
+Fixpoint to_uint_acc (n:positive)(acc:Decimal.uint)(count:positive) :=
+ match count with
+ | xH => acc
+ | xO count' | xI count' =>
+     match div_eucl n ten with
+     | (N0, r) => N_to_digit r :: acc
+     | (Npos q, r) => to_uint_acc q (N_to_digit r :: acc) count'
+     end
+ end.
+
+Definition to_uint (n:positive) : Decimal.uint :=
+  to_uint_acc n nil (n~0).
+
+Definition to_int n := Decimal.Pos (to_uint n).
+
+Definition to_int_opt n := Some (Decimal.Pos (to_uint n)).
+
 End Pos.
+
+Numeral Notation positive Pos.of_int Pos.to_int_opt : positive_scope.

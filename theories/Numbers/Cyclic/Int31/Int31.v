@@ -212,16 +212,18 @@ Definition phi_inv2 n :=
 Definition phi2 nh nl :=
   ((phi nh)*base+(phi nl))%Z.
 
-(** Parsing and Printing digits strings as type int31 *)
+(** Parsing and Printing digits strings as type int31.
+    For the moment we convert first to Z. *)
 
-Definition int31_of_Z' z' :=
-  match z' with
-  | Z'0 | Z'pos _ => Some (phi_inv (Z_of_Z' z'))
-  | Z'neg _ => None
+Definition int31_of_dec d :=
+  match Z.of_int d with
+  | Zneg _ => None
+  | z => Some (phi_inv z)
   end.
-Definition Z'_of_int31 n := Some (Z'_of_Z (phi n)).
 
-Numeral Notation int31 int31_of_Z' Z'_of_int31 : int31_scope.
+Definition dec_of_int31 n := Some (Z.to_int (phi n)).
+
+Numeral Notation int31 int31_of_dec dec_of_int31 : int31_scope.
 
 (** * Addition *)
 

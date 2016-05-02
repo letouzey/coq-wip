@@ -759,7 +759,7 @@ Qed.
 Theorem quotrem_eq a b : let (q,r) := quotrem a b in a = q * b + r.
 Proof.
  destruct a as [|a|a], b as [|b|b]; simpl; trivial;
- generalize (N.pos_div_eucl_spec a (N.pos b)); case N.pos_div_eucl; trivial;
+ generalize (N.Pos_div_eucl_spec a b); case Pos.div_eucl; trivial;
   intros q r;
   try change (neg a) with (-pos a);
   change (pos a) with (of_N (N.pos a)); intros ->; now destruct q, r.
@@ -781,21 +781,20 @@ Proof.
  destruct a as [|a|a]; (now destruct Ha) || clear Ha.
  compute. now split.
  unfold rem, quotrem.
- assert (H := N.pos_div_eucl_remainder a (N.pos b)).
- destruct N.pos_div_eucl as (q,[|r]); simpl; split; try easy.
- now apply H.
+ assert (H := N.Pos_div_eucl_remainder a b).
+ destruct Pos.div_eucl as (q,[|r]); simpl; split; try easy.
 Qed.
 
 Lemma rem_opp_l' a b : rem (-a) b = - (rem a b).
 Proof.
  destruct a, b; trivial; unfold rem; simpl;
-  now destruct N.pos_div_eucl as (q,[|r]).
+  now destruct Pos.div_eucl as (q,[|r]).
 Qed.
 
 Lemma rem_opp_r' a b : rem a (-b) = rem a b.
 Proof.
  destruct a, b; trivial; unfold rem; simpl;
-  now destruct N.pos_div_eucl as (q,[|r]).
+  now destruct Pos.div_eucl as (q,[|r]).
 Qed.
 
 Lemma rem_opp_l a b : b<>0 -> rem (-a) b = - (rem a b).

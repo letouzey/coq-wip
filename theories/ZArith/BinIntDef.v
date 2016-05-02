@@ -8,7 +8,7 @@
 (************************************************************************)
 
 Require Export BinNums.
-Require Import BinPosDef BinNatDef.
+Require Import BinPos BinNat.
 
 Local Open Scope Z_scope.
 
@@ -29,9 +29,13 @@ Notation neg := Zneg.
 
 (** ** Constants *)
 
-Definition zero := 0.
-Definition one := 1.
-Definition two := 2.
+Definition zero := Z0.
+Definition one := pos 1.
+Definition two := pos 2.
+
+Local Notation "0" := Z0 : Z_scope.
+Local Notation "1" := (pos 1) : Z_scope.
+Local Notation "2" := (pos 2) : Z_scope.
 
 (** ** Doubling and variants *)
 
@@ -51,7 +55,7 @@ Definition succ_double x :=
 
 Definition pred_double x :=
   match x with
-    | 0 => -1
+    | 0 => neg 1
     | neg p => neg p~1
     | pos p => pos (Pos.pred_double p)
   end.
@@ -102,7 +106,7 @@ Definition succ x := x + 1.
 
 (** ** Predecessor *)
 
-Definition pred x := x + -1.
+Definition pred x := x + neg 1.
 
 (** ** Subtraction *)
 
@@ -169,7 +173,7 @@ Definition sgn z :=
   match z with
     | 0 => 0
     | pos p => 1
-    | neg p => -1
+    | neg p => neg 1
   end.
 
 (** Boolean equality and comparisons *)
@@ -299,6 +303,28 @@ Definition to_pos (z:Z) : positive :=
     | _ => 1%positive
   end.
 
+(** Conversion with a decimal representation for printing/parsing *)
+
+Definition of_uint (d:Decimal.uint) := of_N (Pos.of_uint d).
+
+Definition of_int (d:Decimal.int) :=
+  match d with
+  | Decimal.Pos d => of_uint d
+  | Decimal.Neg d => opp (of_uint d)
+  end.
+
+Definition to_int n :=
+  match n with
+  | 0 => Decimal.Pos nil
+  | pos p => Decimal.Pos (Pos.to_uint p)
+  | neg p => Decimal.Neg (Pos.to_uint p)
+  end.
+
+Definition of_int_opt d := Some (of_int d).
+
+Definition to_int_opt n := Some (to_int n).
+
+
 (** ** Iteration of a function
 
     By convention, iterating a negative number of times is identity.
@@ -406,13 +432,13 @@ Definition quotrem (a b:Z) : Z * Z :=
    | 0,  _ => (0, 0)
    | _, 0  => (0, a)
    | pos a, pos b =>
-     let (q, r) := N.pos_div_eucl a (N.pos b) in (of_N q, of_N r)
+     let (q, r) := Pos.div_eucl a b in (of_N q, of_N r)
    | neg a, pos b =>
-     let (q, r) := N.pos_div_eucl a (N.pos b) in (-of_N q, - of_N r)
+     let (q, r) := Pos.div_eucl a b in (-of_N q, - of_N r)
    | pos a, neg b =>
-     let (q, r) := N.pos_div_eucl a (N.pos b) in (-of_N q, of_N r)
+     let (q, r) := Pos.div_eucl a b in (-of_N q, of_N r)
    | neg a, neg b =>
-     let (q, r) := N.pos_div_eucl a (N.pos b) in (of_N q, - of_N r)
+     let (q, r) := Pos.div_eucl a b in (of_N q, - of_N r)
   end.
 
 Definition quot a b := fst (quotrem a b).
@@ -617,3 +643,5 @@ Definition lxor a b :=
  end.
 
 End Z.
+
+Numeral Notation Z Z.of_int_opt Z.to_int_opt : Z_scope.

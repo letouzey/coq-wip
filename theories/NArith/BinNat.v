@@ -513,34 +513,71 @@ Qed.
 
 (** Specification of the euclidean division *)
 
-Theorem pos_div_eucl_spec (a:positive)(b:N) :
-  let (q,r) := pos_div_eucl a b in pos a = q * b + r.
+(** First, the results on [Pos.div_eucl]
+    (which cannot go in BinPos since we need [N.add] and [N.pos]) *)
+
+Theorem Pos_div_eucl_spec (a b : positive) :
+  let (q,r) := Pos.div_eucl a b in pos a = q * pos b + r.
 Proof.
-  induction a; cbv beta iota delta [pos_div_eucl]; fold pos_div_eucl; cbv zeta.
-  (* a~1 *)
-  destruct pos_div_eucl as (q,r).
-  change (pos a~1) with (succ_double (pos a)).
-  rewrite IHa, succ_double_add, double_mul.
-  case leb_spec; intros H; trivial.
-  rewrite succ_double_mul, <- add_assoc. f_equal.
-  now rewrite (add_comm b), sub_add.
-  (* a~0 *)
-  destruct pos_div_eucl as (q,r).
-  change (pos a~0) with (double (pos a)).
-  rewrite IHa, double_add, double_mul.
-  case leb_spec; intros H; trivial.
-  rewrite succ_double_mul, <- add_assoc. f_equal.
-  now rewrite (add_comm b), sub_add.
-  (* 1 *)
-  now destruct b as [|[ | | ]].
+  induction a; simpl;
+  change Pos.Ndouble with double;
+  change Pos.Nsucc_double with succ_double.
+  - (* a~1 *)
+    destruct Pos.div_eucl as (q,r).
+    change (pos a~1) with (succ_double (pos a)).
+    rewrite IHa, succ_double_add, double_mul. clear IHa.
+    destruct r; simpl.
+    + destruct b; simpl; trivial.
+      now rewrite succ_double_mul, add_0_r.
+    + case Pos.sub_mask_spec; trivial.
+      * intros ->. now rewrite succ_double_mul, add_0_r.
+      * intros r <-. now rewrite succ_double_mul, <- add_assoc.
+  - (* a~0 *)
+    destruct Pos.div_eucl as (q,r).
+    change (pos a~0) with (double (pos a)).
+    rewrite IHa, double_add, double_mul.
+    destruct r; simpl; trivial.
+    case Pos.sub_mask_spec; trivial.
+    + intros ->. now rewrite succ_double_mul, add_0_r.
+    + intros r <-. now rewrite succ_double_mul, <- add_assoc.
+  - (* 1 *)
+    now destruct b.
+Qed.
+
+Theorem Pos_div_eucl_remainder (a b : positive) :
+  snd (Pos.div_eucl a b) < pos b.
+Proof.
+  induction a; simpl.
+  - (* a~1 *)
+    destruct Pos.div_eucl as (q,r); simpl in *.
+    destruct r.
+    + now destruct b.
+    + case Pos.sub_mask_spec.
+      * reflexivity.
+      * intros r H; simpl.
+        rewrite add_lt_mono_l with (p:=pos b); simpl.
+        rewrite Pos.add_diag, H. apply (succ_double_lt _ _ IHa).
+      * intros r <-. apply Pos.lt_add_diag_r.
+  - (* a~0 *)
+    destruct Pos.div_eucl as (q,r); simpl in *.
+    destruct r.
+    + trivial.
+    + case Pos.sub_mask_spec.
+      * reflexivity.
+      * intros r H; simpl.
+        rewrite add_lt_mono_l with (p:=pos b); simpl.
+        rewrite Pos.add_diag, H; trivial.
+      * intros r <-. apply Pos.lt_add_diag_r.
+  - (* 1 *)
+    now destruct b.
 Qed.
 
 Theorem div_eucl_spec a b :
  let (q,r) := div_eucl a b in a = b * q + r.
 Proof.
   destruct a as [|a], b as [|b]; unfold div_eucl; trivial.
-  generalize (pos_div_eucl_spec a (pos b)).
-  destruct pos_div_eucl. now rewrite mul_comm.
+  generalize (Pos_div_eucl_spec a b).
+  destruct Pos.div_eucl. now rewrite mul_comm.
 Qed.
 
 Theorem div_mod' a b : a = b * (a/b) + (a mod b).
@@ -554,37 +591,32 @@ Proof.
  intros _. apply div_mod'.
 Qed.
 
-Theorem pos_div_eucl_remainder (a:positive) (b:N) :
-  b<>0 -> snd (pos_div_eucl a b) < b.
-Proof.
-  intros Hb.
-  induction a; cbv beta iota delta [pos_div_eucl]; fold pos_div_eucl; cbv zeta.
-  (* a~1 *)
-  destruct pos_div_eucl as (q,r); simpl in *.
-  case leb_spec; intros H; simpl; trivial.
-  apply add_lt_mono_l with b. rewrite add_comm, sub_add by trivial.
-  destruct b as [|b]; [now destruct Hb| simpl; rewrite Pos.add_diag ].
-  apply (succ_double_lt _ _ IHa).
-  (* a~0 *)
-  destruct pos_div_eucl as (q,r); simpl in *.
-  case leb_spec; intros H; simpl; trivial.
-  apply add_lt_mono_l with b. rewrite add_comm, sub_add by trivial.
-  destruct b as [|b]; [now destruct Hb| simpl; rewrite Pos.add_diag ].
-  now destruct r.
-  (* 1 *)
-  destruct b as [|[ | | ]]; easy || (now destruct Hb).
-Qed.
-
 Theorem mod_lt a b : b<>0 -> a mod b < b.
 Proof.
   destruct b as [ |b]. now destruct 1.
   destruct a as [ |a]. reflexivity.
-  unfold modulo. simpl. apply pos_div_eucl_remainder.
+  unfold modulo. simpl. intros _. apply Pos_div_eucl_remainder.
 Qed.
 
 Theorem mod_bound_pos a b : 0<=a -> 0<b -> 0 <= a mod b < b.
 Proof.
  intros _ H. split. apply le_0_l. apply mod_lt. now destruct b.
+Qed.
+
+(** Compatibility proofs about old [pos_div_eucl]. *)
+
+Theorem pos_div_eucl_spec (a:positive)(b:N) :
+  let (q,r) := pos_div_eucl a b in pos a = q * b + r.
+Proof.
+  destruct b; simpl; trivial. apply Pos_div_eucl_spec.
+Qed.
+
+Theorem pos_div_eucl_remainder (a:positive) (b:N) :
+  b<>0 -> snd (pos_div_eucl a b) < b.
+Proof.
+  destruct b.
+  - now destruct 1.
+  - intros _. apply Pos_div_eucl_remainder.
 Qed.
 
 (** Specification of square root *)
