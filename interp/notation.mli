@@ -77,6 +77,11 @@ type 'a prim_token_uninterpreter =
 val declare_numeral_interpreter : scope_name -> required_module ->
   bigint prim_token_interpreter -> bigint prim_token_uninterpreter -> unit
 
+type rawnum = raw_natural_number * sign
+
+val declare_rawnumeral_interpreter : scope_name -> required_module ->
+  rawnum prim_token_interpreter -> rawnum prim_token_uninterpreter -> unit
+
 val declare_string_interpreter : scope_name -> required_module ->
   string prim_token_interpreter -> string prim_token_uninterpreter -> unit
 

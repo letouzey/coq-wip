@@ -10,6 +10,7 @@ Require Export Notations.
 Require Export Logic.
 Require Export Logic_Type.
 Require Export Datatypes.
+Require Coq.Init.Decimal.
 Require Export Specif.
 Require Coq.Init.Nat.
 Require Export Peano.

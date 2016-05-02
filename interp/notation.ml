@@ -331,6 +331,16 @@ let declare_numeral_interpreter sc dir interp (patl,uninterp,inpat) =
                             | p -> cont loc p)
     (patl, (fun r -> Option.map mkNumeral (uninterp r)), inpat)
 
+type rawnum = raw_natural_number * sign
+
+let declare_rawnumeral_interpreter sc dir interp (patl,uninterp,inpat) =
+  declare_prim_token_interpreter sc
+    (fun cont loc -> function Numeral (n,s) -> delay dir interp loc (n,s)
+                            | p -> cont loc p)
+    (patl, (fun r -> match uninterp r with
+                     | None -> None
+                     | Some (n,s) -> Some (Numeral (n,s))), inpat)
+
 let declare_string_interpreter sc dir interp (patl,uninterp,inpat) =
   declare_prim_token_interpreter sc
     (fun cont loc -> function String s -> delay dir interp loc s | p -> cont loc p)

@@ -30,6 +30,7 @@ Notation "p ~ 0" := (xO p)
  (at level 7, left associativity, format "p '~' '0'") : positive_scope.
 
 Local Open Scope positive_scope.
+Local Notation "1" := xH.
 
 Module Pos.
 
@@ -304,6 +305,55 @@ Infix "=?" := eqb (at level 70, no associativity) : positive_scope.
 Infix "<=?" := leb (at level 70, no associativity) : positive_scope.
 Infix "<?" := ltb (at level 70, no associativity) : positive_scope.
 
+(** Local copies of the not-yet-available [N.double] and [N.succ_double] *)
+
+Definition Nsucc_double x :=
+  match x with
+  | N0 => Npos 1
+  | Npos p => Npos p~1
+  end.
+
+Definition Ndouble n :=
+  match n with
+  | N0 => N0
+  | Npos p => Npos p~0
+  end.
+
+(** ** Euclidean division *)
+
+Fixpoint div_eucl (a b:positive) : N * N :=
+  match a with
+    | xH =>
+       match b with 1 => (Npos 1,N0) | _ => (N0,Npos 1) end
+    | xO a' =>
+       let (q, r) := div_eucl a' b in
+       match r with
+         | N0 => (Ndouble q, N0)
+         | Npos r =>
+           let r' := r~0 in
+           match sub_mask r' b with
+             | IsPos d => (Nsucc_double q, Npos d)
+             | IsNul => (Nsucc_double q, N0)
+             | IsNeg => (Ndouble q, Npos r')
+           end
+       end
+    | xI a' =>
+       let (q, r) := div_eucl a' b in
+       match r with
+         | N0 => (Ndouble q, N0)
+         | Npos r =>
+           let r' := r~1 in
+           match sub_mask r' b with
+             | IsPos d => (Nsucc_double q, Npos d)
+             | IsNul => (Nsucc_double q, N0)
+             | IsNeg => (Ndouble q, Npos r')
+           end
+       end
+  end.
+
+Definition div (a b : positive) : N := fst (div_eucl a b).
+Definition modulo (a b : positive) : N := snd (div_eucl a b).
+
 (** ** A Square Root function for positive numbers *)
 
 (** We procede by blocks of two digits : if p is written qbb'
@@ -323,14 +373,14 @@ Definition sqrtrem_step (f g:positive->positive) p :=
     let r' := g (f r) in
     if s' <=? r' then (s~1, sub_mask r' s')
     else (s~0, IsPos r')
-  | (s,_)  => (s~0, sub_mask (g (f 1)) 4)
+  | (s,_)  => (s~0, sub_mask (g (f 1)) (1~0~0))
  end.
 
 Fixpoint sqrtrem p : positive * mask :=
  match p with
   | 1 => (1,IsNul)
-  | 2 => (1,IsPos 1)
-  | 3 => (1,IsPos 2)
+  | 1~0 => (1,IsPos 1)
+  | 1~1 => (1,IsPos 1~0)
   | p~0~0 => sqrtrem_step xO xO (sqrtrem p)
   | p~0~1 => sqrtrem_step xO xI (sqrtrem p)
   | p~1~0 => sqrtrem_step xI xO (sqrtrem p)
@@ -406,20 +456,6 @@ Fixpoint ggcdn (n : nat) (a b : positive) : (positive*(positive*positive)) :=
   end.
 
 Definition ggcd (a b: positive) := ggcdn (size_nat a + size_nat b)%nat a b.
-
-(** Local copies of the not-yet-available [N.double] and [N.succ_double] *)
-
-Definition Nsucc_double x :=
-  match x with
-  | N0 => Npos 1
-  | Npos p => Npos p~1
-  end.
-
-Definition Ndouble n :=
-  match n with
-  | N0 => N0
-  | Npos p => Npos p~0
-  end.
 
 (** Operation over bits. *)
 

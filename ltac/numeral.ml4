@@ -41,7 +41,60 @@ let eval_tacexpr ist env (te : Tacexpr.glob_tactic_expr) =
   | Some ([v], _, _, _) -> Some v
   | Some _ | None -> None
 
-let rec pos'_of_bigint pos'ty n =
+type coqinds =
+    { digit : inductive;
+      list : inductive;
+      int : inductive }
+
+let rawnum_to_coqint inds (str,sign) =
+  let ty_digit = mkInd inds.digit in
+  let nil = mkApp (mkConstruct (inds.list,1), [|ty_digit|]) in
+  let cons = mkConstruct (inds.list,2) in
+  let mkCons t q = mkApp (cons, [| ty_digit;t;q |]) in
+  let rec do_chars s i acc =
+    if i < 0 then acc
+    else
+      let c = s.[i] in
+      assert ('0' <= c && c <= '9');
+      let dg = mkConstruct (inds.digit, Char.code c - Char.code '0' +1) in
+      do_chars s (i-1) (mkCons dg acc)
+  in
+  let uint = do_chars str (String.length str - 1) nil in
+  let int = mkApp (mkConstruct (inds.int, if sign then 1 else 2), [|uint|]) in
+  int
+
+let rawnum_of_coqint c =
+  let rec of_uint_loop c buf =
+    match Constr.kind c with
+    | App (c, args) ->
+       (match Constr.kind c with
+        | Construct ((_,1), _) (* nil *) -> ()
+        | Construct ((_,2), _) (* cons *) ->
+           (assert (Int.equal (Array.length args) 3);
+            match Constr.kind args.(1) with
+            | Construct ((_,n),_) (* D0 to D9 *) ->
+               assert (0<=n-1 && n-1<=9);
+               let () = Buffer.add_char buf (Char.chr (n-1 + Char.code '0')) in
+               of_uint_loop args.(2) buf
+            | _ -> assert false)
+        | _ -> assert false)
+    | _ -> assert false
+  in
+  let of_uint c =
+    let buf = Buffer.create 64 in
+    let () = of_uint_loop c buf in
+    if Int.equal (Buffer.length buf) 0 then "0" else Buffer.contents buf
+  in
+  match Constr.kind c with
+  | App (c,[|c'|]) ->
+     (match Constr.kind c with
+      | Construct ((_,1), _) (* Pos *) -> (of_uint c', true)
+      | Construct ((_,2), _) (* Neg *) -> (of_uint c', false)
+      | _ -> assert false)
+  | _ -> assert false
+
+(*
+let rec pos'_of_bigint  n =
   match Bigint.div2_with_rest n with
   | (q, false) ->
       let c = mkConstruct (pos'ty, 2) in (* x'O *)
@@ -101,6 +154,7 @@ let bigint_of_z' z' = match Constr.kind z' with
       end
   | Construct ((_, 1), _) -> (* Z'0 *) Bigint.zero
   | _ -> raise Not_found
+ *)
 
 let constr_of_global_reference = function
   | VarRef v -> mkVar v
@@ -108,21 +162,18 @@ let constr_of_global_reference = function
   | IndRef ind -> mkInd ind
   | ConstructRef c -> mkConstruct c
 
-let rec constr_of_glob_constr vl = function
-  | Glob_term.GRef (loc, gr, gllo) ->
-      constr_of_global_reference gr
-  | Glob_term.GVar (loc, id) ->
-      constr_of_glob_constr vl (List.assoc id vl)
+let rec constr_of_glob_constr = function
+  | Glob_term.GRef (_, gr, gllo) -> constr_of_global_reference gr
   | Glob_term.GApp (_, gc, gcl) ->
-      let c = constr_of_glob_constr vl gc in
-      let cl = List.map (constr_of_glob_constr vl) gcl in
+      let c = constr_of_glob_constr gc in
+      let cl = List.map constr_of_glob_constr gcl in
       mkApp (c, Array.of_list cl)
-  | _ ->
-      raise Not_found
+  | _ -> raise Not_found
+
+let optconstr_of_glob_constr gc =
+  try Some (constr_of_glob_constr gc) with Not_found -> None
 
 let rec glob_constr_of_constr loc c = match Constr.kind c with
-  | Var id ->
-      Glob_term.GRef (loc, VarRef id, None)
   | App (c, ca) ->
       let c = glob_constr_of_constr loc c in
       let cel = List.map (glob_constr_of_constr loc) (Array.to_list ca) in
@@ -136,40 +187,34 @@ let rec glob_constr_of_constr loc c = match Constr.kind c with
   | x ->
       anomaly (str "1 constr " ++ str (obj_string x))
 
-let interp_big_int zpos'ty ty thr f loc bi =
+(** TODO: restore this warning above threshold *)
+
+let interp_coqint inds ty thr f loc rawnum =
   let t =
-    let c = mkApp (mkConst f, [| z'_of_bigint zpos'ty ty thr bi |]) in
+    let c = mkApp (mkConst f, [| rawnum_to_coqint inds rawnum |]) in
     eval_constr c
   in
   match Constr.kind t with
-  | App (_, [| _; c |]) -> glob_constr_of_constr loc c
-  | App (_, [| _ |]) ->
+  | App (_, [| _; c |]) (* Some *) -> glob_constr_of_constr loc c
+  | App (_, [| _ |]) (* None *) ->
       user_err_loc
         (loc, "_",
          str "Cannot interpret this number as a value of type " ++
          str (string_of_reference ty))
   | x ->
-      anomaly (str "interp_big_int " ++ str (obj_string x))
+      anomaly (str "interp_coqint " ++ str (obj_string x))
 
-let uninterp_big_int loc g c =
-  match try Some (constr_of_glob_constr [] c) with Not_found -> None with
+let uninterp_coqint loc g c =
+  match optconstr_of_glob_constr c with
+  | None -> None
   | Some c ->
-      begin match
-	try Some (eval_constr (mkApp (mkConst g, [| c |])))
-	with Type_errors.TypeError _ -> None
-      with
-      | Some t ->
-          begin match Constr.kind t with
-          | App (c, [| _; x |]) -> Some (bigint_of_z' x)
-	  | x -> None
-	  end
-      | None ->
-	  None
-      end
-  | None ->
-      None
+     try
+       match Constr.kind (eval_constr (mkApp (mkConst g, [| c |]))) with
+       | App (_, [| _; c |]) (* Some *) -> Some (rawnum_of_coqint c)
+       | _ -> None
+     with Type_errors.TypeError _ -> None
 
-let uninterp_big_int_ltac tac c =
+let uninterp_coqint_ltac tac c =
   let c = (c, None) in
   let loc = Loc.ghost in
   let c = Tacexpr.ConstrMayEval (Genredexpr.ConstrTerm c) in
@@ -178,27 +223,27 @@ let uninterp_big_int_ltac tac c =
   match eval_tacexpr (Tacinterp.default_ist ()) (Global.env ()) te with
   | Some v ->
       begin match Tacinterp.Value.to_constr v with
-      | Some c -> Some (bigint_of_z' c)
+      | Some c -> Some (rawnum_of_coqint c)
       | None -> None
       end
   | None ->
       None
 
-let load_numeral_notation _ (_, (loc, zpos'ty, ty, f, g, sc, patl, thr, path)) =
+let load_numeral_notation _ (_, (loc, inds, ty, f, g, sc, patl, thr, path)) =
   match g with
   | Inl g ->
-      Notation.declare_numeral_interpreter sc (path, [])
-        (interp_big_int zpos'ty ty thr f)
-	(patl, uninterp_big_int loc g, true)
+      Notation.declare_rawnumeral_interpreter sc (path, [])
+        (interp_coqint inds ty thr f)
+	(patl, uninterp_coqint loc g, true)
   | Inr ltac ->
-      Notation.declare_numeral_interpreter sc (path, [])
-        (interp_big_int zpos'ty ty thr f)
-	(patl, uninterp_big_int_ltac ltac, false)
+      Notation.declare_rawnumeral_interpreter sc (path, [])
+        (interp_coqint inds ty thr f)
+	(patl, uninterp_coqint_ltac ltac, false)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
 
 type numeral_notation_obj =
-  Loc.t * (Names.inductive * Names.inductive) *
+  Loc.t * coqinds *
   Libnames.reference * Names.constant *
   (Names.constant, Nametab.ltac_constant) union *
   Notation_term.scope_name * Glob_term.glob_constr list *
@@ -210,33 +255,31 @@ let inNumeralNotation : numeral_notation_obj -> Libobject.obj =
     Libobject.cache_function = cache_numeral_notation;
     Libobject.load_function = load_numeral_notation }
 
+let locate (loc,q) =
+  try Nametab.locate q
+  with Not_found -> Nametab.error_global_not_found_loc loc q
+
+let locate_ind (loc,q) =
+  try match Nametab.locate q with IndRef i -> i | _ -> raise Not_found
+  with Not_found -> Nametab.error_global_not_found_loc loc q
+
+let locate_cst (loc,q) =
+  try Nametab.locate_constant q
+  with Not_found -> Nametab.error_global_not_found_loc loc q
+
 let vernac_numeral_notation ty f g sc patl waft =
   let loc = Loc.ghost in
-  let zpos'ty =
-    let z'ty =
-      let c = qualid_of_ident (Id.of_string "Z'") in
-      try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-      with Not_found -> Nametab.error_global_not_found c
-    in
-    let positive'ty =
-      let c = qualid_of_ident (Id.of_string "positive'") in
-      try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-      with Not_found -> Nametab.error_global_not_found c
-    in
-    (z'ty, positive'ty)
+  let digit = loc,qualid_of_string "Coq.Init.Decimal.digit" in
+  let list = loc,qualid_of_string "Coq.Init.Datatypes.list" in
+  let int = loc,qualid_of_string "Coq.Init.Decimal.int" in
+  let inds = { digit = locate_ind digit;
+               list = locate_ind list;
+               int = locate_ind int }
   in
-  let tyc =
-    let (loc, tyq) = qualid_of_reference ty in
-    try Nametab.locate tyq with Not_found ->
-      Nametab.error_global_not_found_loc loc tyq
-  in
-  let fc =
-    let (loc, fq) = qualid_of_reference f in
-    try Nametab.locate_constant fq with Not_found ->
-      Nametab.error_global_not_found_loc loc fq
-  in
-  let lqid = qualid_of_reference ty in
-  let crq = CRef (Qualid lqid, None) in
+  let tyq = qualid_of_reference ty in
+  let tyc = locate tyq in
+  let fc = locate_cst (qualid_of_reference f) in
+  let crq q = CRef (Qualid q, None) in
   let identref loc s = (loc, Names.Id.of_string s) in
   let app loc x y = CApp (loc, (None, x), [(y, None)]) in
   let cref loc s = CRef (Ident (identref loc s), None) in
@@ -244,12 +287,13 @@ let vernac_numeral_notation ty f g sc patl waft =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
   let _ =
-    (* checking "f" is of type "Z' -> option ty" *)
+    (* checking "f" is of type "Decimal.int -> option ty" *)
+    (* TODO : pourquoi via des constrexpr ? *)
     let c =
       CCast
         (loc, CRef (f, None),
          CastConv
-           (arrow loc (cref loc "Z'") (app loc (cref loc "option") crq)))
+           (arrow loc (crq int) (app loc (cref loc "option") (crq tyq))))
     in
     let (sigma, env) = Lemmas.get_current_context () in
     Constrintern.intern_constr env c
@@ -264,12 +308,12 @@ let vernac_numeral_notation ty f g sc patl waft =
           Nametab.error_global_not_found_loc loc gq
       in
       let _ =
-        (* checking "g" is of type "ty -> option Z'" *)
+        (* checking "g" is of type "ty -> option Decimal.int" *)
         let c =
           CCast
             (loc, CRef (g, None),
              CastConv
-               (arrow loc crq (app loc (cref loc "option") (cref loc "Z'"))))
+               (arrow loc (crq tyq) (app loc (cref loc "option") (crq int))))
         in
         let (sigma, env) = Lemmas.get_current_context () in
         Constrintern.interp_open_constr env sigma c
@@ -298,7 +342,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       in
       Lib.add_anonymous_leaf
         (inNumeralNotation
-	   (loc, zpos'ty, ty, fc, Inl gc, sc, patl, thr, path))
+	   (loc, inds, ty, fc, Inl gc, sc, patl, thr, path))
   | ((IndRef _ | ConstRef _), _) ->
       let gc =
         let (loc, gq) = qualid_of_reference g in
@@ -316,7 +360,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       in
       Lib.add_anonymous_leaf
         (inNumeralNotation
-	   (loc, zpos'ty, ty, fc, Inr gc, sc, patl, thr, path))
+	   (loc, inds, ty, fc, Inr gc, sc, patl, thr, path))
   | (VarRef _, _) | (ConstructRef _, _) ->
       user_err_loc
         (loc, "_", str (string_of_reference ty) ++ str " is not a type")

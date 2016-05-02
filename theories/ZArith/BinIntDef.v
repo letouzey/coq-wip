@@ -8,7 +8,7 @@
 (************************************************************************)
 
 Require Export BinNums.
-Require Import BinPos BinNat.
+Require Import BinPosDef BinNatDef.
 
 Local Open Scope Z_scope.
 

@@ -7,6 +7,7 @@
 (************************************************************************)
 
 Require Import Notations Logic Datatypes.
+Require Decimal.
 
 Local Open Scope nat_scope.
 
@@ -19,6 +20,15 @@ Local Open Scope nat_scope.
     (e.g. Nat.pred) *)
 
 Definition t := nat.
+
+(** ** Constants *)
+
+Definition zero := O.
+Definition one := S O.
+Definition two := S (S O).
+
+Local Notation "0" := O.
+Local Notation "1" := (S O).
 
 (** ** Basic operations *)
 
@@ -58,65 +68,27 @@ Fixpoint sub n m :=
 
 where "n - m" := (sub n m) : nat_scope.
 
-(** ** Parsing and Printing digit strings as type nat *)
+(** ** Tail-recursive versions of [add] and [mul] *)
 
-Fixpoint pos'pred_double x :=
-  match x with
-  | x'I p => x'I (x'O p)
-  | x'O p => x'I (pos'pred_double p)
-  | x'H => x'H
-  end.
+Module Tail.
 
-Definition nat_of_Z' x :=
-  match x with
-  | Z'0 => Some O
-  | Z'pos p =>
-      let fix iter p a :=
-        match p with
-        | x'I p0 => a + iter p0 (a + a)
-        | x'O p0 => iter p0 (a + a)
-        | x'H => a
-        end
-      in
-      Some (iter p (S O))
-  | Z'neg p => None
-  end.
-
-Fixpoint pos'succ x := 
-  match x with
-  | x'I p => x'O (pos'succ p)
-  | x'O p => x'I p
-  | x'H => x'O x'H
-  end.
-
-Definition Z'succ x := 
-  match x with
-  | Z'0 => Z'pos x'H
-  | Z'pos x' => Z'pos (pos'succ x')
-  | Z'neg x' =>
-      match x' with
-      | x'I p => Z'neg (x'O p)
-      | x'O p => Z'neg (pos'pred_double p)
-      | x'H => Z'0
-      end
-  end.
-
-Fixpoint Z'_of_nat_loop n :=
+Fixpoint add n m :=
   match n with
-  | O => Z'0
-  | S p => Z'succ (Z'_of_nat_loop p)
+    | O => m
+    | S n => add n (S m)
   end.
 
-Definition Z'_of_nat n := Some (Z'_of_nat_loop n).
+(** [addmul r n m] is [r + n * m]. *)
 
-Numeral Notation nat nat_of_Z' Z'_of_nat : nat_scope
-  (warning after 5000).
+Fixpoint addmul r n m :=
+  match n with
+    | O => r
+    | S n => addmul (add m r) n m
+  end.
 
-(** ** Constants *)
+Definition mul n m := addmul 0 n m.
 
-Definition zero := 0.
-Definition one := 1.
-Definition two := 2.
+End Tail.
 
 (** ** Comparisons *)
 
@@ -204,6 +176,12 @@ Fixpoint divmod x y q u :=
               end
   end.
 
+Definition div_eucl x y :=
+  match y with
+    | 0 => (y,y)
+    | S y' => let (q,r) := divmod x y' 0 y' in (q, y'-r)
+  end.
+
 Definition div x y :=
   match y with
     | 0 => y
@@ -219,6 +197,69 @@ Definition modulo x y :=
 Infix "/" := div : nat_scope.
 Infix "mod" := modulo (at level 40, no associativity) : nat_scope.
 
+(** ** Conversion with a decimal representation for printing/parsing *)
+
+Definition of_digit (d : Decimal.digit) :=
+  match d with
+    | Decimal.D0 => O
+    | Decimal.D1 => S O
+    | Decimal.D2 => S (S O)
+    | Decimal.D3 => S (S (S O))
+    | Decimal.D4 => S (S (S (S O)))
+    | Decimal.D5 => S (S (S (S (S O))))
+    | Decimal.D6 => S (S (S (S (S (S O)))))
+    | Decimal.D7 => S (S (S (S (S (S (S O))))))
+    | Decimal.D8 => S (S (S (S (S (S (S (S O)))))))
+    | Decimal.D9 => S (S (S (S (S (S (S (S (S O))))))))
+  end.
+
+Definition to_digit n : Decimal.digit :=
+  match n with
+    | O => Decimal.D0
+    | S O => Decimal.D1
+    | S (S O) => Decimal.D2
+    | S (S (S O)) => Decimal.D3
+    | S (S (S (S O))) => Decimal.D4
+    | S (S (S (S (S O)))) => Decimal.D5
+    | S (S (S (S (S (S O))))) => Decimal.D6
+    | S (S (S (S (S (S (S O)))))) => Decimal.D7
+    | S (S (S (S (S (S (S (S O))))))) => Decimal.D8
+    | S (S (S (S (S (S (S (S (S _)))))))) => Decimal.D9 (* n>9 returns 9 *)
+  end.
+
+Local Notation ten := (S (S (S (S (S (S (S (S (S (S O)))))))))).
+
+Fixpoint of_uint_acc (d:Decimal.uint)(acc:nat) :=
+  match d with
+    | nil => acc
+    | dg :: d => of_uint_acc d (Tail.addmul (of_digit dg) ten acc)
+  end%list.
+
+Definition of_uint (d:Decimal.uint) := of_uint_acc d O.
+
+Fixpoint to_uint_acc (n:nat)(acc:Decimal.uint)(count:nat) :=
+  match count, n with
+    | 0, _ => acc
+    | _, 0 => acc
+    | S count', _ =>
+      let (q,r) := div_eucl n ten in
+      to_uint_acc q (to_digit r :: acc) count'
+  end%list.
+
+Definition to_uint n := to_uint_acc n nil n.
+
+Definition of_int (d:Decimal.int) : option nat :=
+  match Decimal.norm d with
+    | Decimal.Pos u => Some (of_uint u)
+    | _ => None
+  end.
+
+Definition to_int n := Decimal.Pos (to_uint n).
+
+Definition to_int_opt n := Some (Decimal.Pos (to_uint n)).
+
+Numeral Notation nat of_int to_int_opt : nat_scope
+  (warning after 5000).
 
 (** ** Greatest common divisor *)
 

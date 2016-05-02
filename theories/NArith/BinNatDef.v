@@ -9,7 +9,10 @@
 Require Export BinNums.
 Require Import BinPos.
 
+Local Notation "1" := xH : positive_scope.
 Local Open Scope N_scope.
+Local Notation "0" := N0 : N_scope.
+Local Notation "1" := (Npos 1) : N_scope.
 
 (**********************************************************************)
 (** * Binary natural numbers, definitions of operations *)
@@ -25,9 +28,9 @@ Notation pos := Npos.
 
 (** ** Constants *)
 
-Definition zero := 0.
-Definition one := 1.
-Definition two := 2.
+Definition zero := N0.
+Definition one := Npos 1.
+Definition two := Npos 1~0.
 
 (** ** Operation [x -> 2*x+1] *)
 
