@@ -600,20 +600,6 @@ Fixpoint of_succ_nat (n:nat) : positive :=
 
 (** ** Conversion with a decimal representation for printing/parsing *)
 
-Definition of_digit (d:Decimal.digit) : N :=
-  match d with
-  | Decimal.D0 => N0
-  | Decimal.D1 => Npos 1
-  | Decimal.D2 => Npos 1~0
-  | Decimal.D3 => Npos 1~1
-  | Decimal.D4 => Npos 1~0~0
-  | Decimal.D5 => Npos 1~0~1
-  | Decimal.D6 => Npos 1~1~0
-  | Decimal.D7 => Npos 1~1~1
-  | Decimal.D8 => Npos 1~0~0~0
-  | Decimal.D9 => Npos 1~0~0~1
-  end.
-
 Local Notation ten := 1~0~1~0.
 Local Open Scope list_scope.
 
@@ -686,18 +672,28 @@ Fixpoint to_uint_acc (n:positive)(acc:Decimal.uint)(count:positive) :=
      | (Npos q, r) => to_uint_acc q (N_to_digit r :: acc) count'
      end
  end.
+
+Definition to_uint (n:positive) : Decimal.uint :=
+  to_uint_acc n nil (n~0).
 *)
 
+(*
 Fixpoint to_uint p :=
   match p with
   | 1 => Decimal.D1 :: nil
   | p~1 => Decimal.succ_double (to_uint p)
   | p~0 => Decimal.double (to_uint p)
   end.
-(*
-Definition to_uint (n:positive) : Decimal.uint :=
-  to_uint_acc n nil (n~0).
 *)
+
+Fixpoint to_uint_rev p :=
+  match p with
+  | 1 => Decimal.D1 :: nil
+  | p~1 => Decimal.little_succ_double (to_uint_rev p)
+  | p~0 => Decimal.little_double (to_uint_rev p)
+  end.
+
+Definition to_uint p := Decimal.rev_app (to_uint_rev p) nil.
 
 Definition to_int n := Decimal.Pos (to_uint n).
 

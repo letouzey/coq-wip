@@ -82,3 +82,33 @@ Definition double d :=
 
 Definition succ_double d :=
   double_rev_carry true (rev_app d nil) nil.
+
+Fixpoint little_double d :=
+  match d with
+  | nil => nil
+  | D0 :: l => D0 :: little_double l
+  | D1 :: l => D2 :: little_double l
+  | D2 :: l => D4 :: little_double l
+  | D3 :: l => D6 :: little_double l
+  | D4 :: l => D8 :: little_double l
+  | D5 :: l => D0 :: little_succ_double l
+  | D6 :: l => D2 :: little_succ_double l
+  | D7 :: l => D4 :: little_succ_double l
+  | D8 :: l => D6 :: little_succ_double l
+  | D9 :: l => D8 :: little_succ_double l
+  end
+
+with little_succ_double d :=
+  match d with
+  | nil => D1 :: nil
+  | D0 :: l => D1 :: little_double l
+  | D1 :: l => D3 :: little_double l
+  | D2 :: l => D5 :: little_double l
+  | D3 :: l => D7 :: little_double l
+  | D4 :: l => D9 :: little_double l
+  | D5 :: l => D1 :: little_succ_double l
+  | D6 :: l => D3 :: little_succ_double l
+  | D7 :: l => D5 :: little_succ_double l
+  | D8 :: l => D7 :: little_succ_double l
+  | D9 :: l => D9 :: little_succ_double l
+  end.
