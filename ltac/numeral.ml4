@@ -76,9 +76,10 @@ let rawnum_of_coqint c =
                assert (0<=n-1 && n-1<=9);
                let () = Buffer.add_char buf (Char.chr (n-1 + Char.code '0')) in
                of_uint_loop args.(2) buf
-            | _ -> assert false)
-        | _ -> assert false)
-    | _ -> assert false
+            | _ -> raise Not_found)
+        | _ -> raise Not_found)
+    | _ -> raise Not_found
+ (*anomaly (str "of_uint_loop nonApp : " ++ fnl () ++ Termops.print_constr c) *)
   in
   let of_uint c =
     let buf = Buffer.create 64 in
@@ -90,8 +91,8 @@ let rawnum_of_coqint c =
      (match Constr.kind c with
       | Construct ((_,1), _) (* Pos *) -> (of_uint c', true)
       | Construct ((_,2), _) (* Neg *) -> (of_uint c', false)
-      | _ -> assert false)
-  | _ -> assert false
+      | _ -> raise Not_found)
+  | _ -> raise Not_found
 
 (*
 let rec pos'_of_bigint  n =
@@ -320,25 +321,22 @@ let vernac_numeral_notation ty f g sc patl waft =
       in
       let env = Global.env () in
       let patl =
-        match patl with
-        | _ :: _ -> anomaly (str "patl not impl")
-        | [] ->
-            let mc =
-              let mib = Environ.lookup_mind sp env in
-              let inds =
-                List.init (Array.length mib.Declarations.mind_packets)
-                  (fun x -> (sp, x))
-              in
-              let ind = List.hd inds in
-              let mip = mib.Declarations.mind_packets.(snd ind) in
-              mip.Declarations.mind_consnames
-            in
-            Array.to_list
-              (Array.mapi
-                 (fun i c ->
-                   Glob_term.GRef
-                     (loc, ConstructRef ((sp, spi), i + 1), None))
-                 mc)
+        let mc =
+          let mib = Environ.lookup_mind sp env in
+          let inds =
+            List.init (Array.length mib.Declarations.mind_packets)
+                      (fun x -> (sp, x))
+          in
+          let ind = List.hd inds in
+          let mip = mib.Declarations.mind_packets.(snd ind) in
+          mip.Declarations.mind_consnames
+        in
+        Array.to_list
+          (Array.mapi
+             (fun i c ->
+              Glob_term.GRef
+                (loc, ConstructRef ((sp, spi), i + 1), None))
+             mc)
       in
       Lib.add_anonymous_leaf
         (inNumeralNotation
