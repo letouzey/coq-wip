@@ -55,3 +55,30 @@ Definition opp d :=
    | Pos d => Neg d
    | Neg d => Pos d
  end.
+
+Fixpoint rev_app (l l' : uint) :=
+  match l with
+  | nil => l'
+  | x :: l => rev_app l (x::l')
+  end.
+
+Fixpoint double_rev_carry (c:bool) l acc :=
+  match l with
+  | nil => if c then D1 :: acc else acc
+  | D0 :: l => double_rev_carry false l ((if c then D1 else D0) :: acc)
+  | D1 :: l => double_rev_carry false l ((if c then D3 else D2) :: acc)
+  | D2 :: l => double_rev_carry false l ((if c then D5 else D4) :: acc)
+  | D3 :: l => double_rev_carry false l ((if c then D7 else D6) :: acc)
+  | D4 :: l => double_rev_carry false l ((if c then D9 else D8) :: acc)
+  | D5 :: l => double_rev_carry true l ((if c then D1 else D0) :: acc)
+  | D6 :: l => double_rev_carry true l ((if c then D3 else D2) :: acc)
+  | D7 :: l => double_rev_carry true l ((if c then D5 else D4) :: acc)
+  | D8 :: l => double_rev_carry true l ((if c then D7 else D6) :: acc)
+  | D9 :: l => double_rev_carry true l ((if c then D9 else D8) :: acc)
+  end.
+
+Definition double d :=
+  double_rev_carry false (rev_app d nil) nil.
+
+Definition succ_double d :=
+  double_rev_carry true (rev_app d nil) nil.

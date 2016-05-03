@@ -657,6 +657,7 @@ Definition of_int (d:Decimal.int) : option positive :=
   | Decimal.Neg _ => None
   end.
 
+(*
 Definition to_digit (p:positive) : Decimal.digit :=
   match p with
   | 1 => Decimal.D1
@@ -685,9 +686,18 @@ Fixpoint to_uint_acc (n:positive)(acc:Decimal.uint)(count:positive) :=
      | (Npos q, r) => to_uint_acc q (N_to_digit r :: acc) count'
      end
  end.
+*)
 
+Fixpoint to_uint p :=
+  match p with
+  | 1 => Decimal.D1 :: nil
+  | p~1 => Decimal.succ_double (to_uint p)
+  | p~0 => Decimal.double (to_uint p)
+  end.
+(*
 Definition to_uint (n:positive) : Decimal.uint :=
   to_uint_acc n nil (n~0).
+*)
 
 Definition to_int n := Decimal.Pos (to_uint n).
 
