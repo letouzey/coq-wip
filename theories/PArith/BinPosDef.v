@@ -605,32 +605,32 @@ Local Open Scope list_scope.
 
 Fixpoint of_uint_acc (d:Decimal.uint)(acc:positive) :=
   match d with
-  | nil => acc
-  | Decimal.D0 :: l => of_uint_acc l (mul ten acc)
-  | Decimal.D1 :: l => of_uint_acc l (add 1 (mul ten acc))
-  | Decimal.D2 :: l => of_uint_acc l (add 1~0 (mul ten acc))
-  | Decimal.D3 :: l => of_uint_acc l (add 1~1 (mul ten acc))
-  | Decimal.D4 :: l => of_uint_acc l (add 1~0~0 (mul ten acc))
-  | Decimal.D5 :: l => of_uint_acc l (add 1~0~1 (mul ten acc))
-  | Decimal.D6 :: l => of_uint_acc l (add 1~1~0 (mul ten acc))
-  | Decimal.D7 :: l => of_uint_acc l (add 1~1~1 (mul ten acc))
-  | Decimal.D8 :: l => of_uint_acc l (add 1~0~0~0 (mul ten acc))
-  | Decimal.D9 :: l => of_uint_acc l (add 1~0~0~1 (mul ten acc))
+  | Decimal.Nil => acc
+  | Decimal.D0 l => of_uint_acc l (mul ten acc)
+  | Decimal.D1 l => of_uint_acc l (add 1 (mul ten acc))
+  | Decimal.D2 l => of_uint_acc l (add 1~0 (mul ten acc))
+  | Decimal.D3 l => of_uint_acc l (add 1~1 (mul ten acc))
+  | Decimal.D4 l => of_uint_acc l (add 1~0~0 (mul ten acc))
+  | Decimal.D5 l => of_uint_acc l (add 1~0~1 (mul ten acc))
+  | Decimal.D6 l => of_uint_acc l (add 1~1~0 (mul ten acc))
+  | Decimal.D7 l => of_uint_acc l (add 1~1~1 (mul ten acc))
+  | Decimal.D8 l => of_uint_acc l (add 1~0~0~0 (mul ten acc))
+  | Decimal.D9 l => of_uint_acc l (add 1~0~0~1 (mul ten acc))
   end.
 
 Fixpoint of_uint (d:Decimal.uint) : N :=
   match d with
-  | nil => N0
-  | Decimal.D0 :: l => of_uint l
-  | Decimal.D1 :: l => Npos (of_uint_acc l 1)
-  | Decimal.D2 :: l => Npos (of_uint_acc l 1~0)
-  | Decimal.D3 :: l => Npos (of_uint_acc l 1~1)
-  | Decimal.D4 :: l => Npos (of_uint_acc l 1~0~0)
-  | Decimal.D5 :: l => Npos (of_uint_acc l 1~0~1)
-  | Decimal.D6 :: l => Npos (of_uint_acc l 1~1~0)
-  | Decimal.D7 :: l => Npos (of_uint_acc l 1~1~1)
-  | Decimal.D8 :: l => Npos (of_uint_acc l 1~0~0~0)
-  | Decimal.D9 :: l => Npos (of_uint_acc l 1~0~0~1)
+  | Decimal.Nil => N0
+  | Decimal.D0 l => of_uint l
+  | Decimal.D1 l => Npos (of_uint_acc l 1)
+  | Decimal.D2 l => Npos (of_uint_acc l 1~0)
+  | Decimal.D3 l => Npos (of_uint_acc l 1~1)
+  | Decimal.D4 l => Npos (of_uint_acc l 1~0~0)
+  | Decimal.D5 l => Npos (of_uint_acc l 1~0~1)
+  | Decimal.D6 l => Npos (of_uint_acc l 1~1~0)
+  | Decimal.D7 l => Npos (of_uint_acc l 1~1~1)
+  | Decimal.D8 l => Npos (of_uint_acc l 1~0~0~0)
+  | Decimal.D9 l => Npos (of_uint_acc l 1~0~0~1)
   end.
 
 Definition of_int (d:Decimal.int) : option positive :=
@@ -688,12 +688,12 @@ Fixpoint to_uint p :=
 
 Fixpoint to_uint_rev p :=
   match p with
-  | 1 => Decimal.D1 :: nil
+  | 1 => Decimal.D1 Decimal.Nil
   | p~1 => Decimal.little_succ_double (to_uint_rev p)
   | p~0 => Decimal.little_double (to_uint_rev p)
   end.
 
-Definition to_uint p := Decimal.rev_app (to_uint_rev p) nil.
+Definition to_uint p := Decimal.rev (to_uint_rev p) Decimal.Nil.
 
 Definition to_int n := Decimal.Pos (to_uint n).
 

@@ -42,22 +42,18 @@ let eval_tacexpr ist env (te : Tacexpr.glob_tactic_expr) =
   | Some _ | None -> None
 
 type coqinds =
-    { digit : inductive;
-      list : inductive;
+    { uint : inductive;
       int : inductive }
 
 let rawnum_to_coqint inds (str,sign) =
-  let ty_digit = mkInd inds.digit in
-  let nil = mkApp (mkConstruct (inds.list,1), [|ty_digit|]) in
-  let cons = mkConstruct (inds.list,2) in
-  let mkCons t q = mkApp (cons, [| ty_digit;t;q |]) in
+  let nil = mkConstruct (inds.uint,1) in
   let rec do_chars s i acc =
     if i < 0 then acc
     else
       let c = s.[i] in
       assert ('0' <= c && c <= '9');
-      let dg = mkConstruct (inds.digit, Char.code c - Char.code '0' +1) in
-      do_chars s (i-1) (mkCons dg acc)
+      let dg = mkConstruct (inds.uint, Char.code c - Char.code '0' +2) in
+      do_chars s (i-1) (mkApp(dg,[|acc|]))
   in
   let uint = do_chars str (String.length str - 1) nil in
   let int = mkApp (mkConstruct (inds.int, if sign then 1 else 2), [|uint|]) in
@@ -66,20 +62,15 @@ let rawnum_to_coqint inds (str,sign) =
 let rawnum_of_coqint c =
   let rec of_uint_loop c buf =
     match Constr.kind c with
-    | App (c, args) ->
+    | Construct ((_,1), _) (* Nil *) -> ()
+    | App (c, [|a|]) ->
        (match Constr.kind c with
-        | Construct ((_,1), _) (* nil *) -> ()
-        | Construct ((_,2), _) (* cons *) ->
-           (assert (Int.equal (Array.length args) 3);
-            match Constr.kind args.(1) with
-            | Construct ((_,n),_) (* D0 to D9 *) ->
-               assert (0<=n-1 && n-1<=9);
-               let () = Buffer.add_char buf (Char.chr (n-1 + Char.code '0')) in
-               of_uint_loop args.(2) buf
-            | _ -> raise Not_found)
+        | Construct ((_,n), _) (* D0 to D9 *) ->
+           assert (0<=n-2 && n-2<=9);
+           let () = Buffer.add_char buf (Char.chr (n-2 + Char.code '0')) in
+           of_uint_loop a buf
         | _ -> raise Not_found)
     | _ -> raise Not_found
- (*anomaly (str "of_uint_loop nonApp : " ++ fnl () ++ Termops.print_constr c) *)
   in
   let of_uint c =
     let buf = Buffer.create 64 in
@@ -270,13 +261,9 @@ let locate_cst (loc,q) =
 
 let vernac_numeral_notation ty f g sc patl waft =
   let loc = Loc.ghost in
-  let digit = loc,qualid_of_string "Coq.Init.Decimal.digit" in
-  let list = loc,qualid_of_string "Coq.Init.Datatypes.list" in
+  let uint = loc,qualid_of_string "Coq.Init.Decimal.uint" in
   let int = loc,qualid_of_string "Coq.Init.Decimal.int" in
-  let inds = { digit = locate_ind digit;
-               list = locate_ind list;
-               int = locate_ind int }
-  in
+  let inds = { uint = locate_ind uint; int = locate_ind int } in
   let tyq = qualid_of_reference ty in
   let tyc = locate tyq in
   let fc = locate_cst (qualid_of_reference f) in

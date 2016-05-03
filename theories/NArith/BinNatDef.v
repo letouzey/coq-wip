@@ -386,7 +386,7 @@ Definition of_int (d:Decimal.int) :=
 
 Definition to_uint n :=
   match n with
-  | 0 => nil
+  | 0 => Decimal.Nil
   | pos p => Pos.to_uint p
   end.
 
