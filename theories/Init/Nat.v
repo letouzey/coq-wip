@@ -199,49 +199,33 @@ Infix "mod" := modulo (at level 40, no associativity) : nat_scope.
 
 (** ** Conversion with a decimal representation for printing/parsing *)
 
-Definition to_digit n acc :=
-  match n with
-    | O => Decimal.D0 acc
-    | S O => Decimal.D1 acc
-    | S (S O) => Decimal.D2 acc
-    | S (S (S O)) => Decimal.D3 acc
-    | S (S (S (S O))) => Decimal.D4 acc
-    | S (S (S (S (S O)))) => Decimal.D5 acc
-    | S (S (S (S (S (S O))))) => Decimal.D6 acc
-    | S (S (S (S (S (S (S O)))))) => Decimal.D7 acc
-    | S (S (S (S (S (S (S (S O))))))) => Decimal.D8 acc
-    | S (S (S (S (S (S (S (S (S _)))))))) => Decimal.D9 acc (* n>9 returns 9 *)
-  end.
-
 Local Notation ten := (S (S (S (S (S (S (S (S (S (S O)))))))))).
 
 Fixpoint of_uint_acc (d:Decimal.uint)(acc:nat) :=
   match d with
-    | Decimal.Nil => acc
-    | Decimal.D0 d => of_uint_acc d (Tail.mul ten acc)
-    | Decimal.D1 d => of_uint_acc d (S (Tail.mul ten acc))
-    | Decimal.D2 d => of_uint_acc d (S (S (Tail.mul ten acc)))
-    | Decimal.D3 d => of_uint_acc d (S (S (S (Tail.mul ten acc))))
-    | Decimal.D4 d => of_uint_acc d (S (S (S (S (Tail.mul ten acc)))))
-    | Decimal.D5 d => of_uint_acc d (S (S (S (S (S (Tail.mul ten acc))))))
-    | Decimal.D6 d => of_uint_acc d (S (S (S (S (S (S (Tail.mul ten acc)))))))
-    | Decimal.D7 d => of_uint_acc d (S (S (S (S (S (S (S (Tail.mul ten acc))))))))
-    | Decimal.D8 d => of_uint_acc d (S (S (S (S (S (S (S (S (Tail.mul ten acc)))))))))
-    | Decimal.D9 d => of_uint_acc d (S (S (S (S (S (S (S (S (S (Tail.mul ten acc))))))))))
+  | Decimal.Nil => acc
+  | Decimal.D0 d => of_uint_acc d (Tail.mul ten acc)
+  | Decimal.D1 d => of_uint_acc d (S (Tail.mul ten acc))
+  | Decimal.D2 d => of_uint_acc d (S (S (Tail.mul ten acc)))
+  | Decimal.D3 d => of_uint_acc d (S (S (S (Tail.mul ten acc))))
+  | Decimal.D4 d => of_uint_acc d (S (S (S (S (Tail.mul ten acc)))))
+  | Decimal.D5 d => of_uint_acc d (S (S (S (S (S (Tail.mul ten acc))))))
+  | Decimal.D6 d => of_uint_acc d (S (S (S (S (S (S (Tail.mul ten acc)))))))
+  | Decimal.D7 d => of_uint_acc d (S (S (S (S (S (S (S (Tail.mul ten acc))))))))
+  | Decimal.D8 d => of_uint_acc d (S (S (S (S (S (S (S (S (Tail.mul ten acc)))))))))
+  | Decimal.D9 d => of_uint_acc d (S (S (S (S (S (S (S (S (S (Tail.mul ten acc))))))))))
   end.
 
 Definition of_uint (d:Decimal.uint) := of_uint_acc d O.
 
-Fixpoint to_uint_acc (n:nat)(acc:Decimal.uint)(count:nat) :=
-  match count, n with
-    | 0, _ => acc
-    | _, 0 => acc
-    | S count', _ =>
-      let (q,r) := div_eucl n ten in
-      to_uint_acc q (to_digit r acc) count'
+Fixpoint to_little_uint n acc :=
+  match n with
+  | O => acc
+  | S n => to_little_uint n (Decimal.Little.succ acc)
   end.
 
-Definition to_uint n := to_uint_acc n Decimal.Nil n.
+Definition to_uint n :=
+  Decimal.rev (to_little_uint n Decimal.Nil) Decimal.Nil.
 
 Definition of_int (d:Decimal.int) : option nat :=
   match Decimal.norm d with

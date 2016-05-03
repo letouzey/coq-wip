@@ -80,34 +80,55 @@ Fixpoint rev (l l' : uint) :=
   | D9 l => rev l (D9 l')
   end.
 
-(** Doubling little-endian numbers *)
+Module Little.
 
-Fixpoint little_double d :=
-  match d with
-  | Nil => Nil
-  | D0 l => D0 (little_double l)
-  | D1 l => D2 (little_double l)
-  | D2 l => D4 (little_double l)
-  | D3 l => D6 (little_double l)
-  | D4 l => D8 (little_double l)
-  | D5 l => D0 (little_succ_double l)
-  | D6 l => D2 (little_succ_double l)
-  | D7 l => D4 (little_succ_double l)
-  | D8 l => D6 (little_succ_double l)
-  | D9 l => D8 (little_succ_double l)
-  end
+(** Successor of little-endian numbers *)
 
-with little_succ_double d :=
+Fixpoint succ d :=
   match d with
   | Nil => D1 Nil
-  | D0 l => D1 (little_double l)
-  | D1 l => D3 (little_double l)
-  | D2 l => D5 (little_double l)
-  | D3 l => D7 (little_double l)
-  | D4 l => D9 (little_double l)
-  | D5 l => D1 (little_succ_double l)
-  | D6 l => D3 (little_succ_double l)
-  | D7 l => D5 (little_succ_double l)
-  | D8 l => D7 (little_succ_double l)
-  | D9 l => D9 (little_succ_double l)
+  | D0 l => D1 l
+  | D1 l => D2 l
+  | D2 l => D3 l
+  | D3 l => D4 l
+  | D4 l => D5 l
+  | D5 l => D6 l
+  | D6 l => D7 l
+  | D7 l => D8 l
+  | D8 l => D9 l
+  | D9 l => D0 (succ l)
   end.
+
+(** Doubling little-endian numbers *)
+
+Fixpoint double d :=
+  match d with
+  | Nil => Nil
+  | D0 l => D0 (double l)
+  | D1 l => D2 (double l)
+  | D2 l => D4 (double l)
+  | D3 l => D6 (double l)
+  | D4 l => D8 (double l)
+  | D5 l => D0 (succ_double l)
+  | D6 l => D2 (succ_double l)
+  | D7 l => D4 (succ_double l)
+  | D8 l => D6 (succ_double l)
+  | D9 l => D8 (succ_double l)
+  end
+
+with succ_double d :=
+  match d with
+  | Nil => D1 Nil
+  | D0 l => D1 (double l)
+  | D1 l => D3 (double l)
+  | D2 l => D5 (double l)
+  | D3 l => D7 (double l)
+  | D4 l => D9 (double l)
+  | D5 l => D1 (succ_double l)
+  | D6 l => D3 (succ_double l)
+  | D7 l => D5 (succ_double l)
+  | D8 l => D7 (succ_double l)
+  | D9 l => D9 (succ_double l)
+  end.
+
+End Little.

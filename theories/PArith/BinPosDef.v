@@ -643,57 +643,14 @@ Definition of_int (d:Decimal.int) : option positive :=
   | Decimal.Neg _ => None
   end.
 
-(*
-Definition to_digit (p:positive) : Decimal.digit :=
-  match p with
-  | 1 => Decimal.D1
-  | 1~0 => Decimal.D2
-  | 1~1 => Decimal.D3
-  | 1~0~0 => Decimal.D4
-  | 1~0~1 => Decimal.D5
-  | 1~1~0 => Decimal.D6
-  | 1~1~1 => Decimal.D7
-  | 1~0~0~0 => Decimal.D8
-  | _ => Decimal.D9 (* n>9 shouldn't happen *)
-  end.
-
-Definition N_to_digit (n:N) : Decimal.digit :=
-  match n with
-  | N0 => Decimal.D0
-  | Npos p => to_digit p
-  end.
-
-Fixpoint to_uint_acc (n:positive)(acc:Decimal.uint)(count:positive) :=
- match count with
- | xH => acc
- | xO count' | xI count' =>
-     match div_eucl n ten with
-     | (N0, r) => N_to_digit r :: acc
-     | (Npos q, r) => to_uint_acc q (N_to_digit r :: acc) count'
-     end
- end.
-
-Definition to_uint (n:positive) : Decimal.uint :=
-  to_uint_acc n nil (n~0).
-*)
-
-(*
-Fixpoint to_uint p :=
-  match p with
-  | 1 => Decimal.D1 :: nil
-  | p~1 => Decimal.succ_double (to_uint p)
-  | p~0 => Decimal.double (to_uint p)
-  end.
-*)
-
-Fixpoint to_uint_rev p :=
+Fixpoint to_little_uint p :=
   match p with
   | 1 => Decimal.D1 Decimal.Nil
-  | p~1 => Decimal.little_succ_double (to_uint_rev p)
-  | p~0 => Decimal.little_double (to_uint_rev p)
+  | p~1 => Decimal.Little.succ_double (to_little_uint p)
+  | p~0 => Decimal.Little.double (to_little_uint p)
   end.
 
-Definition to_uint p := Decimal.rev (to_uint_rev p) Decimal.Nil.
+Definition to_uint p := Decimal.rev (to_little_uint p) Decimal.Nil.
 
 Definition to_int n := Decimal.Pos (to_uint n).
 
