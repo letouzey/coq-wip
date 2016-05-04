@@ -235,9 +235,7 @@ Definition of_int (d:Decimal.int) : option nat :=
 
 Definition to_int n := Decimal.Pos (to_uint n).
 
-Definition to_int_opt n := Some (Decimal.Pos (to_uint n)).
-
-Numeral Notation nat of_int to_int_opt : nat_scope
+Numeral Notation nat of_int to_int : nat_scope
   (warning after 5000).
 
 (** ** Greatest common divisor *)

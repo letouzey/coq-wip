@@ -392,8 +392,6 @@ Definition to_uint n :=
 
 Definition to_int n := Decimal.Pos (to_uint n).
 
-Definition to_int_opt n := Some (to_int n).
-
 End N.
 
-Numeral Notation N N.of_int N.to_int_opt : N_scope.
+Numeral Notation N N.of_int N.to_int : N_scope.

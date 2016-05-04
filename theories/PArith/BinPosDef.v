@@ -654,8 +654,6 @@ Definition to_uint p := Decimal.rev (to_little_uint p) Decimal.Nil.
 
 Definition to_int n := Decimal.Pos (to_uint n).
 
-Definition to_int_opt n := Some (Decimal.Pos (to_uint n)).
-
 End Pos.
 
-Numeral Notation positive Pos.of_int Pos.to_int_opt : positive_scope.
+Numeral Notation positive Pos.of_int Pos.to_int : positive_scope.

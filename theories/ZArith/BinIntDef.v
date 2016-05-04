@@ -320,11 +320,6 @@ Definition to_int n :=
   | neg p => Decimal.Neg (Pos.to_uint p)
   end.
 
-Definition of_int_opt d := Some (of_int d).
-
-Definition to_int_opt n := Some (to_int n).
-
-
 (** ** Iteration of a function
 
     By convention, iterating a negative number of times is identity.
@@ -644,4 +639,4 @@ Definition lxor a b :=
 
 End Z.
 
-Numeral Notation Z Z.of_int_opt Z.to_int_opt : Z_scope.
+Numeral Notation Z Z.of_int Z.to_int : Z_scope.

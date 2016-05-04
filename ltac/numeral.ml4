@@ -85,69 +85,6 @@ let rawnum_of_coqint c =
       | _ -> raise Not_found)
   | _ -> raise Not_found
 
-(*
-let rec pos'_of_bigint  n =
-  match Bigint.div2_with_rest n with
-  | (q, false) ->
-      let c = mkConstruct (pos'ty, 2) in (* x'O *)
-      mkApp (c, [| pos'_of_bigint pos'ty q |])
-  | (q, true) when not (Bigint.equal q Bigint.zero) ->
-      let c = mkConstruct (pos'ty, 1) in (* x'I *)
-      mkApp (c, [| pos'_of_bigint pos'ty q |])
-  | (q, true) ->
-      mkConstruct (pos'ty, 3) (* xH' *)
-
-let rec bigint_of_pos' c = match Constr.kind c with
-  | App (c, [| d |]) ->
-      begin match Constr.kind c with
-      | Construct ((_, n), _) ->
-          begin match n with
-          | 1 -> (* x'I *) Bigint.add_1 (Bigint.mult_2 (bigint_of_pos' d))
-          | 2 -> (* x'O *) Bigint.mult_2 (bigint_of_pos' d)
-          | n -> assert false
-          end
-      | x -> raise Not_found
-      end
-  | Construct ((_, 3), _) -> (* x'H *) Bigint.one
-  | x -> anomaly (str "bigint_of_pos'" ++ str (obj_string x))
-
-let z'_of_bigint (z'ty, pos'ty) ty thr n =
-  if Bigint.is_pos_or_zero n && not (Bigint.equal thr Bigint.zero) &&
-     Bigint.less_than thr n
-  then
-    msg_warning
-      (strbrk "Stack overflow or segmentation fault happens when " ++
-       strbrk "working with large numbers in " ++
-       str (string_of_reference ty) ++
-       strbrk " (threshold may vary depending" ++
-       strbrk " on your system limits and on the command executed).")
-  else ();
-  if not (Bigint.equal n Bigint.zero) then
-    let (s, n) =
-      if Bigint.is_pos_or_zero n then (2, n) (* Z'pos *)
-      else (3, Bigint.neg n) (* Z'neg *)
-    in
-    let c = mkConstruct (z'ty, s) in
-    mkApp (c, [| pos'_of_bigint pos'ty n |])
-  else
-    mkConstruct (z'ty, 1) (* Z'0 *)
-
-let bigint_of_z' z' = match Constr.kind z' with
-  | App (c, [| d |]) ->
-      begin match Constr.kind c with
-      | Construct ((_, n), _) ->
-          begin match n with
-          | 2 -> (* Z'pos *) bigint_of_pos' d
-          | 3 -> (* Z'neg *) Bigint.neg (bigint_of_pos' d)
-          | n -> assert false
-          end
-      | Const (c, _) -> anomaly (str "Const " ++ str (Constant.to_string c))
-      | x -> anomaly (str "bigint_of_z' App c " ++ str (obj_string x))
-      end
-  | Construct ((_, 1), _) -> (* Z'0 *) Bigint.zero
-  | _ -> raise Not_found
- *)
-
 let constr_of_global_reference = function
   | VarRef v -> mkVar v
   | ConstRef cr -> mkConst cr
@@ -181,29 +118,34 @@ let rec glob_constr_of_constr loc c = match Constr.kind c with
 
 (** TODO: restore this warning above threshold *)
 
-let interp_coqint inds ty thr f loc rawnum =
+let interp_coqint inds ty thr (f,total) loc rawnum =
   let t =
     let c = mkApp (mkConst f, [| rawnum_to_coqint inds rawnum |]) in
     eval_constr c
   in
-  match Constr.kind t with
-  | App (_, [| _; c |]) (* Some *) -> glob_constr_of_constr loc c
-  | App (_, [| _ |]) (* None *) ->
-      user_err_loc
-        (loc, "_",
-         str "Cannot interpret this number as a value of type " ++
-         str (string_of_reference ty))
-  | x ->
-      anomaly (str "interp_coqint " ++ str (obj_string x))
+  if total then glob_constr_of_constr loc t
+  else
+    match Constr.kind t with
+    | App (_, [| _; c |]) (* Some *) -> glob_constr_of_constr loc c
+    | App (_, [| _ |]) (* None *) ->
+       user_err_loc
+         (loc, "_",
+          str "Cannot interpret this number as a value of type " ++
+            str (string_of_reference ty))
+    | x ->
+       anomaly (str "interp_coqint " ++ str (obj_string x))
 
-let uninterp_coqint loc g c =
+let uninterp_coqint loc (g,total) c =
   match optconstr_of_glob_constr c with
   | None -> None
   | Some c ->
      try
-       match Constr.kind (eval_constr (mkApp (mkConst g, [| c |]))) with
-       | App (_, [| _; c |]) (* Some *) -> Some (rawnum_of_coqint c)
-       | _ -> None
+       let c = eval_constr (mkApp (mkConst g, [| c |])) in
+       if total then Some (rawnum_of_coqint c)
+       else
+         match Constr.kind c with
+         | App (_, [| _; c |]) (* Some *) -> Some (rawnum_of_coqint c)
+         | _ -> None
      with Type_errors.TypeError _ -> None
 
 let uninterp_coqint_ltac tac c =
@@ -236,8 +178,8 @@ let cache_numeral_notation o = load_numeral_notation 1 o
 
 type numeral_notation_obj =
   Loc.t * coqinds *
-  Libnames.reference * Names.constant *
-  (Names.constant, Nametab.ltac_constant) union *
+  Libnames.reference * (Names.constant * bool) *
+  (Names.constant * bool, Nametab.ltac_constant) union *
   Notation_term.scope_name * Glob_term.glob_constr list *
   Bigint.bigint * Libnames.full_path
 
@@ -274,17 +216,27 @@ let vernac_numeral_notation ty f g sc patl waft =
   let arrow loc x y =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
-  let _ =
-    (* checking "f" is of type "Decimal.int -> option ty" *)
+  let totalf =
+    (* checking whether "f" is  of type "Decimal.int -> ty" *)
     (* TODO : pourquoi via des constrexpr ? *)
-    let c =
-      CCast
-        (loc, CRef (f, None),
-         CastConv
-           (arrow loc (crq int) (app loc (cref loc "option") (crq tyq))))
-    in
-    let (sigma, env) = Lemmas.get_current_context () in
-    Constrintern.intern_constr env c
+    let env = snd (Lemmas.get_current_context ()) in
+    try
+      let c =
+        CCast
+          (loc, CRef (f, None),
+           CastConv (arrow loc (crq int) (crq tyq)))
+      in
+      let _ = Constrintern.intern_constr env c in
+      true
+    with e when Errors.noncritical e ->
+      let c =
+        CCast
+          (loc, CRef (f, None),
+           CastConv
+             (arrow loc (crq int) (app loc (cref loc "option") (crq tyq))))
+      in
+      let _ = Constrintern.intern_constr env c in
+      false
   in
   let thr = Bigint.of_int waft in
   let path = Nametab.path_of_global tyc in
@@ -295,16 +247,26 @@ let vernac_numeral_notation ty f g sc patl waft =
         try Nametab.locate_constant gq with Not_found ->
           Nametab.error_global_not_found_loc loc gq
       in
-      let _ =
-        (* checking "g" is of type "ty -> option Decimal.int" *)
-        let c =
-          CCast
-            (loc, CRef (g, None),
-             CastConv
-               (arrow loc (crq tyq) (app loc (cref loc "option") (crq int))))
-        in
+      let totalg =
         let (sigma, env) = Lemmas.get_current_context () in
-        Constrintern.interp_open_constr env sigma c
+        try
+          (* checking "g" is of type "ty -> option Decimal.int" *)
+          let c =
+            CCast
+              (loc, CRef (g, None),
+               CastConv (arrow loc (crq tyq) (crq int)))
+          in
+          let _ = Constrintern.interp_open_constr env sigma c in
+          true
+        with e when Errors.noncritical e ->
+          let c =
+            CCast
+              (loc, CRef (g, None),
+               CastConv
+                 (arrow loc (crq tyq) (app loc (cref loc "option") (crq int))))
+          in
+          let _ = Constrintern.interp_open_constr env sigma c in
+          false
       in
       let env = Global.env () in
       let patl =
@@ -327,7 +289,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       in
       Lib.add_anonymous_leaf
         (inNumeralNotation
-	   (loc, inds, ty, fc, Inl gc, sc, patl, thr, path))
+	   (loc, inds, ty, (fc,totalf), Inl (gc,totalg), sc, patl, thr, path))
   | ((IndRef _ | ConstRef _), _) ->
       let gc =
         let (loc, gq) = qualid_of_reference g in
@@ -345,7 +307,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       in
       Lib.add_anonymous_leaf
         (inNumeralNotation
-	   (loc, inds, ty, fc, Inr gc, sc, patl, thr, path))
+	   (loc, inds, ty, (fc,totalf), Inr gc, sc, patl, thr, path))
   | (VarRef _, _) | (ConstructRef _, _) ->
       user_err_loc
         (loc, "_", str (string_of_reference ty) ++ str " is not a type")
