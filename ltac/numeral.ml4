@@ -229,6 +229,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       let _ = Constrintern.intern_constr env c in
       true
     with e when Errors.noncritical e ->
+      (* checking whether "f" is  of type "Decimal.int -> option ty" *)
       let c =
         CCast
           (loc, CRef (f, None),
@@ -250,7 +251,7 @@ let vernac_numeral_notation ty f g sc patl waft =
       let totalg =
         let (sigma, env) = Lemmas.get_current_context () in
         try
-          (* checking "g" is of type "ty -> option Decimal.int" *)
+          (* checking "g" is of type "ty -> Decimal.int" *)
           let c =
             CCast
               (loc, CRef (g, None),
@@ -259,6 +260,7 @@ let vernac_numeral_notation ty f g sc patl waft =
           let _ = Constrintern.interp_open_constr env sigma c in
           true
         with e when Errors.noncritical e ->
+          (* checking "g" is of type "ty -> option Decimal.int" *)
           let c =
             CCast
               (loc, CRef (g, None),
