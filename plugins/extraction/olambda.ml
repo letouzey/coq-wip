@@ -12,6 +12,7 @@ open Util
 open Names
 open Globnames
 open Miniml
+open Extraction_plugin
 
 open Lambda (* in compiler-libs *)
 
@@ -274,7 +275,7 @@ let rec do_expr env args = function
       (List.map2 (fun id t -> id, do_expr env' [] t) ids' (Array.to_list defs),
        apply (Lvar (List.nth ids' i)) args)
   |MLexn s -> Lprim (Praise, [mkblock 0 [mkexn s]])
-  |MLdummy -> Lvar (get_dummy_name ()) (* TODO: could frequently be () *)
+  |MLdummy _ -> Lvar (get_dummy_name ()) (* TODO: could frequently be () *)
   |MLmagic a -> do_expr env args a
   |MLaxiom -> failwith "An axiom must be realized first"
   |MLtuple l ->
@@ -336,10 +337,12 @@ type reconstruction_failure =
 
 exception CannotReconstruct of reconstruction_failure
 
-let mk_hole = Glob_term.GHole (Loc.ghost, Evar_kinds.InternalHole, None)
+let mk_hole =
+  Glob_term.GHole
+    (Loc.ghost, Evar_kinds.InternalHole, Misctypes.IntroAnonymous, None)
 
 let mk_construct cons args =
-  let head = Glob_term.GRef (Loc.ghost, ConstructRef cons) in
+  let head = Glob_term.GRef (Loc.ghost, ConstructRef cons, None) in
   Glob_term.GApp (Loc.ghost, head, args)
 
 let rec reconstruct typ o = match typ with
@@ -351,9 +354,11 @@ let rec reconstruct typ o = match typ with
   |Tglob (r,typ_args) ->
     match r with
     |ConstRef cst ->
-      let arity,typ = Table.lookup_type cst in
-      assert (List.length typ_args = arity); (* TODO : is this sure ? *)
-      reconstruct (Mlutil.type_subst_list typ_args typ) o
+      let cb = Global.lookup_constant cst in
+      (match Table.lookup_typedef cst cb with
+       | None -> assert false
+       | Some typ ->
+          reconstruct (Mlutil.type_subst_list typ_args typ) o)
     |IndRef ind -> reconstruct_ind ind typ_args o
     |_ -> assert false
 
@@ -363,8 +368,10 @@ and reconstruct_ind ((kn,i) as ind) typ_args o =
   (* unlike extract_inductive, the types in lookup_ind still
      includes Tdummy :-) *)
   let ml_ind =
-    try (snd (Table.lookup_ind kn)).ind_packets.(i)
-    with _ -> assert false
+    let mib = Global.lookup_mind kn in
+    match Table.lookup_ind kn mib with
+    | None -> assert false
+    | Some mlind -> mlind.ind_packets.(i)
   in
   let info = get_ind_info ind in
   let cons, args =
@@ -392,7 +399,7 @@ and reconstruct_ind_args nparams typs args =
   let next_arg () = match !a with [] -> assert false | t::l -> a:=l; t in
   let no_more_arg () = List.is_empty !a in
   Array.iteri (fun i ty ->
-    if not (Mlutil.isDummy ty) then
+    if not (Mlutil.isTdummy ty) then
       res.(nparams+i) <- reconstruct ty (next_arg ())) typs;
   assert (no_more_arg ());
   Array.to_list res

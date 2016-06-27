@@ -6,6 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+open Extraction_plugin
+
 (** From Lambda code to Bytecode *)
 
 let reset_compiler () =

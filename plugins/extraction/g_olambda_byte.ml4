@@ -8,7 +8,9 @@
 
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
-let debug_compute = ref false
+open Extraction_plugin
+
+let debug_compute = ref true (* TEMP! *)
 
 let _ = Goptions.declare_bool_option
   {Goptions.optsync = true;
@@ -46,16 +48,18 @@ let compute_constr ?(debug=false) ?(opt=false) env c =
     Pretyping.understand
       ~flags:Pretyping.all_no_fail_flags
       ~expected_type:(Pretyping.OfType ty)
-      Evd.empty env gterm
+      env Evd.empty gterm
   with Olambda.CannotReconstruct r ->
-    Errors.error ("Cannot reconstruct a Coq value : " ^
+    CErrors.error ("Cannot reconstruct a Coq value : " ^
                   Olambda.cannot_reconstruct_msg r)
 
 let compute_constr_expr ?(debug=false) ?(opt=false) cexpr =
   let env = Global.env () in
-  let c = Constrintern.interp_constr Evd.empty env cexpr in
-  let res = compute_constr ~debug ~opt env c in
-  Pp.msg_notice (Printer.pr_lconstr res)
+  let c,_ = Constrintern.interp_constr env Evd.empty cexpr in
+  let res,_ = compute_constr ~debug ~opt env c in
+  Feedback.msg_notice (Printer.pr_lconstr res)
+
+open Constrarg
 
 VERNAC COMMAND EXTEND ExtractionCompute CLASSIFIED AS QUERY
 | [ "Extraction" "Compute" constr(c) ]
@@ -66,3 +70,9 @@ VERNAC COMMAND EXTEND ExtractionNatCompute CLASSIFIED AS QUERY
 | [ "Extraction" "NatCompute" constr(c) ]
   -> [ compute_constr_expr ~debug:(!debug_compute) ~opt:true c ]
 END
+
+(* To compile:
+
+make USERFLAGS="-I +compiler-libs" plugins/extraction/extrcompute_byte_plugin.cmo
+
+*)

@@ -6,6 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+open Extraction_plugin
+
 (*i camlp4deps: "grammar/grammar.cma" i*)
 
 let direct_eval ?(debug=false) (s:Miniml.ml_decl list) ot =
@@ -19,16 +21,18 @@ let compute_constr env c =
     Pretyping.understand
       ~flags:Pretyping.all_no_fail_flags
       ~expected_type:(Pretyping.OfType ty)
-      Evd.empty env gterm
+      env Evd.empty gterm
   with Olambda.CannotReconstruct r ->
-    Errors.error ("Cannot reconstruct a Coq value : " ^
+    CErrors.error ("Cannot reconstruct a Coq value : " ^
                   Olambda.cannot_reconstruct_msg r)
 
 let compute_constr_expr cexpr =
   let env = Global.env () in
-  let c = Constrintern.interp_constr Evd.empty env cexpr in
-  let res = compute_constr env c in
-  Pp.msg_notice (Printer.pr_lconstr res)
+  let c,_ = Constrintern.interp_constr env Evd.empty cexpr in
+  let res,_ = compute_constr env c in
+  Feedback.msg_notice (Printer.pr_lconstr res)
+
+open Constrarg
 
 VERNAC COMMAND EXTEND ExtractionCompute CLASSIFIED AS QUERY
 | [ "Extraction" "Compute" constr(c) ]
@@ -37,7 +41,7 @@ END
 
 (* TO COMPILE:
 
-make USERFLAGS="-I +compiler-libs" plugins/extraction/extrcompute_opt_plugin.cmxa
-ocamlopt -linkall -rectypes -shared -o test.cmxs -I +compiler-libs -I lib -I kernel -I library -I plugins/extraction ocamlcommon.cmxa ocamloptcomp.cmxa plugins/extraction/extrcompute_opt_plugin.cmxa
+make USERFLAGS="-I +compiler-libs" plugins/extraction/extrcompute_opt_plugin.cmx
+ocamlopt -linkall -rectypes -shared -o test.cmxs -I +compiler-libs -I lib -I kernel -I library -I plugins/extraction ocamlcommon.cmxa ocamloptcomp.cmxa plugins/extraction/extrcompute_opt_plugin.cmx
 
 *)

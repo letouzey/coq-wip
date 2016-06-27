@@ -59,7 +59,6 @@ Definition nats := seq O.
 Definition test_stream := nth 10 (map S nats).
 
 
-(*
 Declare ML Module "extrcompute_byte_plugin".
 Extraction Compute testeven.
 Extraction Compute test_reco.
@@ -68,7 +67,6 @@ Require List.
 Extraction Compute (List.map S (List.seq 10 10 ++ List.seq 50 10))%list.
 Require Import ZArith.
 Extraction Compute (Z.sqrt (2^400)).
-*)
 
 Fixpoint nArrow n : Type :=
   match n with
@@ -84,7 +82,5 @@ Fixpoint nSum_acc n acc : nArrow n :=
 
 Definition nSum n : nArrow n := nSum_acc n 0.
 
-(*
-Extraction Compute (nSum 2) 1 3. (* computes 1+3=4 *)
-Extraction Compute (nSum 5) 1 3 5 7 9. (* computes 1+3+5+7+9=25 *)
-*)
+Extraction Compute ((nSum 2) 1 3). (* computes 1+3=4 *)
+Extraction Compute ((nSum 5) 1 3 5 7 9). (* computes 1+3+5+7+9=25 *)
