@@ -44,4 +44,13 @@ END
 make USERFLAGS="-I +compiler-libs" plugins/extraction/extrcompute_opt_plugin.cmx
 ocamlopt -linkall -rectypes -shared -o test.cmxs -I +compiler-libs -I lib -I kernel -I library -I plugins/extraction ocamlcommon.cmxa ocamloptcomp.cmxa plugins/extraction/extrcompute_opt_plugin.cmx
 
+But dynlinking the whole compiler-libs doesn't work (error on caml_terminfo_setup)
+Otherwise:
+
+coqmktop -opt -I +compiler-libs -thread ocamlcommon.cmxa ocamloptcomp.cmxa -o /tmp/bigcoq
+/tmp/bigcoq -coqlib ~/V8/
+(* then *)
+Declare ML Module "extrcompute_opt_plugin".
+Extraction Compute (1+1).
+
 *)
