@@ -6,5 +6,5 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-val haskell_descr : Miniml.language_descr
+val haskell_descr : Common.horizon Miniml.language_descr
 

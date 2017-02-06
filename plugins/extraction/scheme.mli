@@ -6,4 +6,4 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-val scheme_descr : Miniml.language_descr
+val scheme_descr : Common.horizon Miniml.language_descr

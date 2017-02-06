@@ -197,7 +197,7 @@ type unsafe_needs = {
   magic : bool
 }
 
-type language_descr = {
+type 'state language_descr = {
   keywords : Id.Set.t;
 
   (* Concerning the source file *)
@@ -207,7 +207,7 @@ type language_descr = {
   preamble :
     Id.t -> std_ppcmds option -> module_path list -> unsafe_needs ->
     std_ppcmds;
-  pp_struct : ml_structure -> std_ppcmds;
+  pp_struct : 'state -> ml_structure -> 'state * std_ppcmds;
 
   (* Concerning a possible interface file *)
   sig_suffix : string option;
@@ -215,9 +215,9 @@ type language_descr = {
   sig_preamble :
     Id.t -> std_ppcmds option -> module_path list -> unsafe_needs ->
     std_ppcmds;
-  pp_sig : ml_signature -> std_ppcmds;
+  pp_sig : 'state -> ml_signature -> 'state * std_ppcmds;
 
   (* for an isolated declaration print *)
-  pp_decl : ml_decl -> std_ppcmds;
+  pp_decl : 'state -> ml_decl -> 'state * std_ppcmds;
 
 }
