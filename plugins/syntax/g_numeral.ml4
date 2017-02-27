@@ -26,6 +26,16 @@ let eval_constr (c : constr) =
 
 exception NotANumber
 
+let warning_big_num ty =
+  strbrk "Stack overflow or segmentation fault happens when " ++
+  strbrk "working with large numbers in " ++ pr_reference ty ++
+  strbrk " (threshold may vary depending" ++
+  strbrk " on your system limits and on the command executed)."
+
+type conversion_function =
+  | Direct of Names.constant
+  | Option of Names.constant
+
 (** Conversion between Coq's [Positive] and our internal bigint *)
 
 let rec pos_of_bigint posty n =
@@ -59,17 +69,13 @@ type z_pos_ty =
   { z_ty : Names.inductive;
     pos_ty : Names.inductive }
 
-let z_of_bigint { z_ty; pos_ty } ty thr n =
+let maybe_warn (thr,msg) n =
   if Bigint.is_pos_or_zero n && not (Bigint.equal thr Bigint.zero) &&
      Bigint.less_than thr n
-  then
-    Feedback.msg_warning
-      (strbrk "Stack overflow or segmentation fault happens when " ++
-       strbrk "working with large numbers in " ++
-       str (string_of_reference ty) ++
-       strbrk " (threshold may vary depending" ++
-       strbrk " on your system limits and on the command executed).")
-  else ();
+  then Feedback.msg_warning msg
+
+let z_of_bigint { z_ty; pos_ty } warn n =
+  maybe_warn warn n;
   if Bigint.equal n Bigint.zero then
     mkConstruct (z_ty, 1) (* Z0 *)
   else
@@ -118,23 +124,33 @@ let rec glob_of_constr loc c = match Constr.kind c with
   | Var id -> Glob_term.GRef (loc, VarRef id, None)
   | _ -> CErrors.anomaly (str "interp_big_int: unexpected constr")
 
-let interp_big_int zposty ty thr f loc bi =
-  let c = mkApp (mkConst f, [| z_of_bigint zposty ty thr bi |]) in
-  match Constr.kind (eval_constr c) with
-  | App (_Some, [| _; c |]) -> glob_of_constr loc c
-  | App (_None, [| _ |]) ->
-      CErrors.user_err ~loc
+let interp_big_int zposty ty warn of_z loc bi =
+  match of_z with
+  | Direct f ->
+     let c = mkApp (mkConst f, [| z_of_bigint zposty warn bi |]) in
+     glob_of_constr loc (eval_constr c)
+  | Option f ->
+     let c = mkApp (mkConst f, [| z_of_bigint zposty warn bi |]) in
+     match Constr.kind (eval_constr c) with
+     | App (_Some, [| _; c |]) -> glob_of_constr loc c
+     | App (_None, [| _ |]) ->
+        CErrors.user_err ~loc
          (str "Cannot interpret this number as a value of type " ++
-          str (string_of_reference ty))
-  | x -> CErrors.anomaly (str "interp_big_int: no option result")
+          pr_reference ty)
+     | x -> CErrors.anomaly (str "interp_big_int: option expected")
 
-let uninterp_big_int g c =
+let uninterp_big_int to_z c =
   try
     let t = constr_of_glob c in
-    let r = eval_constr (mkApp (mkConst g, [| t |])) in
-    match Constr.kind r with
-    | App (_Some, [| _; x |]) -> Some (bigint_of_z x)
-    | x -> None
+    match to_z with
+    | Direct g ->
+       let r = eval_constr (mkApp (mkConst g, [| t |])) in
+       Some (bigint_of_z r)
+    | Option g ->
+       let r = eval_constr (mkApp (mkConst g, [| t |])) in
+       match Constr.kind r with
+       | App (_Some, [| _; x |]) -> Some (bigint_of_z x)
+       | x -> None
   with
   | Type_errors.TypeError _ -> None (* cf. eval_constr *)
   | NotANumber -> None (* cf constr_of_glob or bigint_of_z *)
@@ -142,16 +158,16 @@ let uninterp_big_int g c =
 type numeral_notation_obj =
   { num_ty : Libnames.reference;
     z_pos_ty : z_pos_ty;
-    of_z : Names.constant;
-    to_z : Names.constant;
+    of_z : conversion_function;
+    to_z : conversion_function;
     scope : Notation_term.scope_name;
     constructors : Glob_term.glob_constr list;
-    warn_threshold : Bigint.bigint;
+    warning : Bigint.bigint * Pp.std_ppcmds;
     path : Libnames.full_path }
 
 let load_numeral_notation _ (_, o) =
   Notation.declare_numeral_interpreter o.scope (o.path, [])
-   (interp_big_int o.z_pos_ty o.num_ty o.warn_threshold o.of_z)
+   (interp_big_int o.z_pos_ty o.num_ty o.warning o.of_z)
    (o.constructors, uninterp_big_int o.to_z, true)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
@@ -197,10 +213,12 @@ let locate_constant r =
   try Nametab.locate_constant q
   with Not_found -> Nametab.error_global_not_found ~loc q
 
-let check_type loc f ty =
+let has_type loc f ty =
   let c = CCast (loc, CRef (f, None), CastConv ty) in
   let (sigma, env) = Lemmas.get_current_context () in
-  ignore (Constrintern.intern_constr env c)
+  try
+    ignore (Constrintern.interp_constr env sigma c); true
+  with Pretype_errors.PretypeError _ -> false
 
 let vernac_numeral_notation ty f g scope waft =
   let loc = Loc.ghost in
@@ -219,21 +237,39 @@ let vernac_numeral_notation ty f g scope waft =
     | IndRef ind -> get_constructors ind
     | ConstRef _ | ConstructRef _ | VarRef _ ->
        CErrors.user_err ~loc
-        (str (string_of_reference ty) ++ str " is not an inductive type")
+        (pr_reference ty ++ str " is not an inductive type")
   in
-  (* Is "f" of type "Z -> option ty" ? *)
-  check_type loc f (arrow (cref "Z") (app (cref "option") cty));
-  (* Is "g" of type "ty -> option Z" ? *)
-  check_type loc g (arrow cty (app (cref "option") (cref "Z")));
+  (* Is "f" of type "Z -> ty" or "Z -> option ty" ? *)
+  let of_z =
+    if has_type loc f (arrow (cref "Z") cty) then
+      Direct fc
+    else if has_type loc f (arrow (cref "Z") (app (cref "option") cty)) then
+      Option fc
+    else
+      CErrors.user_err ~loc
+        (pr_reference f ++ str " should goes from Z to " ++
+         pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
+  in
+  (* Is "g" of type "ty -> Z" or "ty -> option Z" ? *)
+  let to_z =
+    if has_type loc g (arrow cty (cref "Z")) then
+      Direct gc
+    else if has_type loc g (arrow cty (app (cref "option") (cref "Z"))) then
+      Option gc
+    else
+      CErrors.user_err ~loc
+        (pr_reference g ++ str " should goes from " ++
+         pr_reference ty ++ str " to Z or (option Z)")
+  in
   Lib.add_anonymous_leaf
     (inNumeralNotation
        { num_ty = ty;
          z_pos_ty;
-         of_z = fc;
-         to_z = gc;
+         of_z;
+         to_z;
          scope;
          constructors;
-         warn_threshold = Bigint.of_int waft;
+         warning = (Bigint.of_int waft, warning_big_num ty);
          path = Nametab.path_of_global tyc })
 
 open Stdarg
