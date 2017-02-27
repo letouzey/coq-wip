@@ -8,9 +8,7 @@
 
 DECLARE PLUGIN "numeral_notation_plugin"
 
-open Constrintern
 open Pp
-open CErrors
 open Util
 open Names
 open Libnames
@@ -21,15 +19,12 @@ open Misctypes
 
 (** * Numeral notation *)
 
-let obj_string x =
-  if Obj.is_block (Obj.repr x) then
-    "tag = " ^ string_of_int (Obj.tag (Obj.repr x))
-  else "int_val = " ^ string_of_int (Obj.magic x)
-
 let eval_constr (c : constr) =
   let env = Global.env () in
   let j = Arguments_renaming.rename_typing env c in
   Vnorm.cbv_vm env j.Environ.uj_val j.Environ.uj_type
+
+exception NotANumber
 
 (** Conversion between Coq's [Positive] and our internal bigint *)
 
@@ -45,18 +40,18 @@ let rec pos_of_bigint posty n =
       mkConstruct (posty, 3) (* xH *)
 
 let rec bigint_of_pos c = match Constr.kind c with
+  | Construct ((_, 3), _) -> (* xH *) Bigint.one
   | App (c, [| d |]) ->
       begin match Constr.kind c with
       | Construct ((_, n), _) ->
           begin match n with
           | 1 -> (* xI *) Bigint.add_1 (Bigint.mult_2 (bigint_of_pos d))
           | 2 -> (* xO *) Bigint.mult_2 (bigint_of_pos d)
-          | n -> assert false
+          | n -> assert false (* no other constructor of type positive *)
           end
-      | x -> raise Not_found
+      | x -> raise NotANumber
       end
-  | Construct ((_, 3), _) -> (* xH *) Bigint.one
-  | x -> anomaly (str "bigint_of_pos" ++ str (obj_string x))
+  | x -> raise NotANumber
 
 (** Conversion between Coq's [Z] and our internal bigint *)
 
@@ -75,96 +70,74 @@ let z_of_bigint { z_ty; pos_ty } ty thr n =
        strbrk " (threshold may vary depending" ++
        strbrk " on your system limits and on the command executed).")
   else ();
-  if not (Bigint.equal n Bigint.zero) then
+  if Bigint.equal n Bigint.zero then
+    mkConstruct (z_ty, 1) (* Z0 *)
+  else
     let (s, n) =
       if Bigint.is_pos_or_zero n then (2, n) (* Zpos *)
       else (3, Bigint.neg n) (* Zneg *)
     in
     let c = mkConstruct (z_ty, s) in
     mkApp (c, [| pos_of_bigint pos_ty n |])
-  else
-    mkConstruct (z_ty, 1) (* Z0 *)
 
 let bigint_of_z z = match Constr.kind z with
+  | Construct ((_, 1), _) -> (* Z0 *) Bigint.zero
   | App (c, [| d |]) ->
       begin match Constr.kind c with
       | Construct ((_, n), _) ->
           begin match n with
           | 2 -> (* Zpos *) bigint_of_pos d
           | 3 -> (* Zneg *) Bigint.neg (bigint_of_pos d)
-          | n -> assert false
+          | n -> assert false (* no other constructor of type Z *)
           end
-      | Const (c, _) -> anomaly (str "Const " ++ str (Constant.to_string c))
-      | x -> anomaly (str "bigint_of_z App c " ++ str (obj_string x))
+      | _ -> raise NotANumber
       end
-  | Construct ((_, 1), _) -> (* Z0 *) Bigint.zero
-  | _ -> raise Not_found
+  | _ -> raise NotANumber
 
-let constr_of_global_reference = function
-  | VarRef v -> mkVar v
-  | ConstRef cr -> mkConst cr
-  | IndRef ind -> mkInd ind
-  | ConstructRef c -> mkConstruct c
+(** The uinterp function below work at the level of [glob_constr]
+   which is too low for us here. So here's a crude conversion back
+   to [constr] for the subset that concerns us. *)
 
-let rec constr_of_glob_constr vl = function
-  | Glob_term.GRef (loc, gr, gllo) ->
-      constr_of_global_reference gr
-  | Glob_term.GVar (loc, id) ->
-      constr_of_glob_constr vl (List.assoc id vl)
+let rec constr_of_glob = function
+  | Glob_term.GRef (_, ConstructRef c, _) -> mkConstruct c
   | Glob_term.GApp (_, gc, gcl) ->
-      let c = constr_of_glob_constr vl gc in
-      let cl = List.map (constr_of_glob_constr vl) gcl in
+      let c = constr_of_glob gc in
+      let cl = List.map constr_of_glob gcl in
       mkApp (c, Array.of_list cl)
   | _ ->
-      raise Not_found
+      raise NotANumber
 
-let rec glob_constr_of_constr loc c = match Constr.kind c with
-  | Var id ->
-      Glob_term.GRef (loc, VarRef id, None)
+let rec glob_of_constr loc c = match Constr.kind c with
   | App (c, ca) ->
-      let c = glob_constr_of_constr loc c in
-      let cel = List.map (glob_constr_of_constr loc) (Array.to_list ca) in
+      let c = glob_of_constr loc c in
+      let cel = List.map (glob_of_constr loc) (Array.to_list ca) in
       Glob_term.GApp (loc, c, cel)
-  | Construct (c, _) ->
-      Glob_term.GRef (loc, ConstructRef c, None)
-  | Const (c, _) ->
-      Glob_term.GRef (loc, ConstRef c, None)
-  | Ind (ind, _) ->
-      Glob_term.GRef (loc, IndRef ind, None)
-  | x ->
-      anomaly (str "1 constr " ++ str (obj_string x))
+  | Construct (c, _) -> Glob_term.GRef (loc, ConstructRef c, None)
+  | Const (c, _) -> Glob_term.GRef (loc, ConstRef c, None)
+  | Ind (ind, _) -> Glob_term.GRef (loc, IndRef ind, None)
+  | Var id -> Glob_term.GRef (loc, VarRef id, None)
+  | _ -> CErrors.anomaly (str "interp_big_int: unexpected constr")
 
 let interp_big_int zposty ty thr f loc bi =
-  let t =
-    let c = mkApp (mkConst f, [| z_of_bigint zposty ty thr bi |]) in
-    eval_constr c
-  in
-  match Constr.kind t with
-  | App (_, [| _; c |]) -> glob_constr_of_constr loc c
-  | App (_, [| _ |]) ->
+  let c = mkApp (mkConst f, [| z_of_bigint zposty ty thr bi |]) in
+  match Constr.kind (eval_constr c) with
+  | App (_Some, [| _; c |]) -> glob_of_constr loc c
+  | App (_None, [| _ |]) ->
       CErrors.user_err ~loc
          (str "Cannot interpret this number as a value of type " ++
           str (string_of_reference ty))
-  | x ->
-      anomaly (str "interp_big_int " ++ str (obj_string x))
+  | x -> CErrors.anomaly (str "interp_big_int: no option result")
 
-let uninterp_big_int loc g c =
-  match try Some (constr_of_glob_constr [] c) with Not_found -> None with
-  | Some c ->
-      begin match
-        try Some (eval_constr (mkApp (mkConst g, [| c |])))
-        with Type_errors.TypeError _ -> None
-      with
-      | Some t ->
-          begin match Constr.kind t with
-          | App (c, [| _; x |]) -> Some (bigint_of_z x)
-          | x -> None
-          end
-      | None ->
-         None
-      end
-  | None ->
-      None
+let uninterp_big_int g c =
+  try
+    let t = constr_of_glob c in
+    let r = eval_constr (mkApp (mkConst g, [| t |])) in
+    match Constr.kind r with
+    | App (_Some, [| _; x |]) -> Some (bigint_of_z x)
+    | x -> None
+  with
+  | Type_errors.TypeError _ -> None (* cf. eval_constr *)
+  | NotANumber -> None (* cf constr_of_glob or bigint_of_z *)
 
 type numeral_notation_obj =
   { num_ty : Libnames.reference;
@@ -179,7 +152,7 @@ type numeral_notation_obj =
 let load_numeral_notation _ (_, o) =
   Notation.declare_numeral_interpreter o.scope (o.path, [])
    (interp_big_int o.z_pos_ty o.num_ty o.warn_threshold o.of_z)
-   (o.constructors, uninterp_big_int Loc.ghost o.to_z, true)
+   (o.constructors, uninterp_big_int o.to_z, true)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
 
