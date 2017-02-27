@@ -162,21 +162,6 @@ let inNumeralNotation : numeral_notation_obj -> Libobject.obj =
     Libobject.cache_function = cache_numeral_notation;
     Libobject.load_function = load_numeral_notation }
 
-(** TODO: we should ensure that BinNums is loaded (or autoload it ?) *)
-
-let locate_z () =
-  let z_ty =
-    let c = qualid_of_string "Coq.Numbers.BinNums.Z" in
-    try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-    with Not_found -> Nametab.error_global_not_found c
-  in
-  let pos_ty =
-    let c = qualid_of_string "Coq.Numbers.BinNums.positive" in
-    try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-    with Not_found -> Nametab.error_global_not_found c
-  in
-  {z_ty; pos_ty}
-
 let get_constructors ind =
   let open Declarations in
   let mib,oib = Global.lookup_inductive ind in
@@ -188,69 +173,68 @@ let get_constructors ind =
            (Loc.ghost, ConstructRef (ind, j + 1), None))
        mc)
 
+let locate_ind s =
+  let q = qualid_of_string s in
+  try
+    match Nametab.locate q with
+    | IndRef i -> i
+    | _ -> raise Not_found
+  with Not_found -> Nametab.error_global_not_found q
+
+(** TODO: we should ensure that BinNums is loaded (or autoload it ?) *)
+
+let locate_z () =
+  { z_ty = locate_ind "Coq.Numbers.BinNums.Z";
+    pos_ty = locate_ind "Coq.Numbers.BinNums.positive"; }
+
+let locate_globref r =
+  let (loc, q) = qualid_of_reference r in
+  try Nametab.locate q
+  with Not_found -> Nametab.error_global_not_found ~loc q
+
+let locate_constant r =
+  let (loc, q) = qualid_of_reference r in
+  try Nametab.locate_constant q
+  with Not_found -> Nametab.error_global_not_found ~loc q
+
+let check_type loc f ty =
+  let c = CCast (loc, CRef (f, None), CastConv ty) in
+  let (sigma, env) = Lemmas.get_current_context () in
+  ignore (Constrintern.intern_constr env c)
+
 let vernac_numeral_notation ty f g scope waft =
   let loc = Loc.ghost in
   let z_pos_ty = locate_z () in
-  let tyc =
-    let (loc, tyq) = qualid_of_reference ty in
-    try Nametab.locate tyq with Not_found ->
-      Nametab.error_global_not_found ~loc tyq
-  in
-  let fc =
-    let (loc, fq) = qualid_of_reference f in
-    try Nametab.locate_constant fq with Not_found ->
-      Nametab.error_global_not_found ~loc fq
-  in
-  let lqid = qualid_of_reference ty in
-  let crq = CRef (Qualid lqid, None) in
-  let identref loc s = (loc, Names.Id.of_string s) in
-  let app loc x y = CApp (loc, (None, x), [(y, None)]) in
-  let cref loc s = CRef (Ident (identref loc s), None) in
-  let arrow loc x y =
+  let tyc = locate_globref ty in
+  let fc = locate_constant f in
+  let gc = locate_constant g in
+  let cty = CRef (Qualid (qualid_of_reference ty), None) in
+  let app x y = CApp (loc, (None, x), [(y, None)]) in
+  let cref s = CRef (Ident (loc,Id.of_string s), None) in
+  let arrow x y =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
-  (* checking "f" is of type "Z -> option ty" *)
-  let _ =
-    let c =
-      CCast
-        (loc, CRef (f, None),
-         CastConv
-           (arrow loc (cref loc "Z") (app loc (cref loc "option") crq)))
-    in
-    let (sigma, env) = Lemmas.get_current_context () in
-    Constrintern.intern_constr env c
-  in
-  match tyc with
-  | ConstRef _ | ConstructRef _ | VarRef _ ->
-      CErrors.user_err ~loc
+  (* Check that [ty] is an inductive type *)
+  let constructors = match tyc with
+    | IndRef ind -> get_constructors ind
+    | ConstRef _ | ConstructRef _ | VarRef _ ->
+       CErrors.user_err ~loc
         (str (string_of_reference ty) ++ str " is not an inductive type")
-  | IndRef (sp, spi) ->
-      let gc =
-        let (loc, gq) = qualid_of_reference g in
-        try Nametab.locate_constant gq with Not_found ->
-          Nametab.error_global_not_found ~loc gq
-      in
-      (* checking "g" is of type "ty -> option Z" *)
-      let _ =
-        let c =
-          CCast
-            (loc, CRef (g, None),
-             CastConv
-               (arrow loc crq (app loc (cref loc "option") (cref loc "Z"))))
-        in
-        let (sigma, env) = Lemmas.get_current_context () in
-        Constrintern.interp_open_constr env sigma c
-      in
-      Lib.add_anonymous_leaf
-        (inNumeralNotation
-           { num_ty = ty;
-             z_pos_ty;
-             of_z = fc;
-             to_z = gc;
-             scope;
-             constructors = get_constructors (sp,spi);
-             warn_threshold = Bigint.of_int waft;
-             path = Nametab.path_of_global tyc })
+  in
+  (* Is "f" of type "Z -> option ty" ? *)
+  check_type loc f (arrow (cref "Z") (app (cref "option") cty));
+  (* Is "g" of type "ty -> option Z" ? *)
+  check_type loc g (arrow cty (app (cref "option") (cref "Z")));
+  Lib.add_anonymous_leaf
+    (inNumeralNotation
+       { num_ty = ty;
+         z_pos_ty;
+         of_z = fc;
+         to_z = gc;
+         scope;
+         constructors;
+         warn_threshold = Bigint.of_int waft;
+         path = Nametab.path_of_global tyc })
 
 open Stdarg
 
