@@ -19,7 +19,7 @@ open Constrexpr
 open Term
 open Misctypes
 
-(* Numeral notation *)
+(** * Numeral notation *)
 
 let obj_string x =
   if Obj.is_block (Obj.repr x) then
@@ -30,6 +30,8 @@ let eval_constr (c : constr) =
   let env = Global.env () in
   let j = Arguments_renaming.rename_typing env c in
   Vnorm.cbv_vm env j.Environ.uj_val j.Environ.uj_type
+
+(** Conversion between Coq's [Positive] and our internal bigint *)
 
 let rec pos_of_bigint posty n =
   match Bigint.div2_with_rest n with
@@ -56,7 +58,13 @@ let rec bigint_of_pos c = match Constr.kind c with
   | Construct ((_, 3), _) -> (* xH *) Bigint.one
   | x -> anomaly (str "bigint_of_pos" ++ str (obj_string x))
 
-let z_of_bigint (zty, posty) ty thr n =
+(** Conversion between Coq's [Z] and our internal bigint *)
+
+type z_pos_ty =
+  { z_ty : Names.inductive;
+    pos_ty : Names.inductive }
+
+let z_of_bigint { z_ty; pos_ty } ty thr n =
   if Bigint.is_pos_or_zero n && not (Bigint.equal thr Bigint.zero) &&
      Bigint.less_than thr n
   then
@@ -72,10 +80,10 @@ let z_of_bigint (zty, posty) ty thr n =
       if Bigint.is_pos_or_zero n then (2, n) (* Zpos *)
       else (3, Bigint.neg n) (* Zneg *)
     in
-    let c = mkConstruct (zty, s) in
-    mkApp (c, [| pos_of_bigint posty n |])
+    let c = mkConstruct (z_ty, s) in
+    mkApp (c, [| pos_of_bigint pos_ty n |])
   else
-    mkConstruct (zty, 1) (* Z0 *)
+    mkConstruct (z_ty, 1) (* Z0 *)
 
 let bigint_of_z z = match Constr.kind z with
   | App (c, [| d |]) ->
@@ -158,19 +166,22 @@ let uninterp_big_int loc g c =
   | None ->
       None
 
-let load_numeral_notation _ (_, (loc, zposty, ty, f, g, sc, patl, thr, path)) =
-  Notation.declare_numeral_interpreter sc (path, [])
-        (interp_big_int zposty ty thr f)
-        (patl, uninterp_big_int loc g, true)
+type numeral_notation_obj =
+  { num_ty : Libnames.reference;
+    z_pos_ty : z_pos_ty;
+    of_z : Names.constant;
+    to_z : Names.constant;
+    scope : Notation_term.scope_name;
+    constructors : Glob_term.glob_constr list;
+    warn_threshold : Bigint.bigint;
+    path : Libnames.full_path }
+
+let load_numeral_notation _ (_, o) =
+  Notation.declare_numeral_interpreter o.scope (o.path, [])
+   (interp_big_int o.z_pos_ty o.num_ty o.warn_threshold o.of_z)
+   (o.constructors, uninterp_big_int Loc.ghost o.to_z, true)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
-
-type numeral_notation_obj =
-  Loc.t * (Names.inductive * Names.inductive) *
-  Libnames.reference * Names.constant *
-  Names.constant *
-  Notation_term.scope_name * Glob_term.glob_constr list *
-  Bigint.bigint * Libnames.full_path
 
 let inNumeralNotation : numeral_notation_obj -> Libobject.obj =
   Libobject.declare_object {
@@ -178,21 +189,35 @@ let inNumeralNotation : numeral_notation_obj -> Libobject.obj =
     Libobject.cache_function = cache_numeral_notation;
     Libobject.load_function = load_numeral_notation }
 
-let vernac_numeral_notation ty f g sc waft =
-  let loc = Loc.ghost in
-  let zposty =
-    let zty =
-      let c = qualid_of_ident (Id.of_string "Z") in
-      try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-      with Not_found -> Nametab.error_global_not_found c
-    in
-    let positivety =
-      let c = qualid_of_ident (Id.of_string "positive") in
-      try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
-      with Not_found -> Nametab.error_global_not_found c
-    in
-    (zty, positivety)
+(** TODO: we should ensure that BinNums is loaded (or autoload it ?) *)
+
+let locate_z () =
+  let z_ty =
+    let c = qualid_of_string "Coq.Numbers.BinNums.Z" in
+    try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
+    with Not_found -> Nametab.error_global_not_found c
   in
+  let pos_ty =
+    let c = qualid_of_string "Coq.Numbers.BinNums.positive" in
+    try match Nametab.locate c with IndRef i -> i | _ -> raise Not_found
+    with Not_found -> Nametab.error_global_not_found c
+  in
+  {z_ty; pos_ty}
+
+let get_constructors ind =
+  let open Declarations in
+  let mib,oib = Global.lookup_inductive ind in
+  let mc = oib.Declarations.mind_consnames in
+  Array.to_list
+    (Array.mapi
+       (fun j c ->
+         Glob_term.GRef
+           (Loc.ghost, ConstructRef (ind, j + 1), None))
+       mc)
+
+let vernac_numeral_notation ty f g scope waft =
+  let loc = Loc.ghost in
+  let z_pos_ty = locate_z () in
   let tyc =
     let (loc, tyq) = qualid_of_reference ty in
     try Nametab.locate tyq with Not_found ->
@@ -211,8 +236,8 @@ let vernac_numeral_notation ty f g sc waft =
   let arrow loc x y =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
+  (* checking "f" is of type "Z -> option ty" *)
   let _ =
-    (* checking "f" is of type "Z -> option ty" *)
     let c =
       CCast
         (loc, CRef (f, None),
@@ -222,17 +247,18 @@ let vernac_numeral_notation ty f g sc waft =
     let (sigma, env) = Lemmas.get_current_context () in
     Constrintern.intern_constr env c
   in
-  let thr = Bigint.of_int waft in
-  let path = Nametab.path_of_global tyc in
   match tyc with
+  | ConstRef _ | ConstructRef _ | VarRef _ ->
+      CErrors.user_err ~loc
+        (str (string_of_reference ty) ++ str " is not an inductive type")
   | IndRef (sp, spi) ->
       let gc =
         let (loc, gq) = qualid_of_reference g in
         try Nametab.locate_constant gq with Not_found ->
           Nametab.error_global_not_found ~loc gq
       in
+      (* checking "g" is of type "ty -> option Z" *)
       let _ =
-        (* checking "g" is of type "ty -> option Z" *)
         let c =
           CCast
             (loc, CRef (g, None),
@@ -242,31 +268,16 @@ let vernac_numeral_notation ty f g sc waft =
         let (sigma, env) = Lemmas.get_current_context () in
         Constrintern.interp_open_constr env sigma c
       in
-      let env = Global.env () in
-      let patl =
-        let mc =
-          let mib = Environ.lookup_mind sp env in
-          let inds =
-            List.init (Array.length mib.Declarations.mind_packets)
-                      (fun x -> (sp, x))
-          in
-          let ind = List.hd inds in
-          let mip = mib.Declarations.mind_packets.(snd ind) in
-          mip.Declarations.mind_consnames
-        in
-        Array.to_list
-          (Array.mapi
-             (fun i c ->
-               Glob_term.GRef
-                 (loc, ConstructRef ((sp, spi), i + 1), None))
-             mc)
-      in
       Lib.add_anonymous_leaf
         (inNumeralNotation
-           (loc, zposty, ty, fc, gc, sc, patl, thr, path))
-  | ConstRef _ | ConstructRef _ | VarRef _ ->
-      CErrors.user_err ~loc
-        (str (string_of_reference ty) ++ str " is not an inductive type")
+           { num_ty = ty;
+             z_pos_ty;
+             of_z = fc;
+             to_z = gc;
+             scope;
+             constructors = get_constructors (sp,spi);
+             warn_threshold = Bigint.of_int waft;
+             path = Nametab.path_of_global tyc })
 
 open Stdarg
 
