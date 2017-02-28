@@ -55,3 +55,15 @@ Fixpoint Z_of_nat n :=
 
 Numeral Notation nat nat_of_Z Z_of_nat : nat_scope
   (warning after 5000).
+
+
+(** Quick other tests via Decimal.int *)
+Numeral Notation nat Nat.of_int Nat.to_int : nat_scope.
+
+Require Import BinIntDef.
+
+Numeral Notation Z Z.of_int Z.to_int : Z_scope.
+
+Open Scope Z.
+Compute 1234567890123456789012345678901234567890.
+

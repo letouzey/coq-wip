@@ -36,7 +36,70 @@ type conversion_function =
   | Direct of Names.constant
   | Option of Names.constant
 
-(** Conversion between Coq's [Positive] and our internal bigint *)
+(***********************************************************************)
+
+(** ** Conversion between Coq [Decimal.int] and internal raw string *)
+
+type int_ty =
+  { uint : Names.inductive;
+    int : Names.inductive }
+
+(** Decimal.Nil has index 1, then Decimal.D0 has index 2 .. Decimal.D9 is 11 *)
+
+let digit_of_char c =
+  assert ('0' <= c && c <= '9');
+  Char.code c - Char.code '0' + 2
+
+let char_of_digit n =
+  assert (2<=n && n<=11);
+  Char.chr (n-2 + Char.code '0')
+
+let coqint_of_rawnum inds (str,sign) =
+  let nil = mkConstruct (inds.uint,1) in
+  let rec do_chars s i acc =
+    if i < 0 then acc
+    else
+      let dg = mkConstruct (inds.uint, digit_of_char s.[i]) in
+      do_chars s (i-1) (mkApp(dg,[|acc|]))
+  in
+  let uint = do_chars str (String.length str - 1) nil in
+  mkApp (mkConstruct (inds.int, if sign then 1 else 2), [|uint|])
+
+let rawnum_of_coqint c =
+  let rec of_uint_loop c buf =
+    match Constr.kind c with
+    | Construct ((_,1), _) (* Nil *) -> ()
+    | App (c, [|a|]) ->
+       (match Constr.kind c with
+        | Construct ((_,n), _) (* D0 to D9 *) ->
+           let () = Buffer.add_char buf (char_of_digit n) in
+           of_uint_loop a buf
+        | _ -> raise NotANumber)
+    | _ -> raise NotANumber
+  in
+  let of_uint c =
+    let buf = Buffer.create 64 in
+    let () = of_uint_loop c buf in
+    if Int.equal (Buffer.length buf) 0 then "0" else Buffer.contents buf
+  in
+  match Constr.kind c with
+  | App (c,[|c'|]) ->
+     (match Constr.kind c with
+      | Construct ((_,1), _) (* Pos *) -> (of_uint c', true)
+      | Construct ((_,2), _) (* Neg *) -> (of_uint c', false)
+      | _ -> raise NotANumber)
+  | _ -> raise NotANumber
+
+
+(***********************************************************************)
+
+(** ** Conversion between Coq [Z] and internal bigint *)
+
+type z_pos_ty =
+  { z_ty : Names.inductive;
+    pos_ty : Names.inductive }
+
+(** First, [positive] from/to bigint *)
 
 let rec pos_of_bigint posty n =
   match Bigint.div2_with_rest n with
@@ -63,11 +126,7 @@ let rec bigint_of_pos c = match Constr.kind c with
       end
   | x -> raise NotANumber
 
-(** Conversion between Coq's [Z] and our internal bigint *)
-
-type z_pos_ty =
-  { z_ty : Names.inductive;
-    pos_ty : Names.inductive }
+(** Now, [Z] from/to bigint *)
 
 let maybe_warn (thr,msg) n =
   if Bigint.is_pos_or_zero n && not (Bigint.equal thr Bigint.zero) &&
@@ -122,53 +181,81 @@ let rec glob_of_constr loc c = match Constr.kind c with
   | Const (c, _) -> Glob_term.GRef (loc, ConstRef c, None)
   | Ind (ind, _) -> Glob_term.GRef (loc, IndRef ind, None)
   | Var id -> Glob_term.GRef (loc, VarRef id, None)
-  | _ -> CErrors.anomaly (str "interp_big_int: unexpected constr")
+  | _ -> CErrors.anomaly (str "Numeral.interp_gen: unexpected constr")
 
-let interp_big_int zposty ty warn of_z loc bi =
-  match of_z with
+let interp_gen ty coqify to_ty loc n =
+  match to_ty with
   | Direct f ->
-     let c = mkApp (mkConst f, [| z_of_bigint zposty warn bi |]) in
+     let c = mkApp (mkConst f, [| coqify n |]) in
      glob_of_constr loc (eval_constr c)
   | Option f ->
-     let c = mkApp (mkConst f, [| z_of_bigint zposty warn bi |]) in
+     let c = mkApp (mkConst f, [| coqify n |]) in
      match Constr.kind (eval_constr c) with
      | App (_Some, [| _; c |]) -> glob_of_constr loc c
      | App (_None, [| _ |]) ->
         CErrors.user_err ~loc
          (str "Cannot interpret this number as a value of type " ++
           pr_reference ty)
-     | x -> CErrors.anomaly (str "interp_big_int: option expected")
+     | x -> CErrors.anomaly (str "Numeral.interp_gen: option expected")
 
-let uninterp_big_int to_z c =
+let interp_bigint zposty ty warn = interp_gen ty (z_of_bigint zposty warn)
+
+(** TODO: restore the warning about large numbers in this version *)
+let interp_rawnum inds ty = interp_gen ty (coqint_of_rawnum inds)
+
+let uninterp_gen camlify of_ty n =
   try
-    let t = constr_of_glob c in
-    match to_z with
+    let t = constr_of_glob n in
+    match of_ty with
     | Direct g ->
        let r = eval_constr (mkApp (mkConst g, [| t |])) in
-       Some (bigint_of_z r)
+       Some (camlify r)
     | Option g ->
        let r = eval_constr (mkApp (mkConst g, [| t |])) in
        match Constr.kind r with
-       | App (_Some, [| _; x |]) -> Some (bigint_of_z x)
+       | App (_Some, [| _; x |]) -> Some (camlify x)
        | x -> None
   with
   | Type_errors.TypeError _ -> None (* cf. eval_constr *)
-  | NotANumber -> None (* cf constr_of_glob or bigint_of_z *)
+  | NotANumber -> None (* cf constr_of_glob or camlify *)
+
+let uninterp_bigint = uninterp_gen bigint_of_z
+let uninterp_rawnum = uninterp_gen rawnum_of_coqint
+
+let big2raw n =
+  if Bigint.is_pos_or_zero n then (Bigint.to_string n, true)
+  else (Bigint.to_string (Bigint.neg n), false)
+
+let raw2big (n,s) =
+  if s then Bigint.of_string n else Bigint.neg (Bigint.of_string n)
 
 type numeral_notation_obj =
   { num_ty : Libnames.reference;
-    z_pos_ty : z_pos_ty;
-    of_z : conversion_function;
-    to_z : conversion_function;
+    z_pos_ty : z_pos_ty; (* optional for raw parsing *)
+    int_ty : int_ty;
+    to_ty : conversion_function;
+    of_ty : conversion_function;
+    raw_parse : bool; (* parsing from rawnum or from bigint ? *)
+    raw_unparse : bool; (* unparsing from rawnum or from bigint ? *)
     scope : Notation_term.scope_name;
     constructors : Glob_term.glob_constr list;
     warning : Bigint.bigint * Pp.std_ppcmds;
     path : Libnames.full_path }
 
 let load_numeral_notation _ (_, o) =
-  Notation.declare_numeral_interpreter o.scope (o.path, [])
-   (interp_big_int o.z_pos_ty o.num_ty o.warning o.of_z)
-   (o.constructors, uninterp_big_int o.to_z, true)
+  Notation.declare_rawnumeral_interpreter o.scope (o.path, [])
+  (if o.raw_parse then
+     interp_rawnum o.int_ty o.num_ty o.to_ty
+   else
+     fun loc n ->
+       interp_bigint o.z_pos_ty o.num_ty o.warning o.to_ty loc
+         (raw2big n))
+  (o.constructors,
+   (if o.raw_unparse then
+      uninterp_rawnum o.of_ty
+    else
+      fun n -> Option.map big2raw (uninterp_bigint o.of_ty n)),
+   true)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
 
@@ -203,6 +290,10 @@ let locate_z () =
   { z_ty = locate_ind "Coq.Numbers.BinNums.Z";
     pos_ty = locate_ind "Coq.Numbers.BinNums.positive"; }
 
+let locate_int () =
+  { uint = locate_ind "Coq.Init.Decimal.uint";
+    int = locate_ind "Coq.Init.Decimal.int"; }
+
 let locate_globref r =
   let (loc, q) = qualid_of_reference r in
   try Nametab.locate q
@@ -223,15 +314,20 @@ let has_type loc f ty =
 let vernac_numeral_notation ty f g scope waft =
   let loc = Loc.ghost in
   let z_pos_ty = locate_z () in
+  let int_ty = locate_int () in
   let tyc = locate_globref ty in
   let fc = locate_constant f in
   let gc = locate_constant g in
-  let cty = CRef (Qualid (qualid_of_reference ty), None) in
+  let cty = CRef (ty, None) in
   let app x y = CApp (loc, (None, x), [(y, None)]) in
-  let cref s = CRef (Ident (loc,Id.of_string s), None) in
+  let cref s = CRef (Qualid (loc,qualid_of_string s), None) in
   let arrow x y =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
+  let cZ = cref "Coq.Numbers.BinNums.Z" in
+  let cint = cref "Coq.Init.Decimal.int" in
+  let coption = cref "Coq.Init.Datatypes.option" in
+  let opt r = app coption r in
   (* Check that [ty] is an inductive type *)
   let constructors = match tyc with
     | IndRef ind -> get_constructors ind
@@ -239,34 +335,46 @@ let vernac_numeral_notation ty f g scope waft =
        CErrors.user_err ~loc
         (pr_reference ty ++ str " is not an inductive type")
   in
-  (* Is "f" of type "Z -> ty" or "Z -> option ty" ? *)
-  let of_z =
-    if has_type loc f (arrow (cref "Z") cty) then
-      Direct fc
-    else if has_type loc f (arrow (cref "Z") (app (cref "option") cty)) then
-      Option fc
+  (* Check the type of f *)
+  let raw_parse, to_ty =
+    if has_type loc f (arrow cZ cty) then
+      false, Direct fc
+    else if has_type loc f (arrow cZ (opt cty)) then
+      false, Option fc
+    else if has_type loc f (arrow cint cty) then
+      true, Direct fc
+    else if has_type loc f (arrow cint (opt cty)) then
+      true, Option fc
     else
       CErrors.user_err ~loc
-        (pr_reference f ++ str " should goes from Z to " ++
+        (pr_reference f ++ str " should goes from Decimal.int or Z to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
   in
-  (* Is "g" of type "ty -> Z" or "ty -> option Z" ? *)
-  let to_z =
-    if has_type loc g (arrow cty (cref "Z")) then
-      Direct gc
-    else if has_type loc g (arrow cty (app (cref "option") (cref "Z"))) then
-      Option gc
+  (* Check the type of g *)
+  let raw_unparse, of_ty =
+    if has_type loc g (arrow cty cZ) then
+      false, Direct gc
+    else if has_type loc g (arrow cty (opt cZ)) then
+      false, Option gc
+    else if has_type loc g (arrow cty cint) then
+      true, Direct gc
+    else if has_type loc g (arrow cty (opt cint)) then
+      true, Option gc
     else
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++
-         pr_reference ty ++ str " to Z or (option Z)")
+         pr_reference ty ++
+         str " to Decimal.int or (option int) or Z or (option Z)")
   in
   Lib.add_anonymous_leaf
     (inNumeralNotation
        { num_ty = ty;
          z_pos_ty;
-         of_z;
-         to_z;
+         int_ty;
+         to_ty;
+         of_ty;
+         raw_parse;
+         raw_unparse;
          scope;
          constructors;
          warning = (Bigint.of_int waft, warning_big_num ty);
