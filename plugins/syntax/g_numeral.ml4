@@ -231,7 +231,7 @@ let raw2big (n,s) =
 
 type numeral_notation_obj =
   { num_ty : Libnames.reference;
-    z_pos_ty : z_pos_ty; (* optional for raw parsing *)
+    z_pos_ty : z_pos_ty option;
     int_ty : int_ty;
     to_ty : conversion_function;
     of_ty : conversion_function;
@@ -248,7 +248,7 @@ let load_numeral_notation _ (_, o) =
      interp_rawnum o.int_ty o.num_ty o.to_ty
    else
      fun loc n ->
-       interp_bigint o.z_pos_ty o.num_ty o.warning o.to_ty loc
+       interp_bigint (Option.get o.z_pos_ty) o.num_ty o.warning o.to_ty loc
          (raw2big n))
   (o.constructors,
    (if o.raw_unparse then
@@ -276,23 +276,30 @@ let get_constructors ind =
            (Loc.ghost, ConstructRef (ind, j + 1), None))
        mc)
 
-let locate_ind s =
-  let q = qualid_of_string s in
-  try
-    match Nametab.locate q with
-    | IndRef i -> i
-    | _ -> raise Not_found
+let q_z = qualid_of_string "Coq.Numbers.BinNums.Z"
+let q_positive = qualid_of_string "Coq.Numbers.BinNums.positive"
+let q_int = qualid_of_string "Coq.Init.Decimal.int"
+let q_uint = qualid_of_string "Coq.Init.Decimal.uint"
+let q_option = qualid_of_string "Coq.Init.Datatypes.option"
+
+let unsafe_locate_ind q =
+  match Nametab.locate q with
+  | IndRef i -> i
+  | _ -> raise Not_found
+
+let locate_ind q =
+  try unsafe_locate_ind q
   with Not_found -> Nametab.error_global_not_found q
 
-(** TODO: we should ensure that BinNums is loaded (or autoload it ?) *)
-
 let locate_z () =
-  { z_ty = locate_ind "Coq.Numbers.BinNums.Z";
-    pos_ty = locate_ind "Coq.Numbers.BinNums.positive"; }
+  try
+    Some { z_ty = unsafe_locate_ind q_z;
+           pos_ty = unsafe_locate_ind q_positive }
+  with Not_found -> None
 
 let locate_int () =
-  { uint = locate_ind "Coq.Init.Decimal.uint";
-    int = locate_ind "Coq.Init.Decimal.int"; }
+  { uint = locate_ind q_uint;
+    int = locate_ind q_int }
 
 let locate_globref r =
   let (loc, q) = qualid_of_reference r in
@@ -313,20 +320,20 @@ let has_type loc f ty =
 
 let vernac_numeral_notation ty f g scope waft =
   let loc = Loc.ghost in
-  let z_pos_ty = locate_z () in
   let int_ty = locate_int () in
+  let z_pos_ty = locate_z () in
   let tyc = locate_globref ty in
   let fc = locate_constant f in
   let gc = locate_constant g in
   let cty = CRef (ty, None) in
   let app x y = CApp (loc, (None, x), [(y, None)]) in
-  let cref s = CRef (Qualid (loc,qualid_of_string s), None) in
+  let cref q = CRef (Qualid (loc,q), None) in
   let arrow x y =
     CProdN (loc, [([(loc, Anonymous)], Default Decl_kinds.Explicit, x)], y)
   in
-  let cZ = cref "Coq.Numbers.BinNums.Z" in
-  let cint = cref "Coq.Init.Decimal.int" in
-  let coption = cref "Coq.Init.Datatypes.option" in
+  let cZ = cref q_z in
+  let cint = cref q_int in
+  let coption = cref q_option in
   let opt r = app coption r in
   (* Check that [ty] is an inductive type *)
   let constructors = match tyc with
@@ -337,14 +344,20 @@ let vernac_numeral_notation ty f g scope waft =
   in
   (* Check the type of f *)
   let raw_parse, to_ty =
-    if has_type loc f (arrow cZ cty) then
-      false, Direct fc
-    else if has_type loc f (arrow cZ (opt cty)) then
-      false, Option fc
-    else if has_type loc f (arrow cint cty) then
+    if has_type loc f (arrow cint cty) then
       true, Direct fc
     else if has_type loc f (arrow cint (opt cty)) then
       true, Option fc
+    else if Option.is_empty z_pos_ty then
+      CErrors.user_err ~loc
+        (pr_reference f ++ str " should goes from Decimal.int to " ++
+         pr_reference ty ++ str " or (option " ++ pr_reference ty ++
+         str ")." ++ fnl () ++
+         str "Instead of int, the type Z could also be used (load it first).")
+    else if has_type loc f (arrow cZ cty) then
+      false, Direct fc
+    else if has_type loc f (arrow cZ (opt cty)) then
+      false, Option fc
     else
       CErrors.user_err ~loc
         (pr_reference f ++ str " should goes from Decimal.int or Z to " ++
@@ -352,14 +365,20 @@ let vernac_numeral_notation ty f g scope waft =
   in
   (* Check the type of g *)
   let raw_unparse, of_ty =
-    if has_type loc g (arrow cty cZ) then
-      false, Direct gc
-    else if has_type loc g (arrow cty (opt cZ)) then
-      false, Option gc
-    else if has_type loc g (arrow cty cint) then
+    if has_type loc g (arrow cty cint) then
       true, Direct gc
     else if has_type loc g (arrow cty (opt cint)) then
       true, Option gc
+    else if Option.is_empty z_pos_ty then
+      CErrors.user_err ~loc
+        (pr_reference g ++ str " should goes from " ++
+         pr_reference ty ++
+         str " to Decimal.int or (option int)." ++ fnl () ++
+         str "Instead of int, the type Z could also be used (load it first).")
+    else if has_type loc g (arrow cty cZ) then
+      false, Direct gc
+    else if has_type loc g (arrow cty (opt cZ)) then
+      false, Option gc
     else
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++

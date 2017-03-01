@@ -24,5 +24,10 @@ Declare ML Module "decl_mode_plugin".
 Declare ML Module "cc_plugin".
 Declare ML Module "ground_plugin".
 Declare ML Module "recdef_plugin".
+Declare ML Module "numeral_notation_plugin".
+Numeral Notation Decimal.uint Decimal.uint_of_int Decimal.int_of_uint
+  : uint_scope.
+Numeral Notation Decimal.int Decimal.int_of_int Decimal.int_of_int
+  : int_scope.
 (* Default substrings not considered by queries like SearchAbout *)
 Add Search Blacklist "_subproof" "Private_".

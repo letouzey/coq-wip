@@ -6,6 +6,8 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
+Require Datatypes.
+
 (** * Decimal numbers *)
 
 (** These numbers coded in base 10 will be used for parsing and printing
@@ -33,6 +35,11 @@ Inductive uint :=
 (** For signed integers, we use two constructors [Pos] and [Neg]. *)
 
 Inductive int := Pos (d:uint) | Neg (d:uint).
+
+Delimit Scope uint_scope with uint.
+Bind Scope uint_scope with uint.
+Delimit Scope int_scope with int.
+Bind Scope int_scope with int.
 
 (** This representation favors simplicity over canonicity.
     For normalizing numbers, we need to remove the leading zero digits
@@ -133,3 +140,15 @@ with succ_double d :=
   end.
 
 End Little.
+
+(** Pseudo-conversion functions used when declaring
+    Numeral Notations on [uint] and [int]. *)
+
+Definition int_of_uint (i:uint) := Pos i.
+Definition uint_of_int (i:int) :=
+  match i with
+    | Pos i => Datatypes.Some i
+    | Neg _ => Datatypes.None
+  end.
+
+Definition int_of_int (i:int) := i.
