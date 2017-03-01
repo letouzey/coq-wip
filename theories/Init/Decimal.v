@@ -6,8 +6,6 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-Require Datatypes.
-
 (** * Decimal numbers *)
 
 (** These numbers coded in base 10 will be used for parsing and printing
@@ -144,11 +142,5 @@ End Little.
 (** Pseudo-conversion functions used when declaring
     Numeral Notations on [uint] and [int]. *)
 
-Definition int_of_uint (i:uint) := Pos i.
-Definition uint_of_int (i:int) :=
-  match i with
-    | Pos i => Datatypes.Some i
-    | Neg _ => Datatypes.None
-  end.
-
+Definition uint_of_uint (i:uint) := i.
 Definition int_of_int (i:int) := i.

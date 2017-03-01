@@ -24,6 +24,8 @@ let eval_constr (c : constr) =
   let j = Arguments_renaming.rename_typing env c in
   Vnorm.cbv_vm env j.Environ.uj_val j.Environ.uj_type
 
+let eval_constr_app c1 c2 = eval_constr (mkApp (c1,[| c2 |]))
+
 exception NotANumber
 
 let warning_big_num ty =
@@ -32,9 +34,13 @@ let warning_big_num ty =
   strbrk " (threshold may vary depending" ++
   strbrk " on your system limits and on the command executed)."
 
-type conversion_function =
-  | Direct of Names.constant
-  | Option of Names.constant
+type conversion_kind =
+  | Int
+  | OptInt
+  | UInt
+  | OptUInt
+  | Z
+  | OptZ
 
 (***********************************************************************)
 
@@ -54,18 +60,21 @@ let char_of_digit n =
   assert (2<=n && n<=11);
   Char.chr (n-2 + Char.code '0')
 
-let coqint_of_rawnum inds (str,sign) =
-  let nil = mkConstruct (inds.uint,1) in
+let coquint_of_rawnum uint str =
+  let nil = mkConstruct (uint,1) in
   let rec do_chars s i acc =
     if i < 0 then acc
     else
-      let dg = mkConstruct (inds.uint, digit_of_char s.[i]) in
+      let dg = mkConstruct (uint, digit_of_char s.[i]) in
       do_chars s (i-1) (mkApp(dg,[|acc|]))
   in
-  let uint = do_chars str (String.length str - 1) nil in
+  do_chars str (String.length str - 1) nil
+
+let coqint_of_rawnum inds (str,sign) =
+  let uint = coquint_of_rawnum inds.uint str in
   mkApp (mkConstruct (inds.int, if sign then 1 else 2), [|uint|])
 
-let rawnum_of_coqint c =
+let rawnum_of_coquint c =
   let rec of_uint_loop c buf =
     match Constr.kind c with
     | Construct ((_,1), _) (* Nil *) -> ()
@@ -77,16 +86,16 @@ let rawnum_of_coqint c =
         | _ -> raise NotANumber)
     | _ -> raise NotANumber
   in
-  let of_uint c =
-    let buf = Buffer.create 64 in
-    let () = of_uint_loop c buf in
-    if Int.equal (Buffer.length buf) 0 then "0" else Buffer.contents buf
-  in
+  let buf = Buffer.create 64 in
+  let () = of_uint_loop c buf in
+  if Int.equal (Buffer.length buf) 0 then "0" else Buffer.contents buf
+
+let rawnum_of_coqint c =
   match Constr.kind c with
   | App (c,[|c'|]) ->
      (match Constr.kind c with
-      | Construct ((_,1), _) (* Pos *) -> (of_uint c', true)
-      | Construct ((_,2), _) (* Neg *) -> (of_uint c', false)
+      | Construct ((_,1), _) (* Pos *) -> (rawnum_of_coquint c', true)
+      | Construct ((_,2), _) (* Neg *) -> (rawnum_of_coquint c', false)
       | _ -> raise NotANumber)
   | _ -> raise NotANumber
 
@@ -159,7 +168,7 @@ let bigint_of_z z = match Constr.kind z with
       end
   | _ -> raise NotANumber
 
-(** The uinterp function below work at the level of [glob_constr]
+(** The uninterp function below work at the level of [glob_constr]
    which is too low for us here. So here's a crude conversion back
    to [constr] for the subset that concerns us. *)
 
@@ -181,46 +190,23 @@ let rec glob_of_constr loc c = match Constr.kind c with
   | Const (c, _) -> Glob_term.GRef (loc, ConstRef c, None)
   | Ind (ind, _) -> Glob_term.GRef (loc, IndRef ind, None)
   | Var id -> Glob_term.GRef (loc, VarRef id, None)
-  | _ -> CErrors.anomaly (str "Numeral.interp_gen: unexpected constr")
+  | _ -> CErrors.anomaly (str "Numeral.interp: unexpected constr")
 
-let interp_gen ty coqify to_ty loc n =
-  match to_ty with
-  | Direct f ->
-     let c = mkApp (mkConst f, [| coqify n |]) in
-     glob_of_constr loc (eval_constr c)
-  | Option f ->
-     let c = mkApp (mkConst f, [| coqify n |]) in
-     match Constr.kind (eval_constr c) with
-     | App (_Some, [| _; c |]) -> glob_of_constr loc c
-     | App (_None, [| _ |]) ->
-        CErrors.user_err ~loc
-         (str "Cannot interpret this number as a value of type " ++
-          pr_reference ty)
-     | x -> CErrors.anomaly (str "Numeral.interp_gen: option expected")
+let no_such_number loc ty =
+  CErrors.user_err ~loc
+   (str "Cannot interpret this number as a value of type " ++
+    pr_reference ty)
 
-let interp_bigint zposty ty warn = interp_gen ty (z_of_bigint zposty warn)
+let interp_option ty loc c =
+  match Constr.kind c with
+  | App (_Some, [| _; c |]) -> glob_of_constr loc c
+  | App (_None, [| _ |]) -> no_such_number loc ty
+  | x -> CErrors.anomaly (str "Numeral.interp: option expected")
 
-(** TODO: restore the warning about large numbers in this version *)
-let interp_rawnum inds ty = interp_gen ty (coqint_of_rawnum inds)
-
-let uninterp_gen camlify of_ty n =
-  try
-    let t = constr_of_glob n in
-    match of_ty with
-    | Direct g ->
-       let r = eval_constr (mkApp (mkConst g, [| t |])) in
-       Some (camlify r)
-    | Option g ->
-       let r = eval_constr (mkApp (mkConst g, [| t |])) in
-       match Constr.kind r with
-       | App (_Some, [| _; x |]) -> Some (camlify x)
-       | x -> None
-  with
-  | Type_errors.TypeError _ -> None (* cf. eval_constr *)
-  | NotANumber -> None (* cf constr_of_glob or camlify *)
-
-let uninterp_bigint = uninterp_gen bigint_of_z
-let uninterp_rawnum = uninterp_gen rawnum_of_coqint
+let uninterp_option c =
+  match Constr.kind c with
+  | App (_Some, [| _; x |]) -> x
+  | _ -> raise NotANumber
 
 let big2raw n =
   if Bigint.is_pos_or_zero n then (Bigint.to_string n, true)
@@ -233,29 +219,47 @@ type numeral_notation_obj =
   { num_ty : Libnames.reference;
     z_pos_ty : z_pos_ty option;
     int_ty : int_ty;
-    to_ty : conversion_function;
-    of_ty : conversion_function;
-    raw_parse : bool; (* parsing from rawnum or from bigint ? *)
-    raw_unparse : bool; (* unparsing from rawnum or from bigint ? *)
+    to_kind : conversion_kind;
+    to_ty : constr;
+    of_kind : conversion_kind;
+    of_ty : constr;
     scope : Notation_term.scope_name;
     constructors : Glob_term.glob_constr list;
     warning : Bigint.bigint * Pp.std_ppcmds;
     path : Libnames.full_path }
 
+(** TODO: restore the warning about large numbers for int *)
+
+let interp o loc n =
+  let c = match o.to_kind with
+    | Int | OptInt -> coqint_of_rawnum o.int_ty n
+    | (UInt|OptUInt) when snd n -> coquint_of_rawnum o.int_ty.uint (fst n)
+    | Z | OptZ -> z_of_bigint (Option.get o.z_pos_ty) o.warning (raw2big n)
+    | _ (* n <= 0 *) -> no_such_number loc o.num_ty
+  in
+  let res = eval_constr_app o.to_ty c in
+  match o.to_kind with
+  | Int | UInt | Z -> glob_of_constr loc res
+  | OptInt | OptUInt | OptZ -> interp_option o.num_ty loc res
+
+let uninterp o n =
+  try
+    let c = eval_constr_app o.of_ty (constr_of_glob n) in
+    match o.of_kind with
+    | Int -> Some (rawnum_of_coqint c)
+    | OptInt -> Some (rawnum_of_coqint (uninterp_option c))
+    | UInt -> Some (rawnum_of_coquint c, true)
+    | OptUInt -> Some (rawnum_of_coquint (uninterp_option c), true)
+    | Z -> Some (big2raw (bigint_of_z c))
+    | OptZ -> Some (big2raw (bigint_of_z (uninterp_option c)))
+  with
+  | Type_errors.TypeError _ -> None (* cf. eval_constr_app *)
+  | NotANumber -> None (* all other functions except big2raw *)
+
 let load_numeral_notation _ (_, o) =
   Notation.declare_rawnumeral_interpreter o.scope (o.path, [])
-  (if o.raw_parse then
-     interp_rawnum o.int_ty o.num_ty o.to_ty
-   else
-     fun loc n ->
-       interp_bigint (Option.get o.z_pos_ty) o.num_ty o.warning o.to_ty loc
-         (raw2big n))
-  (o.constructors,
-   (if o.raw_unparse then
-      uninterp_rawnum o.of_ty
-    else
-      fun n -> Option.map big2raw (uninterp_bigint o.of_ty n)),
-   true)
+  (interp o)
+  (o.constructors, uninterp o, true)
 
 let cache_numeral_notation o = load_numeral_notation 1 o
 
@@ -323,8 +327,8 @@ let vernac_numeral_notation ty f g scope waft =
   let int_ty = locate_int () in
   let z_pos_ty = locate_z () in
   let tyc = locate_globref ty in
-  let fc = locate_constant f in
-  let gc = locate_constant g in
+  let to_ty = mkConst (locate_constant f) in
+  let of_ty = mkConst (locate_constant g) in
   let cty = CRef (ty, None) in
   let app x y = CApp (loc, (None, x), [(y, None)]) in
   let cref q = CRef (Qualid (loc,q), None) in
@@ -333,6 +337,7 @@ let vernac_numeral_notation ty f g scope waft =
   in
   let cZ = cref q_z in
   let cint = cref q_int in
+  let cuint = cref q_uint in
   let coption = cref q_option in
   let opt r = app coption r in
   (* Check that [ty] is an inductive type *)
@@ -343,42 +348,36 @@ let vernac_numeral_notation ty f g scope waft =
         (pr_reference ty ++ str " is not an inductive type")
   in
   (* Check the type of f *)
-  let raw_parse, to_ty =
-    if has_type loc f (arrow cint cty) then
-      true, Direct fc
-    else if has_type loc f (arrow cint (opt cty)) then
-      true, Option fc
+  let to_kind =
+    if has_type loc f (arrow cint cty) then Int
+    else if has_type loc f (arrow cint (opt cty)) then OptInt
+    else if has_type loc f (arrow cuint cty) then UInt
     else if Option.is_empty z_pos_ty then
       CErrors.user_err ~loc
-        (pr_reference f ++ str " should goes from Decimal.int to " ++
+        (pr_reference f ++ str " should goes from Decimal.int or uint to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++
          str ")." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
-    else if has_type loc f (arrow cZ cty) then
-      false, Direct fc
-    else if has_type loc f (arrow cZ (opt cty)) then
-      false, Option fc
+    else if has_type loc f (arrow cZ cty) then Z
+    else if has_type loc f (arrow cZ (opt cty)) then OptZ
     else
       CErrors.user_err ~loc
         (pr_reference f ++ str " should goes from Decimal.int or Z to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
   in
   (* Check the type of g *)
-  let raw_unparse, of_ty =
-    if has_type loc g (arrow cty cint) then
-      true, Direct gc
-    else if has_type loc g (arrow cty (opt cint)) then
-      true, Option gc
+  let of_kind =
+    if has_type loc g (arrow cty cint) then Int
+    else if has_type loc g (arrow cty (opt cint)) then OptInt
+    else if has_type loc g (arrow cty cuint) then UInt
     else if Option.is_empty z_pos_ty then
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++
          pr_reference ty ++
-         str " to Decimal.int or (option int)." ++ fnl () ++
+         str " to Decimal.int or (option int) or uint." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
-    else if has_type loc g (arrow cty cZ) then
-      false, Direct gc
-    else if has_type loc g (arrow cty (opt cZ)) then
-      false, Option gc
+    else if has_type loc g (arrow cty cZ) then Z
+    else if has_type loc g (arrow cty (opt cZ)) then OptZ
     else
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++
@@ -390,10 +389,10 @@ let vernac_numeral_notation ty f g scope waft =
        { num_ty = ty;
          z_pos_ty;
          int_ty;
+         to_kind;
          to_ty;
+         of_kind;
          of_ty;
-         raw_parse;
-         raw_unparse;
          scope;
          constructors;
          warning = (Bigint.of_int waft, warning_big_num ty);
