@@ -58,7 +58,13 @@ Numeral Notation nat nat_of_Z Z_of_nat : nat_scope
 
 
 (** Quick other tests via Decimal.int *)
-Numeral Notation nat Nat.of_int Nat.to_int : nat_scope.
+Numeral Notation nat Nat.of_uint Nat.to_uint : nat_scope (warning after 5000).
+
+(*Import Decimal.*) (* Pourquoi pas d'affichage direct du nombre uint ?! *)
+Open Scope uint_scope. (* autre possibilité *)
+Open Scope nat_scope.
+
+Check 123456789%nat.
 
 Require Import BinIntDef.
 

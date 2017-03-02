@@ -34,13 +34,9 @@ let warning_big_num ty =
   strbrk " (threshold may vary depending" ++
   strbrk " on your system limits and on the command executed)."
 
-type conversion_kind =
-  | Int
-  | OptInt
-  | UInt
-  | OptUInt
-  | Z
-  | OptZ
+type target_kind = Int | UInt | Z
+type option_kind = Option | Direct
+type conversion_kind = target_kind * option_kind
 
 (***********************************************************************)
 
@@ -231,27 +227,31 @@ type numeral_notation_obj =
 (** TODO: restore the warning about large numbers for int *)
 
 let interp o loc n =
-  let c = match o.to_kind with
-    | Int | OptInt -> coqint_of_rawnum o.int_ty n
-    | (UInt|OptUInt) when snd n -> coquint_of_rawnum o.int_ty.uint (fst n)
-    | Z | OptZ -> z_of_bigint (Option.get o.z_pos_ty) o.warning (raw2big n)
-    | _ (* n <= 0 *) -> no_such_number loc o.num_ty
+  let c = match fst o.to_kind with
+    | Int -> coqint_of_rawnum o.int_ty n
+    | UInt when snd n -> coquint_of_rawnum o.int_ty.uint (fst n)
+    | UInt (* n <= 0 *) -> no_such_number loc o.num_ty
+    | Z -> z_of_bigint (Option.get o.z_pos_ty) o.warning (raw2big n)
   in
-  let res = eval_constr_app o.to_ty c in
-  match o.to_kind with
-  | Int | UInt | Z -> glob_of_constr loc res
-  | OptInt | OptUInt | OptZ -> interp_option o.num_ty loc res
+  if snd o.to_kind == Direct &&
+     not (Bigint.equal (fst o.warning) Bigint.zero) &&
+     String.length (fst n) >= 5
+  then
+    glob_of_constr loc (mkApp (o.to_ty,[|c|]))
+  else
+    let res = eval_constr_app o.to_ty c in
+    match snd o.to_kind with
+    | Direct -> glob_of_constr loc res
+    | Option -> interp_option o.num_ty loc res
 
 let uninterp o n =
   try
     let c = eval_constr_app o.of_ty (constr_of_glob n) in
-    match o.of_kind with
+    let c = if snd o.of_kind == Direct then c else uninterp_option c in
+    match fst o.of_kind with
     | Int -> Some (rawnum_of_coqint c)
-    | OptInt -> Some (rawnum_of_coqint (uninterp_option c))
     | UInt -> Some (rawnum_of_coquint c, true)
-    | OptUInt -> Some (rawnum_of_coquint (uninterp_option c), true)
     | Z -> Some (big2raw (bigint_of_z c))
-    | OptZ -> Some (big2raw (bigint_of_z (uninterp_option c)))
   with
   | Type_errors.TypeError _ -> None (* cf. eval_constr_app *)
   | NotANumber -> None (* all other functions except big2raw *)
@@ -349,40 +349,43 @@ let vernac_numeral_notation ty f g scope waft =
   in
   (* Check the type of f *)
   let to_kind =
-    if has_type loc f (arrow cint cty) then Int
-    else if has_type loc f (arrow cint (opt cty)) then OptInt
-    else if has_type loc f (arrow cuint cty) then UInt
+    if has_type loc f (arrow cint cty) then Int, Direct
+    else if has_type loc f (arrow cint (opt cty)) then Int, Option
+    else if has_type loc f (arrow cuint cty) then UInt, Direct
+    else if has_type loc f (arrow cuint (opt cty)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err ~loc
         (pr_reference f ++ str " should goes from Decimal.int or uint to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++
          str ")." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
-    else if has_type loc f (arrow cZ cty) then Z
-    else if has_type loc f (arrow cZ (opt cty)) then OptZ
+    else if has_type loc f (arrow cZ cty) then Z, Direct
+    else if has_type loc f (arrow cZ (opt cty)) then Z, Option
     else
       CErrors.user_err ~loc
-        (pr_reference f ++ str " should goes from Decimal.int or Z to " ++
+        (pr_reference f ++ str " should goes from Decimal.int or uint or Z to "
+         ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
   in
   (* Check the type of g *)
   let of_kind =
-    if has_type loc g (arrow cty cint) then Int
-    else if has_type loc g (arrow cty (opt cint)) then OptInt
-    else if has_type loc g (arrow cty cuint) then UInt
+    if has_type loc g (arrow cty cint) then Int, Direct
+    else if has_type loc g (arrow cty (opt cint)) then Int, Option
+    else if has_type loc g (arrow cty cuint) then UInt, Direct
+    else if has_type loc g (arrow cty (opt cuint)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++
          pr_reference ty ++
          str " to Decimal.int or (option int) or uint." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
-    else if has_type loc g (arrow cty cZ) then Z
-    else if has_type loc g (arrow cty (opt cZ)) then OptZ
+    else if has_type loc g (arrow cty cZ) then Z, Direct
+    else if has_type loc g (arrow cty (opt cZ)) then Z, Option
     else
       CErrors.user_err ~loc
         (pr_reference g ++ str " should goes from " ++
          pr_reference ty ++
-         str " to Decimal.int or (option int) or Z or (option Z)")
+         str " to Decimal.int or (option int) or uint or Z or (option Z)")
   in
   Lib.add_anonymous_leaf
     (inNumeralNotation
