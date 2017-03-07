@@ -89,3 +89,8 @@ NumPrelude.vo
 Rational/BigQ/BigQ.vo
 Rational/BigQ/QMake.vo
 Rational/SpecViaQ/QSig.vo
+DecimalFacts.vo
+DecimalNat.vo
+DecimalPos.vo
+DecimalN.vo
+DecimalZ.vo
