@@ -12,6 +12,10 @@ Require Import BinPos BinNat.
 
 Local Open Scope Z_scope.
 
+Local Notation "0" := Z0.
+Local Notation "1" := (Zpos 1).
+Local Notation "2" := (Zpos 2).
+
 (***********************************************************)
 (** * Binary Integers, Definitions of Operations *)
 (***********************************************************)
@@ -51,7 +55,7 @@ Definition succ_double x :=
 
 Definition pred_double x :=
   match x with
-    | 0 => -1
+    | 0 => neg 1
     | neg p => neg p~1
     | pos p => pos (Pos.pred_double p)
   end.
@@ -102,7 +106,7 @@ Definition succ x := x + 1.
 
 (** ** Predecessor *)
 
-Definition pred x := x + -1.
+Definition pred x := x + neg 1.
 
 (** ** Subtraction *)
 
@@ -169,7 +173,7 @@ Definition sgn z :=
   match z with
     | 0 => 0
     | pos p => 1
-    | neg p => -1
+    | neg p => neg 1
   end.
 
 (** Boolean equality and comparisons *)
@@ -634,3 +638,5 @@ Definition lxor a b :=
  end.
 
 End Z.
+
+Numeral Notation Z Z.of_int Z.to_int : Z_scope.

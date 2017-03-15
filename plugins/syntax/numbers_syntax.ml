@@ -178,13 +178,23 @@ let word_of_pos_bigint ?loc hght n =
   in
   decomp hght n
 
+let nat_of_int ?loc n =
+  let ref_O = CAst.make ?loc @@ GRef (Coqlib.glob_O, None) in
+  let ref_S = CAst.make ?loc @@ GRef (Coqlib.glob_S, None) in
+  let rec mk_nat acc n =
+    if Int.equal n 0 then acc
+    else
+      mk_nat (CAst.make ?loc @@ GApp (ref_S, [acc])) (pred n)
+  in
+  mk_nat ref_O n
+
 let bigN_of_pos_bigint ?loc n =
   let h = height n in
   let ref_constructor = CAst.make ?loc @@ GRef (bigN_constructor h, None) in
   let word = word_of_pos_bigint ?loc h n in
   let args =
     if h < n_inlined then [word]
-    else [Nat_syntax_plugin.Nat_syntax.nat_of_int ?loc (of_int (h-n_inlined));word]
+    else [nat_of_int ?loc (h-n_inlined);word]
   in
   CAst.make ?loc @@ GApp (ref_constructor, args)
 
