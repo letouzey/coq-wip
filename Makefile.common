@@ -110,9 +110,7 @@ FOCMO:=plugins/firstorder/ground_plugin.cmo
 CCCMO:=plugins/cc/cc_plugin.cmo
 BTAUTOCMO:=plugins/btauto/btauto_plugin.cmo
 RTAUTOCMO:=plugins/rtauto/rtauto_plugin.cmo
-NATSYNTAXCMO:=plugins/syntax/nat_syntax_plugin.cmo
-OTHERSYNTAXCMO:=$(addprefix plugins/syntax/, \
-        z_syntax_plugin.cmo \
+SYNTAXCMO:=$(addprefix plugins/syntax/, \
         numbers_syntax_plugin.cmo \
         r_syntax_plugin.cmo \
 	ascii_syntax_plugin.cmo \
@@ -126,7 +124,7 @@ PLUGINSCMO:=$(LTACCMO) $(OMEGACMO) $(ROMEGACMO) $(MICROMEGACMO) \
         $(QUOTECMO) $(RINGCMO) \
         $(FOURIERCMO) $(EXTRACTIONCMO) \
         $(CCCMO)  $(FOCMO) $(RTAUTOCMO) $(BTAUTOCMO) \
-        $(FUNINDCMO) $(NSATZCMO) $(NATSYNTAXCMO) $(OTHERSYNTAXCMO) \
+        $(FUNINDCMO) $(NSATZCMO) $(SYNTAXCMO) \
 	$(DERIVECMO) $(SSRMATCHINGCMO)
 
 ifeq ($(HASNATDYNLINK)-$(BEST),false-opt)
