@@ -1135,6 +1135,58 @@ at the time of use of the abbreviation.
 %except that abbreviations are used for printing (unless the modifier
 %\verb=(only parsing)= is given) while syntactic definitions were not.
 
+\section{Numeral Notations
+\comindex{Numeral Notation}}
+
+Starting with version 8.7, the following command allows to customize
+the way numeral literals are parsed and printed:
+
+\begin{quote}
+{\tt Numeral Notation $ty$ $pa$ $pr$~:~{\scope}.}
+\end{quote}
+
+In the previous line, $ty$ should be the name of an inductive type,
+while $pa$ and $pr$ should be the names of two parsing and printing
+functions.
+The
+parsing function $pa$ should have one of the following types:
+\begin{itemize}
+\item {\tt Decimal.int -> $ty$}
+\item {\tt Decimal.int -> option $ty$}
+\item {\tt Decimal.uint -> $ty$}
+\item {\tt Decimal.uint -> option $ty$}
+\item {\tt Z -> $ty$}
+\item {\tt Z -> $ty$ option}
+\end{itemize}
+And the printing function $pr$ should have one of the following types:
+\begin{itemize}
+\item {\tt $ty$ -> Decimal.int}
+\item {\tt $ty$ -> option Decimal.int}
+\item {\tt $ty$ -> Decimal.uint}
+\item {\tt $ty$ -> option Decimal.uint}
+\item {\tt $ty$ -> Z}
+\item {\tt $ty$ -> option Z}
+\end{itemize}
+
+\begin{Variants}
+\item
+{\tt Numeral Notation $ty$ $pa$ $pr$~:~{\scope} (warning after $n$).}
+
+When a literal larger than $n$ is parsed, a warning message about
+possible Stack Overflow will be displayed.
+
+\item
+{\tt Numeral Notation $ty$ $pa$ $pr$~:~{\scope} (abstract after $n$).}
+
+When a literal $m$ larger than $n$ is parsed, the result will be
+{\tt ($pa$~$m$)}, without reduction of this application to a normal form.
+Here $m$ will be a {\tt Decimal.int} or {\tt Decimal.uint} or {\tt Z},
+depending on the type of the parsing function $pa$. This allows a more
+compact representation of literals in types such as {\tt nat}, and
+limits parse failures due to Stack Overflow.
+
+\end{Variants}
+
 \section{Tactic Notations
 \comindex{Tactic Notation}}
 
