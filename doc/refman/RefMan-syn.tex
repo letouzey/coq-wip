@@ -1152,20 +1152,20 @@ The
 parsing function $pa$ should have one of the following types:
 \begin{itemize}
 \item {\tt Decimal.int -> $ty$}
-\item {\tt Decimal.int -> $ty$ option}
+\item {\tt Decimal.int -> option $ty$}
 \item {\tt Decimal.uint -> $ty$}
-\item {\tt Decimal.uint -> $ty$ option}
+\item {\tt Decimal.uint -> option $ty$}
 \item {\tt Z -> $ty$}
 \item {\tt Z -> $ty$ option}
 \end{itemize}
 And the printing function $pr$ should have one of the following types:
 \begin{itemize}
 \item {\tt $ty$ -> Decimal.int}
-\item {\tt $ty$ -> Decimal.int option}
+\item {\tt $ty$ -> option Decimal.int}
 \item {\tt $ty$ -> Decimal.uint}
-\item {\tt $ty$ -> Decimal.uint option}
+\item {\tt $ty$ -> option Decimal.uint}
 \item {\tt $ty$ -> Z}
-\item {\tt $ty$ -> Z option}
+\item {\tt $ty$ -> option Z}
 \end{itemize}
 
 \begin{Variants}
