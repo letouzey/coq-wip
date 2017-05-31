@@ -230,6 +230,7 @@ through the <tt>Require Import</tt> command.</p>
     theories/Numbers/AltBinNotations.v
     theories/Numbers/DecimalFacts.v
     theories/Numbers/DecimalNat.v
+    theories/Numbers/DecimalNotations.v
     theories/Numbers/DecimalPos.v
     theories/Numbers/DecimalN.v
     theories/Numbers/DecimalZ.v

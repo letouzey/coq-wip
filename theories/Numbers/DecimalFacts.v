@@ -8,7 +8,7 @@
 
 (** * DecimalFacts : some facts about Decimal numbers *)
 
-Require Import Decimal.
+Require Import Decimal DecimalNotations.
 
 Lemma uint_dec (d d' : uint) : { d = d' } + { d <> d' }.
 Proof.
