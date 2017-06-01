@@ -18,6 +18,9 @@ Module Export Datatypes.
   Set Implicit Arguments.
   Notation nat := Coq.Init.Datatypes.nat.
   Notation S := Coq.Init.Datatypes.S.
+  Notation O := Coq.Init.Datatypes.O.
+  Notation "1" := (S O) : nat_scope.
+  Notation "2" := (S 1) : nat_scope.
   Record prod (A B : Type) := pair { fst : A ; snd : B }.
   Notation "x * y" := (prod x y) : type_scope.
   Delimit Scope nat_scope with nat.
@@ -109,7 +112,7 @@ Fixpoint ExtendableAlong@{i j k l}
          (n : nat) {A : Type@{i}} {B : Type@{j}}
          (f : A -> B) (C : B -> Type@{k}) : Type@{l}
   := match n with
-     | 0 => Unit@{l}
+     | O => Unit@{l}
      | S n => (forall (g : forall a, C (f a)),
                   ExtensionAlong@{i j k l l} f C g) *
               forall (h k : forall b, C b),
