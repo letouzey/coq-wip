@@ -7,8 +7,11 @@
 ########################################################################
 # MathComp
 ########################################################################
-: ${mathcomp_CI_BRANCH:=master}
-: ${mathcomp_CI_GITURL:=https://github.com/math-comp/math-comp.git}
+# Temporary overlay
+: ${mathcomp_CI_BRANCH:=numerals-overlay}
+: ${mathcomp_CI_GITURL:=https://github.com/JasonGross/math-comp.git}
+#: ${mathcomp_CI_BRANCH:=master}
+#: ${mathcomp_CI_GITURL:=https://github.com/math-comp/math-comp.git}
 
 ########################################################################
 # UniMath
@@ -46,9 +49,11 @@
 ########################################################################
 # HoTT
 ########################################################################
-# Temporal overlay
-: ${HoTT_CI_BRANCH:=mz-8.7}
-: ${HoTT_CI_GITURL:=https://github.com/ejgallego/HoTT.git}
+# Temporary overlay
+: ${HoTT_CI_BRANCH:=numeral-overlay}
+: ${HoTT_CI_GITURL:=https://github.com/JasonGross/HoTT.git}
+#: ${HoTT_CI_BRANCH:=mz-8.7}
+#: ${HoTT_CI_GITURL:=https://github.com/ejgallego/HoTT.git}
 # : ${HoTT_CI_BRANCH:=master}
 # : ${HoTT_CI_GITURL:=https://github.com/HoTT/HoTT.git}
 
