@@ -413,7 +413,7 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type f (arrow cuint (opt cty)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err
-        (pr_reference f ++ str " should goes from Decimal.int or uint to " ++
+        (pr_reference f ++ str " should go from Decimal.int or uint to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++
          str ")." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
@@ -421,7 +421,7 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type f (arrow cZ (opt cty)) then Z, Option
     else
       CErrors.user_err
-        (pr_reference f ++ str " should goes from Decimal.int or uint or Z to "
+        (pr_reference f ++ str " should go from Decimal.int or uint or Z to "
          ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
   in
@@ -433,7 +433,7 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type g (arrow cty (opt cuint)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err
-        (pr_reference g ++ str " should goes from " ++
+        (pr_reference g ++ str " should go from " ++
          pr_reference ty ++
          str " to Decimal.int or (option int) or uint." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
@@ -441,7 +441,7 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type g (arrow cty (opt cZ)) then Z, Option
     else
       CErrors.user_err
-        (pr_reference g ++ str " should goes from " ++
+        (pr_reference g ++ str " should go from " ++
          pr_reference ty ++
          str " to Decimal.int or (option int) or uint or Z or (option Z)")
   in
