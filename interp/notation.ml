@@ -329,6 +329,16 @@ let mkString = function
 | None -> None
 | Some s -> if Unicode.is_utf8 s then Some (String s) else None
 
+let strip_leading_zeros s =
+  if Int.equal (String.length s) 0
+  then s
+  else
+    let rec aux i =
+      if Int.equal (String.length s) i
+      then "0"
+      else match s.[i] with '0' -> aux (i+1) | _ -> String.sub s i (String.length s - i)
+    in aux 0
+
 let delay dir int ?loc x = (dir, (fun () -> int ?loc x))
 
 type rawnum = Constrexpr.raw_natural_number * Constrexpr.sign
@@ -457,8 +467,8 @@ let find_notation ntn sc =
   (n.not_interp, n.not_location)
 
 let notation_of_prim_token = function
-  | Numeral (n,true) -> n
-  | Numeral (n,false) -> "- "^n
+  | Numeral (n,true) -> strip_leading_zeros n
+  | Numeral (n,false) -> "- "^(strip_leading_zeros n)
   | String _ -> raise Not_found
 
 let find_prim_token check_allowed ?loc p sc =
