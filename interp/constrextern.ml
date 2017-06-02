@@ -250,6 +250,16 @@ let is_zero s =
     Int.equal (String.length s) i || (s.[i] == '0' && aux (i+1))
   in aux 0
 
+let strip_leading_zeros s =
+  if Int.equal (String.length s) 0
+  then s
+  else
+  let rec aux i =
+    if Int.equal (String.length s) i
+    then "0"
+    else match s.[i] with '0' -> aux (i+1) | _ -> String.sub s i (String.length s - i)
+  in aux 0
+
 let make_notation_gen loc ntn mknot mkprim destprim l =
   if has_curly_brackets ntn
   then expand_curly_brackets loc mknot ntn l
@@ -260,9 +270,9 @@ let make_notation_gen loc ntn mknot mkprim destprim l =
     | _ ->
 	match decompose_notation_key ntn, l with
 	| [Terminal "-"; Terminal x], [] when is_number x ->
-	   mkprim (loc, Numeral (x,false))
+	   mkprim (loc, Numeral (strip_leading_zeros x,false))
 	| [Terminal x], [] when is_number x ->
-	   mkprim (loc, Numeral (x,true))
+	   mkprim (loc, Numeral (strip_leading_zeros x,true))
 	| _ -> mknot (loc,ntn,l)
 
 let make_notation loc ntn (terms,termlists,binders as subst) =

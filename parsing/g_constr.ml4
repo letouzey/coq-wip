@@ -122,6 +122,16 @@ let name_colon =
 
 let aliasvar = function { CAst.loc = loc; CAst.v = CPatAlias (_, id) } -> Some (loc,Name id) | _ -> None
 
+let strip_leading_zeros s =
+  if Int.equal (String.length s) 0
+  then s
+  else
+  let rec aux i =
+    if Int.equal (String.length s) i
+    then "0"
+    else match s.[i] with '0' -> aux (i+1) | _ -> String.sub s i (String.length s - i)
+  in aux 0
+
 GEXTEND Gram
   GLOBAL: binder_constr lconstr constr operconstr universe_level sort global
   constr_pattern lconstr_pattern Constr.ident
@@ -280,7 +290,7 @@ GEXTEND Gram
   atomic_constr:
     [ [ g=global; i=instance -> CAst.make ~loc:!@loc @@ CRef (g,i)
       | s=sort   -> CAst.make ~loc:!@loc @@  CSort s
-      | n=INT    -> CAst.make ~loc:!@loc @@ CPrim (Numeral (n,true))
+      | n=INT    -> CAst.make ~loc:!@loc @@ CPrim (Numeral (strip_leading_zeros n,true))
       | s=string -> CAst.make ~loc:!@loc @@ CPrim (String s)
       | "_"      -> CAst.make ~loc:!@loc @@ CHole (None, IntroAnonymous, None)
       | "?"; "["; id=ident; "]"  -> CAst.make ~loc:!@loc @@  CHole (None, IntroIdentifier id, None)
@@ -406,7 +416,7 @@ GEXTEND Gram
             | _ -> p
           in
 	  CAst.make ~loc:!@loc @@ CPatCast (p, ty)
-      | n = INT    -> CAst.make ~loc:!@loc @@ CPatPrim (Numeral (n,true))
+      | n = INT    -> CAst.make ~loc:!@loc @@ CPatPrim (Numeral (strip_leading_zeros n,true))
       | s = string -> CAst.make ~loc:!@loc @@ CPatPrim (String s) ] ]
   ;
   impl_ident_tail:
