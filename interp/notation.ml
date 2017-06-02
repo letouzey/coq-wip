@@ -329,6 +329,16 @@ let mkString = function
 | None -> None
 | Some s -> if Unicode.is_utf8 s then Some (String s) else None
 
+let strip_leading_zeros s =
+  if Int.equal (String.length s) 0
+  then s
+  else
+    let rec aux i =
+      if Int.equal (String.length s) i
+      then "0"
+      else match s.[i] with '0' -> aux (i+1) | _ -> String.sub s i (String.length s - i)
+    in aux 0
+
 let delay dir int ?loc x = (dir, (fun () -> int ?loc x))
 
 type rawnum = Constrexpr.raw_natural_number * Constrexpr.sign
@@ -339,7 +349,7 @@ let declare_rawnumeral_interpreter sc dir interp (patl,uninterp,inpat) =
                             | p -> cont ?loc p)
     (patl, (fun r -> match uninterp r with
                      | None -> None
-                     | Some (n,s) -> Some (Numeral (n,s))), inpat)
+                     | Some (n,s) -> Some (Numeral (strip_leading_zeros n,s))), inpat)
 
 let declare_numeral_interpreter sc dir interp (patl,uninterp,inpat) =
   let interp' ?loc (n,s) = interp ?loc (ofNumeral n s) in

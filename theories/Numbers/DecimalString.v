@@ -6,7 +6,7 @@
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-Require Import Decimal Ascii String.
+Require Import Decimal DecimalNotations Ascii String.
 
 (** * Conversion between decimal numbers and Coq strings *)
 

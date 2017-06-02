@@ -231,7 +231,7 @@ let tag_var = tag Tag.variable
     | ArgVar (loc,s) -> pr_lident (loc,s)
 
   let pr_prim_token = function
-    | Numeral (n,s) -> str (if s then n else "- "^n)
+    | Numeral (n,s) -> str (if s then n else "-"^n)
     | String s -> qs s
 
   let pr_evar pr id l =

@@ -407,13 +407,16 @@ let vernac_numeral_notation ty f g scope opts =
   in
   (* Check the type of f *)
   let to_kind =
-    if has_type f (arrow cint cty) then Int, Direct
+    if Global.is_polymorphic (Nametab.global f) then
+      CErrors.user_err
+        (pr_reference f ++ str " cannot be polymorphic for the moment")
+    else if has_type f (arrow cint cty) then Int, Direct
     else if has_type f (arrow cint (opt cty)) then Int, Option
     else if has_type f (arrow cuint cty) then UInt, Direct
     else if has_type f (arrow cuint (opt cty)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err
-        (pr_reference f ++ str " should goes from Decimal.int or uint to " ++
+        (pr_reference f ++ str " should go from Decimal.int or uint to " ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++
          str ")." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
@@ -421,19 +424,22 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type f (arrow cZ (opt cty)) then Z, Option
     else
       CErrors.user_err
-        (pr_reference f ++ str " should goes from Decimal.int or uint or Z to "
+        (pr_reference f ++ str " should go from Decimal.int or uint or Z to "
          ++
          pr_reference ty ++ str " or (option " ++ pr_reference ty ++ str ")")
   in
   (* Check the type of g *)
   let of_kind =
-    if has_type g (arrow cty cint) then Int, Direct
+    if Global.is_polymorphic (Nametab.global g) then
+      CErrors.user_err
+        (pr_reference g ++ str " cannot be polymorphic for the moment")
+    else if has_type g (arrow cty cint) then Int, Direct
     else if has_type g (arrow cty (opt cint)) then Int, Option
     else if has_type g (arrow cty cuint) then UInt, Direct
     else if has_type g (arrow cty (opt cuint)) then UInt, Option
     else if Option.is_empty z_pos_ty then
       CErrors.user_err
-        (pr_reference g ++ str " should goes from " ++
+        (pr_reference g ++ str " should go from " ++
          pr_reference ty ++
          str " to Decimal.int or (option int) or uint." ++ fnl () ++
          str "Instead of int, the type Z could also be used (load it first).")
@@ -441,7 +447,7 @@ let vernac_numeral_notation ty f g scope opts =
     else if has_type g (arrow cty (opt cZ)) then Z, Option
     else
       CErrors.user_err
-        (pr_reference g ++ str " should goes from " ++
+        (pr_reference g ++ str " should go from " ++
          pr_reference ty ++
          str " to Decimal.int or (option int) or uint or Z or (option Z)")
   in
