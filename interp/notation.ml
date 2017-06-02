@@ -349,7 +349,7 @@ let declare_rawnumeral_interpreter sc dir interp (patl,uninterp,inpat) =
                             | p -> cont ?loc p)
     (patl, (fun r -> match uninterp r with
                      | None -> None
-                     | Some (n,s) -> Some (Numeral (n,s))), inpat)
+                     | Some (n,s) -> Some (Numeral (strip_leading_zeros n,s))), inpat)
 
 let declare_numeral_interpreter sc dir interp (patl,uninterp,inpat) =
   let interp' ?loc (n,s) = interp ?loc (ofNumeral n s) in
@@ -467,8 +467,8 @@ let find_notation ntn sc =
   (n.not_interp, n.not_location)
 
 let notation_of_prim_token = function
-  | Numeral (n,true) -> strip_leading_zeros n
-  | Numeral (n,false) -> "- "^(strip_leading_zeros n)
+  | Numeral (n,true) -> n
+  | Numeral (n,false) -> "- "^n
   | String _ -> raise Not_found
 
 let find_prim_token check_allowed ?loc p sc =
