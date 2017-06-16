@@ -116,14 +116,17 @@ TIMER=$(if $(TIMED), $(STDTIME), $(TIMECMD))
 OPT?=
 
 # The DYNOBJ and DYNLIB variables are used by "coqdep -dyndep var" in .v.d
+# The BESTOBJ are used in .mlpack.d files
 ifeq '$(OPT)' '-byte'
 USEBYTE:=true
 DYNOBJ:=.cmo
 DYNLIB:=.cma
+BESTOBJ:=.cmo
 else
 USEBYTE:=
 DYNOBJ:=.cmxs
 DYNLIB:=.cmxs
+BESTOBJ:=cmx
 endif
 
 COQFLAGS?=-q $(OPT) $(COQLIBS) $(OTHERFLAGS)

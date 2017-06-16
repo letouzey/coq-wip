@@ -203,6 +203,8 @@ let mlpack_dependencies () =
          efullname efullname;
        printf "%s.cmx:$(addsuffix .cmx,$(%s_MLPACK_DEPENDENCIES))\n"
          efullname efullname;
+       printf "%s.cmi:$(addsuffix $(BESTOBJ),$(%s_MLPACK_DEPENDENCIES))\n"
+              efullname efullname;
        flush Pervasives.stdout)
     (List.rev !mlpackAccu)
 

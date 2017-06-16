@@ -133,17 +133,8 @@ endif
 
 # Best OCaml compiler, used in a generic way
 
-ifeq ($(BEST),opt)
-OPT:=opt
-BESTOBJ:=.cmx
-BESTLIB:=.cmxa
-BESTDYN:=.cmxs
-else
-OPT:=
-BESTOBJ:=.cmo
-BESTLIB:=.cma
-BESTDYN:=.cma
-endif
+OCAMLBEST=$(if $(OPT),$(OCAMLOPT) $(MLINCLUDES) $(OPTFLAGS),\
+                      $(OCAMLC) $(MLINCLUDES) $(BYTEFLAGS))
 
 define bestobj
 $(patsubst %.cma,%$(BESTLIB),$(patsubst %.cmo,%$(BESTOBJ),$(1)))
@@ -494,13 +485,13 @@ kernel/kernel.cma: kernel/kernel.mllib
 
 # For plugin packs
 
-%.cmo: %.mlpack
-	$(SHOW)'OCAMLC -pack -o $@'
-	$(HIDE)$(OCAMLC) $(MLINCLUDES) $(BYTEFLAGS) -pack -o $@ $(filter-out %.mlpack, $^)
+%.cmo $(if $(OPT),,%.cmi) : %.mlpack
+	$(SHOW)'OCAMLC -pack -o $*.cmo'
+	$(HIDE)$(OCAMLC) $(MLINCLUDES) $(BYTEFLAGS) -pack -o $*.cmo $(addsuffix .cmo,$($*_MLPACK_DEPENDENCIES))
 
-%.cmx: %.mlpack
-	$(SHOW)'OCAMLOPT -pack -o $@'
-	$(HIDE)$(OCAMLOPT) $(MLINCLUDES) $(OPTFLAGS) -pack -o $@ $(filter-out %.mlpack, $^)
+%.cmx $(if $(OPT),%.cmi,) : %.mlpack
+	$(SHOW)'OCAMLOPT -pack -o $*.cmx'
+	$(HIDE)$(OCAMLOPT) $(MLINCLUDES) $(OPTFLAGS) -pack -o $*.cmx $(addsuffix .cmx,$($*_MLPACK_DEPENDENCIES))
 
 COND_BYTEFLAGS= \
  $(if $(filter tools/fake_ide% tools/coq_makefile%,$<), -I ide,) $(MLINCLUDES) $(BYTEFLAGS)
@@ -576,7 +567,7 @@ plugins/%.cmx: plugins/%.ml
 ###########################################################################
 
 # Ocamldep is now used directly again (thanks to -ml-synonym in OCaml >= 3.12)
-OCAMLDEP = $(OCAMLFIND) ocamldep -slash -ml-synonym .ml4 -ml-synonym .mlpack
+OCAMLDEP = $(OCAMLFIND) ocamldep -slash -ml-synonym .ml4 -mli-synonym .mlpack
 
 %.ml.d: $(D_DEPEND_BEFORE_SRC) %.ml $(D_DEPEND_AFTER_SRC) $(GENFILES)
 	$(SHOW)'OCAMLDEP  $<'

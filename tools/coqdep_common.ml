@@ -467,6 +467,8 @@ let mL_dependencies () =
        printf "%s_MLPACK_DEPENDENCIES:=%s\n" efullname (String.concat " " dep);
        printf "%s.cmo:$(addsuffix .cmo,$(%s_MLPACK_DEPENDENCIES))\n" efullname efullname;
        printf "%s.cmx:$(addsuffix .cmx,$(%s_MLPACK_DEPENDENCIES))\n" efullname efullname;
+       printf "%s.cmi:$(addsuffix $(BESTOBJ),$(%s_MLPACK_DEPENDENCIES))\n"
+         efullname efullname;
        let efullname_capital = capitalize (Filename.basename efullname) in
        List.iter (fun dep ->
          printf "%s.cmx : FOR_PACK=-for-pack %s\n" dep efullname_capital)

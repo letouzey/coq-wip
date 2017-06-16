@@ -54,10 +54,18 @@ endif
 # for Declare ML Module files.
 
 ifeq ($(BEST),opt)
+OPT:=opt
+BESTOBJ:=.cmx
+BESTLIB:=.cmxa
+BESTDYN:=.cmxs
 COQTOPBEST:=$(COQTOPEXE)
 DYNOBJ:=.cmxs
 DYNLIB:=.cmxs
 else
+OPT:=
+BESTOBJ:=.cmo
+BESTLIB:=.cma
+BESTDYN:=.cma
 COQTOPBEST:=$(COQTOPBYTE)
 DYNOBJ:=.cmo
 DYNLIB:=.cma
