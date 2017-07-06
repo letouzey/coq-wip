@@ -24,6 +24,12 @@ Reserved Notation "x = y" (at level 70, no associativity).
 Reserved Notation "x = y = z"
 (at level 70, no associativity, y at next level).
 
+Reserved Notation "x == y  :>  T"
+(at level 70, y at next level, no associativity).
+Reserved Notation "x == y" (at level 70, no associativity).
+Reserved Notation "x == y == z"
+(at level 70, no associativity, y at next level).
+
 Reserved Notation "x <> y  :>  T"
 (at level 70, y at next level, no associativity).
 Reserved Notation "x <> y" (at level 70, no associativity).

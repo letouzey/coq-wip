@@ -297,7 +297,7 @@ End universal_quantification.
     as it expresses that [x] and [y] are equal iff every property on
     [A] which is true of [x] is also true of [y] *)
 
-Inductive eq (A:Type) (x:A) : A -> Prop :=
+Inductive eq A (x:A) : A -> Prop :=
     eq_refl : x = x :>A
 
 where "x = y :> A" := (@eq A x y) : type_scope.
@@ -316,6 +316,35 @@ Arguments eq_rect [A] x P _ y _.
 Hint Resolve I conj or_introl or_intror : core.
 Hint Resolve eq_refl: core.
 Hint Resolve ex_intro ex_intro2: core.
+
+Inductive eqP (A:Prop) (x:A) : A -> Prop :=
+    eqP_refl : x == x :> A
+
+where "x == y :> A" := (@eqP A x y) : type_scope.
+Notation "x == y" := (x == y :>_) : type_scope.
+
+(*
+(** * Explicit cumulativity of Prop in Type,
+      allowing to embed propositions in types. *)
+
+Local Set Primitive Projections.
+
+Definition aType := Type.
+
+Record asType (A : Prop) : aType := toType { fromType : A }.
+
+Unset Primitive Projections.
+
+Lemma toType_fromType (A:Prop)(a:A) : fromType (toType a) == a.
+Proof.
+ reflexivity.
+Qed.
+
+Lemma fromType_toType (A:Prop)(a:asType A) : toType (fromType a) = a.
+Proof.
+ reflexivity.
+Qed.
+*)
 
 Section Logic_lemmas.
 
@@ -438,47 +467,47 @@ Proof.
 Qed.
 
 Theorem f_equal_compose : forall A B C (a b:A) (f:A->B) (g:B->C) (e:a=b),
-  f_equal g (f_equal f e) = f_equal (fun a => g (f a)) e.
+  f_equal g (f_equal f e) == f_equal (fun a => g (f a)) e.
 Proof.
   destruct e. reflexivity.
 Defined.
 
 (** The goupoid structure of equality *)
 
-Theorem eq_trans_refl_l : forall A (x y:A) (e:x=y), eq_trans eq_refl e = e.
+Theorem eq_trans_refl_l : forall A (x y:A) (e:x=y), eq_trans eq_refl e == e.
 Proof.
   destruct e. reflexivity.
 Defined.
 
-Theorem eq_trans_refl_r : forall A (x y:A) (e:x=y), eq_trans e eq_refl = e.
+Theorem eq_trans_refl_r : forall A (x y:A) (e:x=y), eq_trans e eq_refl == e.
 Proof.
   destruct e. reflexivity.
 Defined.
 
-Theorem eq_sym_involutive : forall A (x y:A) (e:x=y), eq_sym (eq_sym e) = e.
+Theorem eq_sym_involutive : forall A (x y:A) (e:x=y), eq_sym (eq_sym e) == e.
 Proof.
   destruct e; reflexivity.
 Defined.
 
-Theorem eq_trans_sym_inv_l : forall A (x y:A) (e:x=y), eq_trans (eq_sym e) e = eq_refl.
+Theorem eq_trans_sym_inv_l : forall A (x y:A) (e:x=y), eq_trans (eq_sym e) e == eq_refl.
 Proof.
   destruct e; reflexivity.
 Defined.
 
-Theorem eq_trans_sym_inv_r : forall A (x y:A) (e:x=y), eq_trans e (eq_sym e) = eq_refl.
+Theorem eq_trans_sym_inv_r : forall A (x y:A) (e:x=y), eq_trans e (eq_sym e) == eq_refl.
 Proof.
   destruct e; reflexivity.
 Defined.
 
 Theorem eq_trans_assoc : forall A (x y z t:A) (e:x=y) (e':y=z) (e'':z=t),
-  eq_trans e (eq_trans e' e'') = eq_trans (eq_trans e e') e''.
+  eq_trans e (eq_trans e' e'') == eq_trans (eq_trans e e') e''.
 Proof.
   destruct e''; reflexivity.
 Defined.
 
 (** Extra properties of equality *)
 
-Theorem eq_id_comm_l : forall A (f:A->A) (Hf:forall a, a = f a), forall a, f_equal f (Hf a) = Hf (f a).
+Theorem eq_id_comm_l : forall A (f:A->A) (Hf:forall a, a = f a), forall a, f_equal f (Hf a) == Hf (f a).
 Proof.
   intros.
   unfold f_equal.

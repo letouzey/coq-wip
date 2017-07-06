@@ -809,8 +809,9 @@ let constraint_add_leq v u c =
 	Constraint.add (x,Le,y) c
       else (* j >= 1 *) (* m = n + k, u <= v+k *)
 	if Level.equal x y then c (* u <= u+k, trivial *)
-	else if Level.is_small x then c (* Prop,Set <= u+S k, trivial *)
-	else anomaly (Pp.str"Unable to handle arbitrary u <= v+k constraints.")
+	else if Level.is_set x then c (* Prop,Set <= u+S k, trivial *)
+	else (*TODO!!*)
+          anomaly (Pp.str"Unable to handle arbitrary u <= v+k constraints.")
 	  
 let check_univ_leq_one u v = Universe.exists (Expr.leq u) v
 

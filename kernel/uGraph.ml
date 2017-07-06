@@ -632,7 +632,7 @@ let check_smaller g strict u v =
   if strict then
     search_path true arcu arcv g
   else
-    is_prop_arc arcu 
+    (is_prop_arc arcu && is_prop_arc arcv)
     || (is_set_arc arcu && not (is_prop_arc arcv))
     || search_path false arcu arcv g
 
@@ -657,8 +657,7 @@ let real_check_leq g u v =
     
 let check_leq g u v =
   Universe.equal u v ||
-    is_type0m_univ u ||
-    real_check_leq g u v
+   (not (is_type0m_univ u) && real_check_leq g u v)
 
 let check_eq_univs g l1 l2 =
   real_check_leq g l1 l2 && real_check_leq g l2 l1
