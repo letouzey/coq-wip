@@ -431,10 +431,11 @@ let ast_iter_rel f =
 
 (*s Map over asts. *)
 
-let ast_map_branch f (c,ids,a) = (c,ids,f a)
+(* [ast_map f] applies a function [f] on all immediate sub-terms of an ast.
+   Warning: we assume that [f] does not change the type of [MLcons]
+   and of [MLcase] heads *)
 
-(* Warning: in [ast_map] we assume that [f] does not change the type
-   of [MLcons] and of [MLcase] heads *)
+let ast_map_branch f (ids,p,a) = (ids,p,f a)
 
 let ast_map f = function
   | MLlam (i,a) -> MLlam (i, f a)
@@ -447,11 +448,10 @@ let ast_map f = function
   | MLmagic a -> MLmagic (f a)
   | MLrel _ | MLglob _ | MLexn _ | MLdummy _ | MLaxiom as a -> a
 
-(*s Map over asts, with binding depth as parameter. *)
+(*s Map over asts, with binding depth as parameter.
+    Same warning as for [ast_map]... *)
 
 let ast_map_lift_branch f n (ids,p,a) = (ids,p, f (n+(List.length ids)) a)
-
-(* Same warning as for [ast_map]... *)
 
 let ast_map_lift f n = function
   | MLlam (i,a) -> MLlam (i, f (n+1) a)
@@ -467,7 +467,7 @@ let ast_map_lift f n = function
 
 (*s Iter over asts. *)
 
-let ast_iter_branch f (c,ids,a) = f a
+let ast_iter_branch f (ids,p,a) = f a
 
 let ast_iter f = function
   | MLlam (i,a) -> f a
@@ -478,6 +478,19 @@ let ast_iter f = function
   | MLcons (_,_,l) | MLtuple l -> List.iter f l
   | MLmagic a -> f a
   | MLrel _ | MLglob _ | MLexn _ | MLdummy _ | MLaxiom  -> ()
+
+let ast_iter_lift_branch f n (ids,p,a) = f (n+List.length ids) a
+
+let ast_iter_lift f n = function
+  | MLlam (i,a) -> f (n+1) a
+  | MLletin (i,a,b) -> f n a; f (n+1) b
+  | MLcase (_,a,v) -> f n a; Array.iter (ast_iter_lift_branch f n) v
+  | MLfix (i,ids,v) ->
+      let k = Array.length ids in Array.iter (f (k+n)) v
+  | MLapp (a,l) -> f n a; List.iter (f n) l
+  | MLcons (_,_,l) | MLtuple l -> List.iter (f n) l
+  | MLmagic a -> f n a
+  | MLrel _ | MLglob _ | MLexn _ | MLdummy _ | MLaxiom -> ()
 
 (*S Operations concerning De Bruijn indices. *)
 
@@ -1328,14 +1341,69 @@ and kill_dummy_hd = function
        with Impossible -> MLletin(id,kill_dummy c,kill_dummy_hd e))
   | a -> a
 
-and kill_dummy_fix i c s =
-  let n = Array.length c in
-  let k,ci = kill_dummy_lams s (kill_dummy_hd c.(i)) in
-  let c = Array.copy c in c.(i) <- ci;
-  for j = 0 to (n-1) do
+and kill_dummy_fix i c_orig s =
+  let n = Array.length c_orig in
+  let c = Array.map kill_dummy_hd c_orig in
+  let ci = dummify_useless_fix_args c.(i) (n-i) in
+  let k,ci = kill_dummy_lams s ci in
+  c.(i) <- ci;
+  for j = 0 to n-1 do
     c.(j) <- kill_dummy (kill_dummy_args k (n-i) c.(j))
   done;
   k,c
+
+(* Little optimization done on-the-fly during dummy elimination:
+   get rid of useless arguments of inner fixpoints (even if these
+   arguments aren't already dummy). In particular, this might help
+   the removal of implicit arguments. The function below is quite
+   basic (but lightweight) :
+   - it simply change some lambda names to Dummy, the real removal
+     job is done later by [kill_dummy_fix] and [kill_dummy_args].
+   - it only operates on the entry component of a mutual fixpoint.
+   - it searchs for argument variables that only occur in
+     corresponding arguments of this fixpoint recursive calls
+     (for instance let rec f x = ... f (x+x) ...).
+   - it doesn't iterate this search, even if theoretically a first
+     argument removal might allow to discover more useless args later
+     (for instance let rec f x y = ... f (x+y) y ...).
+   - recursive calls could normally be partial, in this case
+     an eta-expansion might occur during the later [kill_dummy_fix].
+   - Last little limitation: for the moment, if all args are
+     useless, then [kill_dummy_lams] will raise [Impossible] in
+     [kill_dummy_fix] and none will be removed.
+*)
+
+and dummify_useless_fix_args e recidx =
+  (* e is a body of a recursive function (possibly mutual
+     but we'll ignore the other bodies), and recidx is the
+     index of the variable used for recursive calls to e *)
+  let ids,body = collect_lams e in
+  let n = List.length ids in
+  (* occur.(i) will mean: the variable of index (i+1) (i.e. nth ids i)
+     occurs in e, outside of its corresponding arguments in
+     recursive calls. *)
+  let occur = Array.make n false in
+  (* A searching loop for such occurrences. k is the lift level,
+     and joker is a variable to ignore (when we're inside the
+     corresponding argument of a recursive call) *)
+  let rec loop joker k a = match a with
+    | MLapp (MLrel s,args) when Int.equal (s-k) (recidx+n) ->
+       List.iteri (fun i a -> loop (n-i) k a) args
+    | MLrel i ->
+       let i = i-k in
+       if 0 < i && i <= n && not (Int.equal i joker)
+       then occur.(i-1) <- true
+    | a -> ast_iter_lift (loop joker) k a
+  in
+  let () = loop 0 0 body in
+  let rec dummify_lams i a = function
+    | [] -> a
+    | id :: ids ->
+       let id' = if occur.(i-1) then id else Dummy in
+       dummify_lams (i+1) (MLlam (id',a)) ids
+  in
+  if Array.for_all (fun b -> b) occur then e
+  else dummify_lams 1 body ids
 
 (*s Putting things together. *)
 
