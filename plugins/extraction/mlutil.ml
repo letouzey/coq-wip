@@ -642,7 +642,7 @@ let gen_subst v d t =
 	if i' < 1 then a
 	else if i' <= Array.length v then
 	  match v.(i'-1) with
-	    | None -> assert false
+            | None -> MLexn "removed var"
 	    | Some u -> ast_lift n u
 	else MLrel (i+d)
     | a -> ast_map_lift subst n a
@@ -1363,14 +1363,12 @@ and kill_dummy_fix i c_orig s =
    - it searchs for argument variables that only occur in
      corresponding arguments of this fixpoint recursive calls
      (for instance let rec f x = ... f (x+x) ...).
-   - it doesn't iterate this search, even if theoretically a first
-     argument removal might allow to discover more useless args later
-     (for instance let rec f x y = ... f (x+y) y ...).
+   - this search is iterated, for instance y then x are removed in
+     let rec f x y = ... f (x+y) y ....
    - recursive calls could normally be partial, in this case
      an eta-expansion might occur during the later [kill_dummy_fix].
    - Last little limitation: for the moment, if all args are
-     useless, then [kill_dummy_lams] will raise [Impossible] in
-     [kill_dummy_fix] and none will be removed.
+     useless, then we abort this optimization.
 *)
 
 and dummify_useless_fix_args e recidx =
@@ -1379,30 +1377,44 @@ and dummify_useless_fix_args e recidx =
      index of the variable used for recursive calls to e *)
   let ids,body = collect_lams e in
   let n = List.length ids in
-  (* occur.(i) will mean: the variable of index (i+1) (i.e. nth ids i)
-     occurs in e, outside of its corresponding arguments in
-     recursive calls. *)
-  let occur = Array.make n false in
+  (* occur.(i) will contain the index of arguments that
+     mention [MLrel (i+1)] in recursive calls, and 0 if
+     [MLrel (i+1)] occurs outside of recursive call arguments. *)
+  let occur = Array.make n Int.Set.empty in
   (* A searching loop for such occurrences. k is the lift level,
-     and joker is a variable to ignore (when we're inside the
-     corresponding argument of a recursive call) *)
-  let rec loop joker k a = match a with
+     and curarg is the recursive call argument we're in (or 0
+     when we're not inside an argument of a recursive call) *)
+  let rec loop curarg k = function
     | MLapp (MLrel s,args) when Int.equal (s-k) (recidx+n) ->
        List.iteri (fun i a -> loop (n-i) k a) args
     | MLrel i ->
        let i = i-k in
-       if 0 < i && i <= n && not (Int.equal i joker)
-       then occur.(i-1) <- true
-    | a -> ast_iter_lift (loop joker) k a
+       if 0 < i && i <= n && not (Int.equal i curarg)
+       then occur.(i-1) <- Int.Set.add curarg occur.(i-1)
+    | a -> ast_iter_lift (loop curarg) k a
   in
   let () = loop 0 0 body in
+  let unused = ref Int.Set.empty in
+  let stop = ref false in
+  while not !stop do
+    stop := true;
+    for i = 1 to n do
+      occur.(i-1) <- Int.Set.diff occur.(i-1) !unused;
+      if Int.Set.is_empty occur.(i-1) && not (Int.Set.mem i !unused) then
+        begin
+          stop := false;
+          unused := Int.Set.add i !unused
+        end
+    done;
+  done;
   let rec dummify_lams i a = function
     | [] -> a
     | id :: ids ->
-       let id' = if occur.(i-1) then id else Dummy in
+       let id' = if Int.Set.mem i !unused then Dummy else id in
        dummify_lams (i+1) (MLlam (id',a)) ids
   in
-  if Array.for_all (fun b -> b) occur then e
+  if Int.Set.is_empty !unused then e
+  else if Int.equal (Int.Set.cardinal !unused) n then e
   else dummify_lams 1 body ids
 
 (*s Putting things together. *)
