@@ -16,6 +16,7 @@ Int
 Range
 HMap
 Bigint
+Pool
 
 CArray
 Option

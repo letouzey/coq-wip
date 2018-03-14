@@ -284,7 +284,11 @@ let keymap_find key map =
 (* Scopes table : interpretation -> scope_name *)
 let notations_key_table = ref (KeyMap.empty : notation_rule list KeyMap.t)
 
-let prim_token_key_table = ref (KeyMap.empty : (string * (any_glob_constr -> prim_token option) * bool) KeyMap.t)
+module PrimTokenUninterps =
+  Pool.Make (struct type t = any_glob_constr -> prim_token option end)
+
+let prim_token_key_table =
+  ref (KeyMap.empty : (string * PrimTokenUninterps.idx * bool) KeyMap.t)
 
 let glob_prim_constr_key c = match DAst.get c with
   | GRef (ref, _) -> RefKey (canonical_gr ref)
@@ -318,7 +322,7 @@ let notation_constr_key = function (* Rem: NApp(NRef ref,[]) stands for @ref *)
   | _ -> Oth, None
 
 (**********************************************************************)
-(* Interpreting numbers (not in summary because functional objects)   *)
+(** Interpreting numbers and strings *)
 
 type required_module = full_path * string list
 
@@ -332,23 +336,49 @@ type cases_pattern_status = bool (* true = use prim token in patterns *)
 type 'a prim_token_uninterpreter =
     glob_constr list * (any_glob_constr -> 'a option) * cases_pattern_status
 
+(* First, the global pools of [prim_token_interpreter].
+   They are not in summary because interpreters are functional objects,
+   but they could only grow during a session, and we refer
+   to them through integer indexes that could go in summary. *)
+
+module NumeralInterps =
+  Pool.Make (struct type t = rawnum prim_token_interpreter end)
+module StringInterps =
+  Pool.Make (struct type t = string prim_token_interpreter end)
+
+(* Now the parts that can be synchronized in Summary *)
+
+type ('a,'b) prim_token_kind =
+  | ForNumeral of 'a
+  | ForString of 'b
+
 type internal_prim_token_interpreter =
-  | ForNumeral of rawnum prim_token_interpreter
-  | ForString of string prim_token_interpreter
+ required_module *
+ (NumeralInterps.idx, StringInterps.idx) prim_token_kind
+
+(* Table from scope_name to required_module * internal_prim_token_interpreter *)
 
 let prim_token_interpreter_tab =
-  (Hashtbl.create 7 :
-     (scope_name, required_module * internal_prim_token_interpreter) Hashtbl.t)
+  ref (String.Map.empty : internal_prim_token_interpreter String.Map.t)
 
 let add_prim_token_interpreter sc (dir,interp) =
-  Hashtbl.replace prim_token_interpreter_tab sc (dir,interp)
+  let idx =
+    match interp with
+    | ForNumeral interp -> ForNumeral (NumeralInterps.put interp)
+    | ForString interp -> ForString (StringInterps.put interp)
+  in
+  prim_token_interpreter_tab :=
+    String.Map.add sc (dir,idx) !prim_token_interpreter_tab
 
 let declare_prim_token_interpreter sc (dir,interp) (patl,uninterp,b) =
   declare_scope sc;
   add_prim_token_interpreter sc (dir,interp);
-  List.iter (fun pat ->
-      prim_token_key_table := KeyMap.add
-        (glob_prim_constr_key pat) (sc,uninterp,b) !prim_token_key_table)
+  List.iter
+    (fun pat ->
+      let key = glob_prim_constr_key pat in
+      let uninterp_idx = PrimTokenUninterps.put uninterp in
+      prim_token_key_table :=
+        KeyMap.add key (sc,uninterp_idx,b) !prim_token_key_table)
     patl
 
 let mkNumeral n =
@@ -496,12 +526,12 @@ let find_prim_token check_allowed ?loc p sc =
     pat, df
   with Not_found ->
   (* Try for a primitive numerical notation *)
-  let (spdir,interp) = Hashtbl.find prim_token_interpreter_tab sc in
+  let (spdir,interp) = String.Map.find sc !prim_token_interpreter_tab in
   check_required_module ?loc sc spdir;
   let pat =
     match p, interp with
-    | Numeral (n,s), ForNumeral interp -> interp ?loc (n,s)
-    | String s, ForString interp -> interp ?loc s
+    | Numeral (n,s), ForNumeral idx -> (NumeralInterps.get idx) ?loc (n,s)
+    | String s, ForString idx -> (StringInterps.get idx) ?loc s
     | _ -> raise Not_found
   in
   check_allowed pat;
@@ -561,7 +591,7 @@ let uninterp_prim_token c =
   try
     let (sc,numpr,_) =
       KeyMap.find (glob_prim_constr_key c) !prim_token_key_table in
-    match numpr (AnyGlobConstr c) with
+    match PrimTokenUninterps.get numpr (AnyGlobConstr c) with
       | None -> raise Notation_ops.No_match
       | Some n -> (sc,n)
   with Not_found -> raise Notation_ops.No_match
@@ -575,7 +605,8 @@ let uninterp_prim_token_ind_pattern ind args =
     let args' = List.map
       (fun x -> snd (glob_constr_of_closed_cases_pattern x)) args in
     let ref = DAst.make @@ GRef (ref,None) in
-    match numpr (AnyGlobConstr (DAst.make @@ GApp (ref,args'))) with
+    let c = AnyGlobConstr (DAst.make @@ GApp (ref,args')) in
+    match PrimTokenUninterps.get numpr c with
       | None -> raise Notation_ops.No_match
       | Some n -> (sc,n)
   with Not_found -> raise Notation_ops.No_match
@@ -586,14 +617,14 @@ let uninterp_prim_token_cases_pattern c =
     let (sc,numpr,b) = KeyMap.find k !prim_token_key_table in
     if not b then raise Notation_ops.No_match;
     let na,c = glob_constr_of_closed_cases_pattern c in
-    match numpr (AnyGlobConstr c) with
+    match PrimTokenUninterps.get numpr (AnyGlobConstr c) with
       | None -> raise Notation_ops.No_match
       | Some n -> (na,sc,n)
   with Not_found -> raise Notation_ops.No_match
 
 let availability_of_prim_token n printer_scope local_scopes =
   let f scope =
-    match n, Hashtbl.find prim_token_interpreter_tab scope with
+    match n, String.Map.find scope !prim_token_interpreter_tab with
     | exception Not_found -> false
     | Numeral _, (_,ForNumeral _) -> true
     | String _, (_,ForString _) -> true
@@ -1154,9 +1185,9 @@ let add_notation_extra_printing_rule ntn k v =
 let freeze _ =
  (!scope_map, !notation_level_map, !scope_stack, !arguments_scope,
   !delimiters_map, !notations_key_table, !notation_rules,
-  !scope_class_map)
+  !scope_class_map, !prim_token_interpreter_tab, !prim_token_key_table)
 
-let unfreeze (scm,nlm,scs,asc,dlm,fkm,pprules,clsc) =
+let unfreeze (scm,nlm,scs,asc,dlm,fkm,pprules,clsc,ptit,ptkt) =
   scope_map := scm;
   notation_level_map := nlm;
   scope_stack := scs;
@@ -1164,7 +1195,9 @@ let unfreeze (scm,nlm,scs,asc,dlm,fkm,pprules,clsc) =
   arguments_scope := asc;
   notations_key_table := fkm;
   notation_rules := pprules;
-  scope_class_map := clsc
+  scope_class_map := clsc;
+  prim_token_interpreter_tab := ptit;
+  prim_token_key_table := ptkt
 
 let init () =
   init_scope_map ();
@@ -1172,7 +1205,9 @@ let init () =
   delimiters_map := String.Map.empty;
   notations_key_table := KeyMap.empty;
   notation_rules := String.Map.empty;
-  scope_class_map := initial_scope_class_map
+  scope_class_map := initial_scope_class_map;
+  prim_token_interpreter_tab := String.Map.empty;
+  prim_token_key_table := KeyMap.empty
 
 let _ =
   Summary.declare_summary "symbols"
