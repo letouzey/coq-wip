@@ -91,14 +91,20 @@ let uninterp_positive (AnyGlobConstr p) =
 (* Declaring interpreters and uninterpreters for positive *)
 (************************************************************************)
 
-let _ = Notation.declare_numeral_interpreter "positive_scope"
-  (positive_path,binnums)
-  interp_positive
-  ([DAst.make @@ GRef (glob_xI, None);
-    DAst.make @@ GRef (glob_xO, None);
-    DAst.make @@ GRef (glob_xH, None)],
-   uninterp_positive,
-   true)
+open Notation
+
+let at_declare_ml_module f x =
+  Mltop.declare_cache_obj (fun () -> f x) __coq_plugin_name
+
+let _ =
+  let scope = "positive_scope" in
+  register_bignumeral_interpretation scope (interp_positive,uninterp_positive);
+  at_declare_ml_module enable_prim_token_interpretation
+    { pt_scope = scope;
+      pt_uid = scope;
+      pt_required = (positive_path,binnums);
+      pt_refs = [glob_xI; glob_xO; glob_xH];
+      pt_in_match = true }
 
 (**********************************************************************)
 (* Parsing N via scopes                                               *)
@@ -143,13 +149,15 @@ let uninterp_n (AnyGlobConstr p) =
 (************************************************************************)
 (* Declaring interpreters and uninterpreters for N *)
 
-let _ = Notation.declare_numeral_interpreter "N_scope"
-  (n_path,binnums)
-  n_of_int
-  ([DAst.make @@ GRef (glob_N0, None);
-    DAst.make @@ GRef (glob_Npos, None)],
-  uninterp_n,
-  true)
+let _ =
+  let scope = "N_scope" in
+  register_bignumeral_interpretation scope (n_of_int,uninterp_n);
+  at_declare_ml_module enable_prim_token_interpretation
+    { pt_scope = scope;
+      pt_uid = scope;
+      pt_required = (n_path,binnums);
+      pt_refs = [glob_N0; glob_Npos];
+      pt_in_match = true }
 
 (**********************************************************************)
 (* Parsing Z via scopes                                               *)
@@ -192,11 +200,12 @@ let uninterp_z (AnyGlobConstr p) =
 (************************************************************************)
 (* Declaring interpreters and uninterpreters for Z *)
 
-let _ = Notation.declare_numeral_interpreter "Z_scope"
-  (z_path,binnums)
-  z_of_int
-  ([DAst.make @@ GRef (glob_ZERO, None);
-    DAst.make @@ GRef (glob_POS, None);
-    DAst.make @@ GRef (glob_NEG, None)],
-  uninterp_z,
-  true)
+let _ =
+  let scope = "Z_scope" in
+  register_bignumeral_interpretation scope (z_of_int,uninterp_z);
+  at_declare_ml_module enable_prim_token_interpretation
+    { pt_scope = scope;
+      pt_uid = scope;
+      pt_required = (z_path,binnums);
+      pt_refs = [glob_ZERO; glob_POS; glob_NEG];
+      pt_in_match = true }
