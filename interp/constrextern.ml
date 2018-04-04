@@ -508,15 +508,7 @@ let extern_ind_pattern_in_scope (scopes:local_scopes) vars ind args =
   else
     try
       if !Flags.raw_print || !print_no_symbol then raise No_match;
-      let (sc,p) = uninterp_prim_token_ind_pattern ind args in
-      match availability_of_prim_token p sc scopes with
-	| None -> raise No_match
-	| Some key ->
-	  insert_pat_delimiters (CAst.make @@ CPatPrim p) key
-    with No_match ->
-      try
-	if !Flags.raw_print || !print_no_symbol then raise No_match;
-	extern_notation_ind_pattern scopes vars ind args
+      extern_notation_ind_pattern scopes vars ind args
           (uninterp_ind_pattern_notations ind)
     with No_match ->
       let c = extern_reference vars (IndRef ind) in

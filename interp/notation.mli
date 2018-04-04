@@ -101,8 +101,6 @@ val uninterp_prim_token :
   'a glob_constr_g -> scope_name * prim_token
 val uninterp_prim_token_cases_pattern :
   'a cases_pattern_g -> Name.t * scope_name * prim_token
-val uninterp_prim_token_ind_pattern :
- inductive -> cases_pattern list -> scope_name * prim_token
 
 val availability_of_prim_token :
   prim_token -> scope_name -> local_scopes -> delimiters option option
