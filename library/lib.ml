@@ -226,12 +226,10 @@ let add_entry sp node =
 let pull_to_head oname =
   lib_state := { !lib_state with lib_stk = (oname,List.assoc oname !lib_state.lib_stk) :: List.remove_assoc oname !lib_state.lib_stk }
 
-let anonymous_id =
-  let n = ref 0 in
-  fun () -> incr n; Names.Id.of_string ("_" ^ (string_of_int !n))
+let anonymous_id = Names.Id.of_string "_"
 
 let add_anonymous_entry node =
-  add_entry (make_oname (anonymous_id ())) node
+  add_entry (make_oname anonymous_id) node
 
 let add_leaf id obj =
   if ModPath.equal (current_mp ()) ModPath.initial then
@@ -257,8 +255,7 @@ let add_leaves id objs =
   oname
 
 let add_anonymous_leaf ?(cache_first = true) obj =
-  let id = anonymous_id () in
-  let oname = make_oname id in
+  let oname = make_oname anonymous_id in
   if cache_first then begin
     cache_object (oname,obj);
     add_entry oname (Leaf obj)
