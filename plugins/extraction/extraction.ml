@@ -254,7 +254,8 @@ let parse_ind_args si args relmax =
 
 
 let rec extract_type env sg db j c args =
-  match EConstr.kind sg (whd_betaiotazeta sg c) with
+  let c = whd_betaiotazeta sg c in
+  match EConstr.kind sg c with
     | App (d, args') ->
         (* We just accumulate the arguments. *)
         extract_type env sg db j d (Array.to_list args' @ args)
@@ -331,7 +332,17 @@ let rec extract_type env sg db j c args =
        if Projection.unfolded p then Tunknown
        else
          extract_type env sg db j (EConstr.mkProj (Projection.unfold p, t)) args
-    | Case _ | Fix _ | CoFix _ -> Tunknown
+    | Case _ ->
+       (* Try harder to reduce *)
+       let c = whd_all env sg c in
+       if EConstr.isCase sg c then Tunknown
+       else extract_type env sg db j c args
+    | Fix _ | CoFix _ ->
+       (* Try harder to reduce *)
+       let t = whd_all env sg (applistc c args) in
+       let c,args = EConstr.decompose_app sg t in
+       if EConstr.isFix sg c || EConstr.isCoFix sg c then Tunknown
+       else extract_type env sg db j c args
     | Evar _ | Meta _ -> Taxiom (* only possible during Show Extraction *)
     | Var v ->
        (* For Show Extraction *)
