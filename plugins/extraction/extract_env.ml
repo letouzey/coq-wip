@@ -473,11 +473,11 @@ let print_one_decl struc mp decl =
   let d = descr () in
   reset_renaming_tables AllButExternal;
   set_phase Pre;
-  ignore (d.pp_struct struc);
+  let h,_ = d.pp_struct Common.empty_horizon struc in
   set_phase Impl;
-  push_visible mp [];
-  let ans = d.pp_decl decl in
-  pop_visible ();
+  let h = push_visible h mp [] in
+  let h,ans = d.pp_decl h decl in
+  let _ = pop_visible h in
   v 0 ans
 
 (*s Extraction of a ml struct to a file. *)
@@ -528,23 +528,27 @@ let print_structure_to_file (fn,si,mo) dry struc =
   in
   (* First, a dry run, for computing objects to rename or duplicate *)
   set_phase Pre;
-  ignore (d.pp_struct struc);
+  let h = empty_horizon in
+  let h, _ = d.pp_struct h struc in
   let opened = opened_libraries () in
   (* Print the implementation *)
   let cout = if dry then None else Option.map open_out fn in
   let ft = formatter dry cout in
   let comment = get_comment () in
-  begin try
-    (* The real printing of the implementation *)
-    set_phase Impl;
-    pp_with ft (d.preamble mo comment opened unsafe_needs);
-    pp_with ft (d.pp_struct struc);
-    Format.pp_print_flush ft ();
-    Option.iter close_out cout;
-  with reraise ->
-    Format.pp_print_flush ft ();
-    Option.iter close_out cout; raise reraise
-  end;
+  let h =
+    try
+      (* The real printing of the implementation *)
+      set_phase Impl;
+      pp_with ft (d.preamble mo comment opened unsafe_needs);
+      let h,pp = d.pp_struct h struc in
+      pp_with ft pp;
+      Format.pp_print_flush ft ();
+      Option.iter close_out cout;
+      h
+    with reraise ->
+      Format.pp_print_flush ft ();
+      Option.iter close_out cout; raise reraise
+  in
   if not dry then Option.iter info_file fn;
   (* Now, let's print the signature *)
   Option.iter
@@ -554,7 +558,7 @@ let print_structure_to_file (fn,si,mo) dry struc =
        begin try
 	 set_phase Intf;
 	 pp_with ft (d.sig_preamble mo comment opened unsafe_needs);
-	 pp_with ft (d.pp_sig (signature_of_structure struc));
+         pp_with ft (snd (d.pp_sig h (signature_of_structure struc)));
          Format.pp_print_flush ft ();
 	 close_out cout;
        with reraise ->

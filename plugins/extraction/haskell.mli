@@ -8,5 +8,5 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-val haskell_descr : Miniml.language_descr
+val haskell_descr : Common.horizon Miniml.language_descr
 

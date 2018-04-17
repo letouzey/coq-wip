@@ -8,4 +8,4 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-val scheme_descr : Miniml.language_descr
+val scheme_descr : Common.horizon Miniml.language_descr

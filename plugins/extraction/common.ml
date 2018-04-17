@@ -65,6 +65,23 @@ let pp_boxed_tuple f = function
   | [x] -> f x
   | l -> pp_par true (hov 0 (prlist_with_sep (fun () -> str "," ++ spc ()) f l))
 
+let rec monadic_prlist f h = function
+  | [] -> h, mt ()
+  | x::l ->
+     let h,p = f h x in
+     let h,p' = monadic_prlist f h l in
+     h, p++p'
+
+let rec monadic_prlist_with_sep sep f h = function
+  | [] -> h, mt ()
+  | x::l ->
+     let h,p = f h x in
+     let h,p' = monadic_prlist_with_sep sep f h l in
+     h,
+     if Pp.ismt p then p'
+     else if Pp.ismt p' then p
+     else p ++ sep () ++ p'
+
 (** By default, in module Format, you can do horizontal placing of blocks
     even if they include newlines, as long as the number of chars in the
     blocks is less that a line length. To avoid this awkward situation,
@@ -277,31 +294,30 @@ let params_ren_add, params_ren_mem =
 *)
 
 type visible_layer = { mp : ModPath.t;
-		       params : ModPath.t list;
-		       mutable content : Label.t KMap.t; }
+                       params : ModPath.t list;
+                       content : Label.t KMap.t; }
 
-let pop_visible, push_visible, get_visible =
-  let vis = ref [] in
-  register_cleanup (fun () -> vis := []);
-  let pop () =
-    match !vis with
-      | [] -> assert false
-      | v :: vl ->
-	  vis := vl;
-	  (* we save the 1st-level-content of MPfile for later use *)
-	  if get_phase () == Impl && modular () && is_modfile v.mp
-	  then add_mpfiles_content v.mp v.content
-  and push mp mps =
-    vis := { mp = mp; params = mps; content = KMap.empty } :: !vis
-  and get () = !vis
-  in (pop,push,get)
+type horizon = visible_layer list
 
-let get_visible_mps () = List.map (function v -> v.mp) (get_visible ())
-let top_visible () = match get_visible () with [] -> assert false | v::_ -> v
-let top_visible_mp () = (top_visible ()).mp
-let add_visible ks l =
-  let visible = top_visible () in
-  visible.content <- KMap.add ks l visible.content
+let empty_horizon = []
+let pop_visible = function
+  | [] -> assert false
+  | v :: vl ->
+     (* we save the 1st-level-content of MPfile for later use *)
+     if get_phase () == Impl && modular () && is_modfile v.mp
+     then add_mpfiles_content v.mp v.content;
+     vl
+
+let push_visible h mp mps =
+  { mp = mp; params = mps; content = KMap.empty } :: h
+
+let get_visible_mps h = List.map (function v -> v.mp) h
+let top_visible h = match h with [] -> assert false | v::_ -> v
+let top_visible_mp h = (top_visible h).mp
+let add_visible h ks l =
+  match h with
+  | [] -> assert false
+  | v::vl -> { v with content = KMap.add ks l v.content } :: vl
 
 (* table of local module wrappers used to provide non-ambiguous names *)
 
@@ -368,10 +384,10 @@ let modfstlev_rename =
 
 (*s Creating renaming for a [module_path] : first, the real function ... *)
 
-let rec mp_renaming_fun mp = match mp with
+let rec mp_renaming_fun h mp = match mp with
   | _ when not (modular ()) && at_toplevel mp -> [""]
   | MPdot (mp,l) ->
-      let lmp = mp_renaming mp in
+      let lmp = mp_renaming h mp in
       let mp = match lmp with
       | [""] -> modfstlev_rename l
       | _ -> modular_rename Mod (Label.to_id l)
@@ -384,7 +400,7 @@ let rec mp_renaming_fun mp = match mp with
   | MPfile _ ->
       assert (modular ()); (* see [at_toplevel] above *)
       assert (get_phase () == Pre);
-      let current_mpfile = (List.last (get_visible ())).mp in
+      let current_mpfile = (List.last h).mp in
       if not (ModPath.equal mp current_mpfile) then mpfiles_add mp;
       [string_of_modfile mp]
 
@@ -392,16 +408,16 @@ let rec mp_renaming_fun mp = match mp with
 
 and mp_renaming =
   let add,get,_ = mktable_modpath true in
-  fun x ->
+  fun h x ->
     try if is_mp_bound (base_mp x) then raise Not_found; get x
-    with Not_found -> let y = mp_renaming_fun x in add x y; y
+    with Not_found -> let y = mp_renaming_fun h x in add x y; y
 
 (*s Renamings creation for a [global_reference]: we build its fully-qualified
     name in a [string list] form (head is the short name). *)
 
-let ref_renaming_fun (k,r) =
+let ref_renaming_fun h (k,r) =
   let mp = modpath_of_r r in
-  let l = mp_renaming mp in
+  let l = mp_renaming h mp in
   let l = if lang () != Ocaml && not (modular ()) then [""] else l in
   let s =
     let idg = safe_basename_of_global r in
@@ -419,9 +435,47 @@ let ref_renaming_fun (k,r) =
 
 let ref_renaming =
   let add,get,_ = mktable_ref true in
-  fun ((k,r) as x) ->
+  fun h ((k,r) as x) ->
     try if is_mp_bound (base_mp (modpath_of_r r)) then raise Not_found; get r
-    with Not_found -> let y = ref_renaming_fun x in add r y; y
+    with Not_found -> let y = ref_renaming_fun h x in add r y; y
+
+(* Updating the visible environment after some definitions *)
+
+let store_global h k r =
+  let mp,_,l = repr_of_r r in
+  if ModPath.equal mp (top_visible_mp h) then
+    match ref_renaming h (k,r) with
+    | [] -> assert false
+    | s::_ -> add_visible h (k,s) l
+  else
+    begin
+      (* This may happen when visiting submodules in Haskell or Scheme.
+       We simply don't update the visible things *)
+      assert (lang () <> Ocaml);
+      h
+    end
+
+let store_some_globals h k rv filter =
+  Array.fold_left
+    (fun h r -> if filter r then store_global h k r else h)
+    h rv
+
+let store_ind h kn ind =
+  let store_cname i j h _ =
+    store_global h Cons (ConstructRef ((kn,i),j+1))
+  in
+  let store_names i h p =
+    if p.ip_logical then h
+    else
+      let h = store_global h Type (IndRef (kn,i)) in
+      Array.fold_left_i (store_cname i) h p.ip_types
+  in
+  Array.fold_left_i store_names h ind.ind_packets
+
+let store_module h l =
+  let mp = MPdot (top_visible_mp h, l) in
+  let ls = mp_renaming h mp in
+  add_visible h (Mod,List.hd ls) l
 
 (* [visible_clash mp0 (k,s)] checks if [mp0-s] of kind [k]
    can be printed as [s] in the current context of visible
@@ -439,42 +493,43 @@ let mpfiles_clash mp0 ks =
   clash (fun mp k -> KMap.mem k (get_mpfiles_content mp)) mp0 ks
     (List.rev (mpfiles_list ()))
 
-let rec params_lookup mp0 ks = function
+let rec params_lookup h mp0 ks = function
   | [] -> false
   | param :: _ when ModPath.equal mp0 param -> true
   | param :: params ->
       let () = match ks with
-      | (Mod, mp) when String.equal (List.hd (mp_renaming param)) mp -> params_ren_add param
+      | (Mod, mp) when String.equal (List.hd (mp_renaming h param)) mp ->
+         params_ren_add param
       | _ -> ()
       in
-      params_lookup mp0 ks params
+      params_lookup h mp0 ks params
 
-let visible_clash mp0 ks =
+let visible_clash h mp0 ks =
   let rec clash = function
     | [] -> false
     | v :: _ when ModPath.equal v.mp mp0 -> false
     | v :: vis ->
-	let b = KMap.mem ks v.content in
-	if b && not (is_mp_bound mp0) then true
-	else begin
-	  if b then params_ren_add mp0;
-	  if params_lookup mp0 ks v.params then false
-	  else clash vis
-	end
-  in clash (get_visible ())
+        let b = KMap.mem ks v.content in
+        if b && not (is_mp_bound mp0) then true
+        else begin
+          if b then params_ren_add mp0;
+          if params_lookup h mp0 ks v.params then false
+          else clash vis
+        end
+  in clash h
 
 (* Same, but with verbose output (and mp0 shouldn't be a MPbound) *)
 
-let visible_clash_dbg mp0 ks =
+let visible_clash_dbg h mp0 ks =
   let rec clash = function
     | [] -> None
     | v :: _ when ModPath.equal v.mp mp0 -> None
     | v :: vis ->
-	try Some (v.mp,KMap.find ks v.content)
-	with Not_found ->
-	  if params_lookup mp0 ks v.params then None
-	  else clash vis
-  in clash (get_visible ())
+        try Some (v.mp,KMap.find ks v.content)
+        with Not_found ->
+          if params_lookup h mp0 ks v.params then None
+          else clash vis
+  in clash h
 
 (* After the 1st pass, we can decide which modules will be opened initially *)
 
@@ -532,36 +587,37 @@ let fstlev_ks k = function
 (* [pp_ocaml_local] : [mp] has something in common with [top_visible ()]
    but isn't equal to it *)
 
-let pp_ocaml_local k prefix mp rls olab =
+let pp_ocaml_local h k prefix mp rls olab =
   (* what is the largest prefix of [mp] that belongs to [visible]? *)
-  assert (k != Mod || not (ModPath.equal mp prefix)); (* mp as whole module isn't in itself *)
+  (* mp as whole module isn't in itself *)
+  assert (k != Mod || not (ModPath.equal mp prefix));
   let rls' = List.skipn (mp_length prefix) rls in
   let k's = fstlev_ks k rls' in
   (* Reference r / module path mp is of the form [<prefix>.s.<...>]. *)
-  if not (visible_clash prefix k's) then dottify rls'
+  if not (visible_clash h prefix k's) then dottify rls'
   else pp_duplicate (fst k's) prefix mp rls' olab
 
 (* [pp_ocaml_bound] : [mp] starts with a [MPbound], and we are not inside
    (i.e. we are not printing the type of the module parameter) *)
 
-let pp_ocaml_bound base rls =
+let pp_ocaml_bound h base rls =
   (* clash with a MPbound will be detected and fixed by renaming this MPbound *)
-  if get_phase () == Pre then ignore (visible_clash base (Mod,List.hd rls));
+  if get_phase () == Pre then ignore (visible_clash h base (Mod,List.hd rls));
   dottify rls
 
 (* [pp_ocaml_extern] : [mp] isn't local, it is defined in another [MPfile]. *)
 
-let pp_ocaml_extern k base rls = match rls with
+let pp_ocaml_extern h k base rls = match rls with
   | [] -> assert false
   | base_s :: rls' ->
       if (not (modular ())) (* Pseudo qualification with "" *)
 	|| (List.is_empty rls')  (* Case of a file A.v used as a module later *)
 	|| (not (mpfiles_mem base)) (* Module not opened *)
 	|| (mpfiles_clash base (fstlev_ks k rls')) (* Conflict in opened files *)
-	|| (visible_clash base (fstlev_ks k rls')) (* Local conflict *)
+        || (visible_clash h base (fstlev_ks k rls')) (* Local conflict *)
       then
 	(* We need to fully qualify. Last clash situation is unsupported *)
-	match visible_clash_dbg base (Mod,base_s) with
+        match visible_clash_dbg h base (Mod,base_s) with
 	  | None -> dottify rls
 	  | Some (mp,l) -> error_module_clash base (MPdot (mp,l))
       else
@@ -570,53 +626,50 @@ let pp_ocaml_extern k base rls = match rls with
 
 (* [pp_ocaml_gen] : choosing between [pp_ocaml_local] or [pp_ocaml_extern] *)
 
-let pp_ocaml_gen k mp rls olab =
-  match common_prefix_from_list mp (get_visible_mps ()) with
-    | Some prefix -> pp_ocaml_local k prefix mp rls olab
+let pp_ocaml_gen h k mp rls olab =
+  match common_prefix_from_list mp (get_visible_mps h) with
+    | Some prefix -> pp_ocaml_local h k prefix mp rls olab
     | None ->
 	let base = base_mp mp in
-	if is_mp_bound base then pp_ocaml_bound base rls
-	else pp_ocaml_extern k base rls
+        if is_mp_bound base then pp_ocaml_bound h base rls
+        else pp_ocaml_extern h k base rls
 
 (* For Haskell, things are simplier: we have removed (almost) all structures *)
 
-let pp_haskell_gen k mp rls = match rls with
+let pp_haskell_gen h k mp rls = match rls with
   | [] -> assert false
   | s::rls' ->
     let str = pseudo_qualify rls' in
     let str = if is_upper str && not (upperkind k) then ("_"^str) else str in
-    if ModPath.equal (base_mp mp) (top_visible_mp ()) then str else s^"."^str
+    if ModPath.equal (base_mp mp) (top_visible_mp h) then str else s^"."^str
 
 (* Main name printing function for a reference *)
 
-let pp_global k r =
-  let ls = ref_renaming (k,r) in
+let pp_global h k r =
+  let ls = ref_renaming h (k,r) in
   assert (List.length ls > 1);
   let s = List.hd ls in
   let mp,_,l = repr_of_r r in
-  if ModPath.equal mp (top_visible_mp ()) then
+  if ModPath.equal mp (top_visible_mp h) then
     (* simpliest situation: definition of r (or use in the same context) *)
-    (* we update the visible environment *)
-    (add_visible (k,s) l; unquote s)
+    unquote s
   else
     let rls = List.rev ls in (* for what come next it's easier this way *)
     match lang () with
-      | Scheme -> unquote s (* no modular Scheme extraction... *)
-      | JSON -> dottify (List.map unquote rls)
-      | Haskell -> if modular () then pp_haskell_gen k mp rls else s
-      | Ocaml -> pp_ocaml_gen k mp rls (Some l)
+    | Scheme -> unquote s (* no modular Scheme extraction... *)
+    | JSON -> dottify (List.map unquote rls)
+    | Haskell -> if modular () then pp_haskell_gen h k mp rls else s
+    | Ocaml -> pp_ocaml_gen h k mp rls (Some l)
 
 (* The next function is used only in Ocaml extraction...*)
 
-let pp_module mp =
-  let ls = mp_renaming mp in
+let pp_module h mp =
+  let ls = mp_renaming h mp in
   match mp with
-    | MPdot (mp0,l) when ModPath.equal mp0 (top_visible_mp ()) ->
+    | MPdot (mp0,l) when ModPath.equal mp0 (top_visible_mp h) ->
 	(* simpliest situation: definition of mp (or use in the same context) *)
-	(* we update the visible environment *)
-	let s = List.hd ls in
-	add_visible (Mod,s) l; s
-    | _ -> pp_ocaml_gen Mod mp (List.rev ls) None
+        List.hd ls
+    | _ -> pp_ocaml_gen h Mod mp (List.rev ls) None
 
 (** Special hack for constants of type Ascii.ascii : if an
     [Extract Inductive ascii => char] has been declared, then

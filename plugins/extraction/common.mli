@@ -33,6 +33,14 @@ val pp_tuple_light : (bool -> 'a -> Pp.t) -> 'a list -> Pp.t
 val pp_tuple : ('a -> Pp.t) -> 'a list -> Pp.t
 val pp_boxed_tuple : ('a -> Pp.t) -> 'a list -> Pp.t
 
+val monadic_prlist :
+  ('a -> 'b -> 'a * Pp.t) ->
+  'a -> 'b list -> 'a * Pp.t
+val monadic_prlist_with_sep :
+  (unit -> Pp.t) ->
+  ('a -> 'b -> 'a * Pp.t) ->
+  'a -> 'b list -> 'a * Pp.t
+
 val pr_binding : Id.t list -> Pp.t
 
 val rename_id : Id.t -> Id.Set.t -> Id.t
@@ -52,16 +60,26 @@ val get_phase : unit -> phase
 
 val opened_libraries : unit -> ModPath.t list
 
+type horizon
+val empty_horizon : horizon
+
 type kind = Term | Type | Cons | Mod
 
-val pp_global : kind -> global_reference -> string
-val pp_module : ModPath.t -> string
+val store_global : horizon -> kind -> global_reference -> horizon
+val store_some_globals :
+  horizon -> kind -> global_reference array -> (global_reference -> bool) ->
+  horizon
+val store_ind : horizon -> MutInd.t -> ml_ind -> horizon
+val store_module : horizon -> Label.t -> horizon
 
-val top_visible_mp : unit -> ModPath.t
+val pp_global : horizon -> kind -> global_reference -> string
+val pp_module : horizon -> ModPath.t -> string
+
+val top_visible_mp : horizon -> ModPath.t
 (* In [push_visible], the [module_path list] corresponds to
    module parameters, the innermost one coming first in the list *)
-val push_visible : ModPath.t -> ModPath.t list -> unit
-val pop_visible : unit -> unit
+val push_visible : horizon -> ModPath.t -> ModPath.t list -> horizon
+val pop_visible : horizon -> horizon
 
 val get_duplicate : ModPath.t -> Label.t -> string option
 

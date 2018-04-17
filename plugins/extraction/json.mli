@@ -1,1 +1,1 @@
-val json_descr : Miniml.language_descr
+val json_descr : Common.horizon Miniml.language_descr

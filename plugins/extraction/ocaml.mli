@@ -8,5 +8,5 @@
 (*         *     (see LICENSE file for the text of the license)         *)
 (************************************************************************)
 
-val ocaml_descr : Miniml.language_descr
+val ocaml_descr : Common.horizon Miniml.language_descr
 
