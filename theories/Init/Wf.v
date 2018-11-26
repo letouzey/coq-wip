@@ -19,18 +19,25 @@ Require Import Notations.
 Require Import Logic.
 Require Import Datatypes.
 
-(** Well-founded induction principle on [Prop] *)
+Local Unset Elimination Schemes.
+
+(** Well-founded induction principle *)
 
 Section Well_founded.
 
  Variable A : Type.
  Variable R : A -> A -> Prop.
 
- (** The accessibility predicate is defined to be non-informative *)
- (** (Acc_rect is automatically defined because Acc is a singleton type) *)
+ (** The accessibility predicate used to defined to be non-informative *)
 
- Inductive Acc (x: A) : Prop :=
+ Inductive Acc (x: A) : Type :=
      Acc_intro : (forall y:A, R y x -> Acc y) -> Acc x.
+
+ (** Manually generate [Acc_rect] to be non-dependent,
+     for compatibility with earlier version of [Acc] (in Prop). *)
+ Scheme Acc_rect := Minimality for Acc Sort Type.
+ Definition Acc_rec (P:A->Set) := Acc_rect P.
+ Scheme Acc_ind := Minimality for Acc Sort Prop.
 
  Lemma Acc_inv : forall x:A, Acc x -> forall y:A, R y x -> Acc y.
   destruct 1; trivial.

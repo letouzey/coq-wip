@@ -169,7 +169,7 @@ Qed.
 
 Hint Resolve lt_wf: arith.
 Hint Resolve well_founded_lt_compat: arith.
-
+(*
 Section LT_WF_REL.
   Variable A : Set.
   Variable R : A -> A -> Prop.
@@ -203,6 +203,7 @@ Lemma well_founded_inv_rel_inv_lt_rel :
 Proof.
   intros; apply (well_founded_inv_lt_rel_compat A (inv_lt_rel A F) F); trivial.
 Qed.
+*)
 
 (** A constructive proof that any non empty decidable subset of
     natural numbers has a least element *)

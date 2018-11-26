@@ -91,7 +91,7 @@ End ConstructiveIndefiniteGroundDescription_Direct.
 (* Version using the predicate [Acc] *)
 
 Require Import Arith.
-
+(*
 Section ConstructiveIndefiniteGroundDescription_Acc.
 
 Variable P : nat -> Prop.
@@ -160,7 +160,7 @@ apply P_eventually_implies_acc_ex; assumption.
 Defined.
 
 End ConstructiveIndefiniteGroundDescription_Acc.
-
+*)
 (************************************************************************)
 
 Section ConstructiveGroundEpsilon_nat.

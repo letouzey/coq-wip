@@ -69,6 +69,7 @@ Program Instance all_impl_morphism {A : Type} :
 Program Instance all_flip_impl_morphism {A : Type} :
   Proper (pointwise_relation A (flip impl) ==> flip impl) (@all A) | 1.
 
+(*
 (** Equivalent points are simultaneously accessible or not *)
 
 Instance Acc_pt_morphism {A:Type}(E R : A->A->Prop)
@@ -98,3 +99,4 @@ Instance well_founded_morphism {A : Type} :
 Proof.
  unfold well_founded. solve_proper.
 Qed.
+*)

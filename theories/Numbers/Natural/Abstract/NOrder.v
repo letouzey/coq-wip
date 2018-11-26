@@ -17,6 +17,7 @@ Include NAddProp N.
 
 (* Theorems that are true for natural numbers but not for integers *)
 
+(*
 Theorem lt_wf_0 : well_founded lt.
 Proof.
 setoid_replace lt with (fun n m => 0 <= n < m).
@@ -24,6 +25,7 @@ apply lt_wf.
 intros x y; split.
 intro H; split; [apply le_0_l | assumption]. now intros [_ H].
 Defined.
+*)
 
 (* "le_0_l : forall n : N, 0 <= n" was proved in NBase.v *)
 

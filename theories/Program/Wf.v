@@ -12,7 +12,7 @@
 
 Require Import Coq.Init.Wf.
 Require Import Coq.Program.Utils.
-Require Import ProofIrrelevance.
+(*Require Import ProofIrrelevance. *)
 Require Import FunctionalExtensionality.
 
 Local Open Scope program_scope.
@@ -48,8 +48,13 @@ Section Well_founded.
 
   Lemma Fix_F_inv : forall (x:A) (r s:Acc R x), Fix_F_sub x r = Fix_F_sub x s.
   Proof.
-    intro x; induction (Rwf x); intros.
-    rewrite (proof_irrelevance (Acc R x) r s) ; auto.
+    intro x. induction (Rwf x); intros.
+    destruct r, s.
+    simpl.
+    f_equal.
+    apply functional_extensionality_dep.
+    intros (y,Hy). simpl.
+    now apply H.
   Qed.
 
   Lemma Fix_eq : forall x:A, Fix_sub x = F_sub x (fun y:{ y:A | R y x} => Fix_sub (proj1_sig y)).
@@ -94,14 +99,14 @@ Section Measure_well_founded.
     unfold well_founded.
     cut (forall (a: M) (a0: T), m a0 = a -> Acc MR a0).
       intros.
-      apply (H (m a))...
-    apply (@well_founded_ind M R wf (fun mm => forall a, m a = mm -> Acc MR a)).
+      apply (X (m a))...
+    apply (@well_founded_induction_type M R wf (fun mm => forall a, m a = mm -> Acc MR a)).
     intros.
     apply Acc_intro.
     intros.
-    unfold MR in H1.
-    rewrite H0 in H1.
-    apply (H (m y))...
+    unfold MR in H0.
+    rewrite H in H0.
+    apply (X (m y))...
   Defined.
 
 End Measure_well_founded.

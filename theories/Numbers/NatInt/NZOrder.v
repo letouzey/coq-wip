@@ -618,6 +618,7 @@ Proof.
 intros x1 x2 H1 x3 x4 H2; unfold Rgt; rewrite H1; now rewrite H2.
 Qed.
 
+(*
 Theorem lt_wf : well_founded Rlt.
 Proof.
 unfold well_founded.
@@ -638,6 +639,7 @@ apply nle_gt in H2. elim H2. now apply le_lt_trans with n.
 intros n H1 H2; constructor; intros m [H3 H4].
 apply H2. assumption. now apply le_succ_l.
 Qed.
+*)
 
 End WF.
 
