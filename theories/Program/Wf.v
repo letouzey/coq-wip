@@ -48,13 +48,10 @@ Section Well_founded.
 
   Lemma Fix_F_inv : forall (x:A) (r s:Acc R x), Fix_F_sub x r = Fix_F_sub x s.
   Proof.
-    intro x. induction (Rwf x); intros.
-    destruct r, s.
-    simpl.
-    f_equal.
-    apply functional_extensionality_dep.
-    intros (y,Hy). simpl.
-    now apply H.
+    intro x. induction (Rwf x) as [x Hx IH]; intros.
+    destruct r, s. simpl.
+    apply F_ext.
+    intros (y,Hy). simpl. now apply IH.
   Qed.
 
   Lemma Fix_eq : forall x:A, Fix_sub x = F_sub x (fun y:{ y:A | R y x} => Fix_sub (proj1_sig y)).
